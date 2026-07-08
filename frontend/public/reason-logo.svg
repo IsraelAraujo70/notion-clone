@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">Reason icon</title>
-  <desc id="desc">Rounded square Reason logo mark.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 256" role="img" aria-labelledby="title desc">
+  <title id="title">Reason</title>
+  <desc id="desc">Horizontal Reason logo with mark and wordmark.</desc>
   <rect x="16" y="16" width="224" height="224" rx="47" fill="#ffffff" stroke="#111111" stroke-width="14"/>
   <g fill="#111111">
     <rect x="58" y="58" width="40" height="40" rx="2"/>
@@ -8,5 +8,12 @@
     <rect x="58" y="158" width="40" height="40" rx="2"/>
     <path d="M114 58h39c35 0 61 26 61 59s-26 59-61 59h-39z"/>
     <path d="M114 158h47l56 58h-52z"/>
+    <text
+      x="318"
+      y="167"
+      font-family="Avenir Next, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+      font-size="126"
+      font-weight="500"
+    >reason</text>
   </g>
 </svg>
