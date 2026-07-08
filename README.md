@@ -412,14 +412,18 @@ Same workflow as drive-clone/microsaas-starter:
 ```bash
 cp .env.example .env
 
-# Full stack (Postgres+pgvector, Rust API, Next.js web):
+# Postgres+pgvector + Rust API in Docker; Next.js on the host via npm:
 make dev
 
 # URLs:
-# Web: http://localhost:3000
+# Web: http://localhost:3000   (npm run dev)
 # API: http://localhost:18080/health
 # Postgres: localhost:55433 (db notion_clone)
+
+# Backend only (no Next process):
+make backend
 ```
+
 
 `make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end against a running stack (`docs/evals/page-persistence-smoke.mjs`). AI evals arrive with M5.
 

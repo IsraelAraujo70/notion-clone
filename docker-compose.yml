@@ -32,7 +32,10 @@ services:
         - action: rebuild
           path: ./backend/Cargo.lock
 
+  # Local dev uses `make dev` → `npm run dev` on the host.
+  # Keep this service only for optional containerized Next (profile docker-web).
   web:
+    profiles: ["docker-web"]
     build:
       context: ./frontend
       target: dev
