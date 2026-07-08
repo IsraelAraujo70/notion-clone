@@ -36,8 +36,9 @@ vi.mock("@/lib/api", () => ({
   },
 }))
 
+// `root_page_id` é o container invisível; ele nunca aparece em `pages`.
 const PAGES = {
-  root_page_id: "page-root",
+  root_page_id: "container",
   pages: [
     { id: "page-root", title: "Notas", icon: "", parent_page_id: null },
     { id: "page-child", title: "Filha", icon: "🚀", parent_page_id: "page-root" },
@@ -47,10 +48,11 @@ const PAGES = {
 function Probe() {
   const {
     currentPageId,
-    rootPageId,
+    containerPageId,
     canWrite,
     pages,
     createChildPage,
+    createTopLevelPage,
     renamePage,
     setPageIcon,
     deletePage,
@@ -58,10 +60,11 @@ function Probe() {
   return (
     <div>
       <span data-testid="current">{currentPageId ?? "none"}</span>
-      <span data-testid="root">{rootPageId ?? "none"}</span>
+      <span data-testid="root">{containerPageId ?? "none"}</span>
       <span data-testid="write">{String(canWrite)}</span>
       <span data-testid="count">{pages.length}</span>
       <button onClick={() => createChildPage("page-root")}>criar</button>
+      <button onClick={() => createTopLevelPage()}>criar-topo</button>
       <button onClick={() => renamePage("page-child", "Nova")}>renomear</button>
       <button onClick={() => setPageIcon("page-child", "🚀")}>icone</button>
       <button onClick={() => setPageIcon("page-child", null)}>sem-icone</button>
@@ -87,12 +90,31 @@ describe("PageProvider", () => {
     mocks.workspace.activeWorkspace = { id: "ws-1", role: "owner" }
   })
 
-  it("redirects /dashboard to the workspace root page", async () => {
+  it("redirects /dashboard to the first top-level page", async () => {
     renderProvider()
     await waitFor(() =>
       expect(mocks.replace).toHaveBeenCalledWith(pagePath("page-root"))
     )
     expect(screen.getByTestId("current")).toHaveTextContent("none")
+  })
+
+  it("does not redirect when the workspace has no pages", async () => {
+    mocks.listPages.mockResolvedValue({ root_page_id: "container", pages: [] })
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it("creates a top-level page under the workspace container", async () => {
+    renderProvider("page-root")
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
+
+    await userEvent.click(screen.getByText("criar-topo"))
+
+    await waitFor(() => expect(mocks.applyOperation).toHaveBeenCalledTimes(2))
+    const [pageOp] = mocks.applyOperation.mock.calls.map(([, , op]) => op)
+    expect(pageOp.parentId).toBe("container")
+    expect(pageOp.block.type).toBe("page")
   })
 
   it("selects a page that belongs to the workspace without redirecting", async () => {
@@ -114,7 +136,7 @@ describe("PageProvider", () => {
 
   it("creates a child page as two insert ops and refreshes the tree", async () => {
     renderProvider("page-root")
-    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("page-root"))
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
     mocks.listPages.mockClear()
 
     await userEvent.click(screen.getByText("criar"))
@@ -142,7 +164,7 @@ describe("PageProvider", () => {
 
   it("renames a page with one update_block on the page title", async () => {
     renderProvider("page-root")
-    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("page-root"))
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
     mocks.listPages.mockClear()
 
     await userEvent.click(screen.getByText("renomear"))
@@ -159,7 +181,7 @@ describe("PageProvider", () => {
 
   it("sets and clears the page icon; null removes the property", async () => {
     renderProvider("page-root")
-    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("page-root"))
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
 
     await userEvent.click(screen.getByText("icone"))
     await userEvent.click(screen.getByText("sem-icone"))
@@ -172,7 +194,7 @@ describe("PageProvider", () => {
 
   it("deletes a page with delete_block and refreshes the tree", async () => {
     renderProvider("page-root")
-    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("page-root"))
+    await waitFor(() => expect(screen.getByTestId("root")).toHaveTextContent("container"))
     mocks.listPages.mockClear()
 
     await userEvent.click(screen.getByText("apagar"))

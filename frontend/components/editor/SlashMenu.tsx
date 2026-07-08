@@ -89,11 +89,17 @@ export function SlashMenu({
   if (items.length === 0) return null
 
   return (
-    <div className="absolute top-full left-0 z-20 mt-1 w-72 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg">
+    // `max-h` + scroll: a lista tem 13 tipos e não cabe na viewport perto do
+    // rodapé da página. O item ativo é trazido à vista pelo `scrollIntoView`.
+    <div className="absolute top-full left-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border bg-popover py-1 text-popover-foreground shadow-lg">
       {items.map((item, index) => (
         <button
           key={item.type}
           type="button"
+          ref={(node) => {
+            if (node && index === activeIndex)
+              node.scrollIntoView({ block: "nearest" })
+          }}
           className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm ${
             index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
           }`}

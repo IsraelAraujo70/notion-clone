@@ -25,7 +25,7 @@ import {
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const { openMenu } = useCommandMenu()
-  const { rootPageId } = usePages()
+  const { pages } = usePages()
   const [trashOpen, setTrashOpen] = useState(false)
 
   return (
@@ -34,7 +34,7 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="h-9">
-              <Brand href={rootPageId ? pagePath(rootPageId) : "/dashboard"} />
+              <Brand href={pages[0] ? pagePath(pages[0].id) : "/dashboard"} />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -89,23 +89,37 @@ fn page_not_found() -> RepositoryError {
     RepositoryError::Domain(DomainError::PageNotFound)
 }
 
-/// Cria a página raiz do workspace com um parágrafo em branco. Roda dentro da
-/// mesma transação que cria o workspace: nenhum workspace existe sem raiz.
+/// Cria o container do workspace e a primeira página de topo (com um parágrafo
+/// em branco). Roda na mesma transação que cria o workspace: nenhum workspace
+/// existe sem container. O container nunca é exibido nem navegável.
 pub async fn create_workspace_root_page(
     tx: &mut PgConnection,
     workspace_id: Uuid,
     created_by: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
-    let root_id = Uuid::new_v4();
+    let container_id = Uuid::new_v4();
+    let page_id = Uuid::new_v4();
     let paragraph_id = Uuid::new_v4();
 
     sqlx::query(
         "INSERT INTO blocks (id, workspace_id, type, properties, content, created_by)
-         VALUES ($1, $2, 'page', '{\"title\": \"\"}'::jsonb, ARRAY[$3]::uuid[], $4)",
+         VALUES ($1, $2, 'page', '{}'::jsonb, ARRAY[$3]::uuid[], $4)",
     )
-    .bind(root_id)
+    .bind(container_id)
+    .bind(workspace_id)
+    .bind(page_id)
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO blocks (id, workspace_id, type, properties, content, parent_id, created_by)
+         VALUES ($1, $2, 'page', '{\"title\": \"\"}'::jsonb, ARRAY[$3]::uuid[], $4, $5)",
+    )
+    .bind(page_id)
     .bind(workspace_id)
     .bind(paragraph_id)
+    .bind(container_id)
     .bind(created_by)
     .execute(&mut *tx)
     .await?;
@@ -116,18 +130,18 @@ pub async fn create_workspace_root_page(
     )
     .bind(paragraph_id)
     .bind(workspace_id)
-    .bind(root_id)
+    .bind(page_id)
     .bind(created_by)
     .execute(&mut *tx)
     .await?;
 
     sqlx::query("INSERT INTO workspace_page_roots (workspace_id, root_page_id) VALUES ($1, $2)")
         .bind(workspace_id)
-        .bind(root_id)
+        .bind(container_id)
         .execute(&mut *tx)
         .await?;
 
-    Ok(root_id)
+    Ok(container_id)
 }
 
 async fn insert_block_row(
@@ -223,9 +237,10 @@ impl PageRepository for PostgresPageRepository {
              SELECT id,
                     COALESCE(properties->>'title', '') AS title,
                     COALESCE(properties->>'icon', '') AS icon,
-                    parent_page_id
+                    -- O container não é uma página: seus filhos são as de topo.
+                    NULLIF(parent_page_id, $2) AS parent_page_id
              FROM walk
-             WHERE type = 'page'
+             WHERE type = 'page' AND id <> $2
              ORDER BY path",
         )
         .bind(workspace_id)
@@ -253,6 +268,20 @@ impl PageRepository for PostgresPageRepository {
         workspace_id: Uuid,
         page_id: Uuid,
     ) -> Result<PageView, RepositoryError> {
+        // O container do workspace não é uma página navegável.
+        let container_id = sqlx::query_as::<_, (Uuid,)>(
+            "SELECT root_page_id FROM workspace_page_roots WHERE workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(page_not_found)?
+        .0;
+        if container_id == page_id {
+            return Err(page_not_found());
+        }
+
         // A subárvore para no bloco de página filha: ela vira um link, não conteúdo inline.
         let query = format!(
             "WITH RECURSIVE subtree AS (
@@ -307,11 +336,12 @@ impl PageRepository for PostgresPageRepository {
                     COALESCE(properties->>'title', '') AS title,
                     COALESCE(properties->>'icon', '') AS icon
              FROM ancestors
-             WHERE type = 'page'
+             WHERE type = 'page' AND id <> $3
              ORDER BY depth DESC",
         )
         .bind(workspace_id)
         .bind(page_id)
+        .bind(container_id)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_error)?;

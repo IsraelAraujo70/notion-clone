@@ -91,7 +91,9 @@ describe("block editor", () => {
     saved()
 
     cy.location("pathname").then((parentPath) => {
-      cy.get('[data-cy="nav-pages-create"]').click()
+      const parentId = parentPath.split("/").pop()!
+      // O `+` da linha cria uma sub-página; o do cabeçalho cria uma de topo.
+      cy.get(`[data-cy="nav-page-plus-${parentId}"]`).click({ force: true })
       cy.location("pathname").should("not.eq", parentPath)
 
       cy.get('[data-cy="page-title"]').click().type("Filha")
@@ -143,18 +145,19 @@ describe("block editor", () => {
     cy.location("pathname").then((rootPath) => {
       const rootId = rootPath.split("/").pop()!
 
+      // O `+` do cabeçalho cria uma página de TOPO, irmã da primeira.
       cy.get('[data-cy="nav-pages-create"]').click()
       // O router só troca depois que as duas insert_block são aceitas.
       cy.location("pathname").should("not.eq", rootPath)
 
-      // A raiz não pode ir para a lixeira: o item nem aparece.
+      // Toda página visível tem o container como pai, então todas são deletáveis.
       cy.get(`[data-cy="nav-page-${rootId}"]`).rightclick()
       cy.get('[data-cy="nav-page-rename"]').should("be.visible")
-      cy.get('[data-cy="nav-page-delete"]').should("not.exist")
+      cy.get('[data-cy="nav-page-delete"]').should("be.visible")
       cy.get("body").type("{esc}")
 
-      cy.location("pathname").then((childPath) => {
-        const childId = childPath.split("/").pop()!
+      cy.location("pathname").then((siblingPath) => {
+        const childId = siblingPath.split("/").pop()!
 
         cy.get(`[data-cy="nav-page-${childId}"]`).rightclick()
         cy.get('[data-cy="nav-page-rename"]').click()
@@ -176,6 +179,34 @@ describe("block editor", () => {
         cy.get('[data-cy="trash-trigger"]').click()
         cy.get(`[data-cy="trash-entry-${childId}"]`).should("contain.text", "Renomeada")
       })
+    })
+  })
+
+  it("the header + creates a top-level page, not a child", () => {
+    cy.get('[data-cy="page-title"]').click().type("Primeira")
+    cy.get('[data-cy="page-title"]').blur()
+    saved()
+
+    cy.location("pathname").then((firstPath) => {
+      const firstId = firstPath.split("/").pop()!
+
+      cy.get('[data-cy="nav-pages-create"]').click()
+      cy.location("pathname").should("not.eq", firstPath)
+      cy.get('[data-cy="page-title"]').click().type("Segunda")
+      cy.get('[data-cy="page-title"]').blur()
+      saved()
+
+      // Irmãs: nenhuma é filha da outra. A primeira não vira link dentro da segunda,
+      // e o breadcrumb da segunda tem só ela.
+      cy.get('[data-cy="breadcrumb-current"]').should("contain.text", "Segunda")
+      cy.get('[data-cy^="breadcrumb-"]')
+        .not('[data-cy="breadcrumb-current"]')
+        .should("not.exist")
+
+      cy.get(`[data-cy="nav-page-${firstId}"]`).should("contain.text", "Primeira")
+      cy.get(`[data-cy="nav-page-${firstId}"]`).click()
+      cy.get('[data-cy="page-title"]').should("have.text", "Primeira")
+      cy.get('[data-cy^="page-link-"]').should("not.exist")
     })
   })
 

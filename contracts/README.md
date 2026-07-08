@@ -42,7 +42,9 @@ Undo: aplicar uma op retorna sua inversa; o undo aplica inversas em ordem revers
 
 ## Persistência (M2)
 
-Cada bloco é uma linha em `blocks` (`backend/migrations/0005_blocks_and_operations.sql`); os campos do contrato mapeiam 1:1, em snake_case. `content` é `uuid[]`, `properties` é `jsonb`. Todo workspace tem exatamente uma página raiz (`workspace_page_roots`), criada na mesma transação que o workspace.
+Cada bloco é uma linha em `blocks` (`backend/migrations/0005_blocks_and_operations.sql`); os campos do contrato mapeiam 1:1, em snake_case. `content` é `uuid[]`, `properties` é `jsonb`.
+
+Todo workspace tem um **container** (`workspace_page_roots.root_page_id`), criado na mesma transação que o workspace: um bloco `page` invisível que é pai das páginas de topo. Ele é o único bloco sem pai, então o engine já rejeita mover ou apagar ele; a API nunca o devolve como página nem deixa navegar até ele. Páginas de topo são irmãs sob o container.
 
 Cada write vira uma linha em `operations` (`workspace_id`, `seq`, `op_id`, `actor_id`, `operation` jsonb):
 

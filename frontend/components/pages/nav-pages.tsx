@@ -126,7 +126,7 @@ function RenameDialog({
   )
 }
 
-function PageRow({ node, isRoot }: { node: PageNode; isRoot: boolean }) {
+function PageRow({ node }: { node: PageNode }) {
   const router = useRouter()
   const { currentPageId, canWrite, createChildPage, deletePage } = usePages()
   const [open, setOpen] = useState(true)
@@ -198,27 +198,23 @@ function PageRow({ node, isRoot }: { node: PageNode; isRoot: boolean }) {
           <PlusIcon />
           Adicionar sub-página
         </ContextMenuItem>
-        {isRoot ? null : (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              variant="destructive"
-              data-cy="nav-page-delete"
-              disabled={busy}
-              onSelect={async () => {
-                setBusy(true)
-                try {
-                  await deletePage(node.id)
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              <Trash2Icon />
-              Mover para a lixeira
-            </ContextMenuItem>
-          </>
-        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          variant="destructive"
+          data-cy="nav-page-delete"
+          disabled={busy}
+          onSelect={async () => {
+            setBusy(true)
+            try {
+              await deletePage(node.id)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <Trash2Icon />
+          Mover para a lixeira
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   ) : (
@@ -254,7 +250,7 @@ function PageRow({ node, isRoot }: { node: PageNode; isRoot: boolean }) {
         <CollapsibleContent>
           <SidebarMenuSub>
             {node.children.map((child) => (
-              <PageRow key={child.id} node={child} isRoot={false} />
+              <PageRow key={child.id} node={child} />
             ))}
           </SidebarMenuSub>
         </CollapsibleContent>
@@ -265,19 +261,19 @@ function PageRow({ node, isRoot }: { node: PageNode; isRoot: boolean }) {
 
 export function NavPages() {
   const router = useRouter()
-  const { pages, rootPageId, loading, canWrite, createChildPage } = usePages()
+  const { pages, containerPageId, loading, canWrite, createTopLevelPage } =
+    usePages()
   const tree = useMemo(() => buildPageTree(pages), [pages])
 
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Páginas</SidebarGroupLabel>
-      {canWrite && rootPageId ? (
+      {canWrite && containerPageId ? (
+        // O `+` do cabeçalho cria uma página de topo, não uma sub-página.
         <SidebarGroupAction
           data-cy="nav-pages-create"
           aria-label="Nova página"
-          onClick={async () =>
-            router.push(pagePath(await createChildPage(rootPageId)))
-          }
+          onClick={async () => router.push(pagePath(await createTopLevelPage()))}
         >
           <PlusIcon />
         </SidebarGroupAction>
@@ -289,9 +285,7 @@ export function NavPages() {
                 <Skeleton className="h-8 w-full" />
               </SidebarMenuItem>
             ))
-          : tree.map((node) => (
-              <PageRow key={node.id} node={node} isRoot={node.id === rootPageId} />
-            ))}
+          : tree.map((node) => <PageRow key={node.id} node={node} />)}
       </SidebarMenu>
     </SidebarGroup>
   )

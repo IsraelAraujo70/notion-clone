@@ -97,13 +97,23 @@ async function main() {
   const workspaceId = workspaces[0].id
   const ops = `/workspaces/${workspaceId}/operations`
 
-  const { root_page_id: rootPageId, pages } = await call(
+  const { root_page_id: containerId, pages } = await call(
     "GET",
     `/workspaces/${workspaceId}/pages`
   )
-  assert.equal(pages.length, 1, "workspace novo tem exatamente uma página")
-  assert.equal(pages[0].id, rootPageId)
-  step("workspace novo já nasce com página raiz")
+  assert.equal(pages.length, 1, "workspace novo tem exatamente uma página de topo")
+  assert.notEqual(pages[0].id, containerId, "o container não é uma página")
+  assert.equal(pages[0].parent_page_id, null, "a primeira página é de topo")
+  const rootPageId = pages[0].id
+  step("workspace novo já nasce com uma página de topo sob o container")
+
+  // O container não é navegável.
+  const containerFetch = await fetch(
+    `${API}/workspaces/${workspaceId}/pages/${containerId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  assert.equal(containerFetch.status, 404, "o container do workspace devolve 404")
+  step("container do workspace não é navegável")
 
   const initial = await call("GET", `/workspaces/${workspaceId}/pages/${rootPageId}`)
   assert.equal(initial.seq, 0, "nenhuma op aplicada ainda")
@@ -280,15 +290,36 @@ async function main() {
     [
       ["Notas de lançamento", null],
       ["Sub-página", rootPageId],
-    ]
+    ],
+    "páginas de topo têm parent null; sub-páginas apontam para a mãe"
   )
   step("sidebar reflete a árvore de páginas")
 
+  // Uma segunda página de topo: irmã da primeira, filha do container.
+  const sibling = block("page", { title: "Outra de topo" })
+  await call("POST", ops, {
+    type: "insert_block",
+    opId: randomUUID(),
+    block: sibling,
+    parentId: containerId,
+    index: 99,
+  })
+  const withSibling = await call("GET", `/workspaces/${workspaceId}/pages`)
+  const topLevel = withSibling.pages.filter((page) => page.parent_page_id === null)
+  assert.deepEqual(topLevel.map((page) => page.title), [
+    "Notas de lançamento",
+    "Outra de topo",
+  ])
+  step("é possível criar uma página de topo irmã, não filha")
+
   // --- ops inválidas não corrompem nada
-  const seqBeforeInvalid = parentView.seq
+  const seqBeforeInvalid = (
+    await call("GET", `/workspaces/${workspaceId}/pages/${rootPageId}`)
+  ).seq
+  // O container é o único bloco sem pai: não vai ao lixo nem se move.
   const invalid = [
-    { type: "delete_block", opId: randomUUID(), blockId: rootPageId },
-    { type: "move_block", opId: randomUUID(), blockId: rootPageId, newParentId: childPage.id, index: 0 },
+    { type: "delete_block", opId: randomUUID(), blockId: containerId },
+    { type: "move_block", opId: randomUUID(), blockId: containerId, newParentId: childPage.id, index: 0 },
     { type: "move_block", opId: randomUUID(), blockId: childPage.id, newParentId: childBody.id, index: 0 },
     { type: "update_block", opId: randomUUID(), blockId: randomUUID(), properties: { text: "x" } },
   ]

@@ -20,12 +20,15 @@ import { createId } from "@/lib/id"
 
 type PageContextValue = {
   pages: PageSummary[]
-  rootPageId: string | null
+  /** Container invisível do workspace: pai das páginas de topo, nunca navegável. */
+  containerPageId: string | null
   currentPageId: string | null
   loading: boolean
   canWrite: boolean
   refreshPages: () => Promise<void>
   createChildPage: (parentPageId: string) => Promise<string>
+  /** Cria uma página de topo (irmã das demais), não filha de outra página. */
+  createTopLevelPage: () => Promise<string>
   renamePage: (pageId: string, title: string) => Promise<void>
   setPageIcon: (pageId: string, icon: string | null) => Promise<void>
   /** Manda a página (e a subárvore dela) para a lixeira. A raiz não pode ir. */
@@ -55,7 +58,7 @@ export function PageProvider({
   const { activeWorkspace, activeWorkspaceId, loading: workspaceLoading } =
     useWorkspace()
   const [pages, setPages] = useState<PageSummary[]>([])
-  const [rootPageId, setRootPageId] = useState<string | null>(null)
+  const [containerPageId, setContainerPageId] = useState<string | null>(null)
   const [trash, setTrash] = useState<TrashEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [pageRevision, setPageRevision] = useState(0)
@@ -66,7 +69,7 @@ export function PageProvider({
     if (!token || !activeWorkspaceId) return
     const response = await api.listPages(token, activeWorkspaceId)
     setPages(response.pages)
-    setRootPageId(response.root_page_id)
+    setContainerPageId(response.root_page_id)
     return response
   }, [activeWorkspaceId, token])
 
@@ -77,13 +80,13 @@ export function PageProvider({
       if (cancelled) return
       setLoading(true)
       setPages([])
-      setRootPageId(null)
+      setContainerPageId(null)
       void api
         .listPages(token, activeWorkspaceId)
         .then((response) => {
           if (cancelled) return
           setPages(response.pages)
-          setRootPageId(response.root_page_id)
+          setContainerPageId(response.root_page_id)
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -96,13 +99,14 @@ export function PageProvider({
   }, [activeWorkspaceId, token, workspaceLoading])
 
   // `/dashboard` sem página, ou uma página de outro workspace (troca de workspace,
-  // página no lixo): a raiz é sempre o destino canônico.
+  // página no lixo): a primeira página de topo é o destino canônico. Sem nenhuma
+  // página, o dashboard mostra o estado vazio em vez de redirecionar.
   useEffect(() => {
-    if (loading || !rootPageId) return
+    if (loading || pages.length === 0) return
     if (!pageId || !pages.some((page) => page.id === pageId)) {
-      router.replace(pagePath(rootPageId))
+      router.replace(pagePath(pages[0].id))
     }
-  }, [loading, pageId, pages, rootPageId, router])
+  }, [loading, pageId, pages, router])
 
   const refreshTrash = useCallback(async () => {
     if (!token || !activeWorkspaceId) return
@@ -186,6 +190,11 @@ export function PageProvider({
     [activeWorkspaceId, loadPages, token]
   )
 
+  const createTopLevelPage = useCallback(async () => {
+    if (!containerPageId) throw new Error("No workspace container")
+    return createChildPage(containerPageId)
+  }, [containerPageId, createChildPage])
+
   const restore = useCallback(
     async (blockId: string) => {
       if (!token || !activeWorkspaceId) return
@@ -203,7 +212,7 @@ export function PageProvider({
   const value = useMemo<PageContextValue>(
     () => ({
       pages,
-      rootPageId,
+      containerPageId,
       // Só depois de confirmar que a página existe neste workspace: evita montar
       // o editor numa página que o redirect acima vai trocar.
       currentPageId:
@@ -214,6 +223,7 @@ export function PageProvider({
         await loadPages()
       },
       createChildPage,
+      createTopLevelPage,
       renamePage,
       setPageIcon,
       deletePage,
@@ -224,7 +234,9 @@ export function PageProvider({
     }),
     [
       canWrite,
+      containerPageId,
       createChildPage,
+      createTopLevelPage,
       deletePage,
       loadPages,
       loading,
@@ -234,7 +246,6 @@ export function PageProvider({
       refreshTrash,
       renamePage,
       restore,
-      rootPageId,
       setPageIcon,
       trash,
       workspaceLoading,

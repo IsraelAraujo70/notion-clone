@@ -16,9 +16,15 @@ verbatim). Envelopes reuse the snake_case shape of the rest of the API.
 
 Sidebar tree. Ordered by the editor's own block order (depth-first over `content`).
 
+`root_page_id` is the workspace **container**: an invisible `page` block that
+parents the top-level pages. It never appears in `pages`, `GET /pages/{container}`
+returns 404, and it is the only block with no parent — so it can be neither
+trashed nor moved. To create a top-level page, `insert_block` a `page` under it.
+Top-level pages have `parent_page_id: null`.
+
 ```json
 {
-  "root_page_id": "0d3b…",
+  "root_page_id": "1a55…",
   "pages": [
     { "id": "0d3b…", "title": "Notas de lançamento", "icon": "🚀", "parent_page_id": null },
     { "id": "77af…", "title": "Sub-página", "icon": "", "parent_page_id": "0d3b…" }
