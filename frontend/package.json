@@ -1,31 +1,54 @@
 {
-  "name": "frontend",
-  "version": "0.1.0",
+  "name": "notion-clone-web",
+  "version": "0.0.1",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "test:e2e": "cypress run",
+    "test:e2e:open": "cypress open"
   },
   "dependencies": {
-    "@notion-clone/contracts": "workspace:*",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "next": "15.5.20"
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.23.0",
+    "next": "16.2.6",
+    "radix-ui": "^1.6.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "recharts": "^3.8.0",
+    "shadcn": "^4.12.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0",
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
-    "vitest": "^3",
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "cypress": "^15.18.0",
     "eslint": "^9",
-    "eslint-config-next": "15.5.20",
-    "@eslint/eslintrc": "^3"
+    "eslint-config-next": "16.2.6",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "postcss": "8.5.16"
   }
 }

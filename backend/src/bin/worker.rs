@@ -1,4 +1,8 @@
 fn main() {
-    tracing_subscriber::fmt::init();
-    tracing::info!("worker: nothing to do yet (M5)");
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+    tracing::info!("worker: nothing to do yet");
 }

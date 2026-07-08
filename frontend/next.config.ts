@@ -1,7 +1,8 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@notion-clone/contracts"],
-};
+  allowedDevOrigins: ["web-e2e"],
+  output: "standalone",
+}
 
-export default nextConfig;
+export default nextConfig

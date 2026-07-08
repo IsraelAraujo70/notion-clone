@@ -1,13 +1,35 @@
-FROM rust:1.95 AS builder
+FROM rust:1.95-slim AS builder
 
 WORKDIR /app
-COPY . .
-RUN cargo build --release --bin backend
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY migrations ./migrations
+COPY build.rs ./
+RUN cargo build --release
 
-FROM debian:bookworm-slim AS runtime
+FROM rust:1.95-slim AS dev
 
 WORKDIR /app
-COPY --from=builder /app/target/release/backend /usr/local/bin/backend
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY migrations ./migrations
+COPY build.rs ./
+RUN cargo fetch
 
-EXPOSE 8080
-CMD ["backend"]
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
+CMD ["cargo", "run"]
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/microsaas-starter-api /usr/local/bin/microsaas-starter-api
+
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
+CMD ["/usr/local/bin/microsaas-starter-api"]

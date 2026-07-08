@@ -1,25 +1,38 @@
 [package]
-name = "backend"
+name = "notion-clone-api"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+default-run = "notion-clone-api"
+
+[[bin]]
+name = "notion-clone-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "notion-clone-worker"
+path = "src/bin/worker.rs"
 
 [dependencies]
+async-trait = "0.1"
+argon2 = "0.5"
 axum = "0.8"
-tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["trace", "cors"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+hmac = "0.12"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "migrate"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-
-[[bin]]
-name = "backend"
-path = "src/main.rs"
-
-[[bin]]
-name = "worker"
-path = "src/bin/worker.rs"
+tower = { version = "0.5", features = ["util"] }

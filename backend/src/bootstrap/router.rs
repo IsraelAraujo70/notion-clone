@@ -1,0 +1,56 @@
+use axum::Router;
+use axum::routing::{delete, get, patch, post};
+use tower_http::trace::TraceLayer;
+
+use crate::adapters::http::{app_routes, auth_routes, workspace_routes};
+use crate::bootstrap::config::CorsConfig;
+use crate::bootstrap::health::{health, root};
+use crate::bootstrap::state::AppState;
+
+pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
+    Router::new()
+        .route("/", get(root))
+        .route("/health", get(health))
+        .route("/auth/signup", post(auth_routes::signup))
+        .route("/auth/login", post(auth_routes::login))
+        .route(
+            "/auth/password/forgot",
+            post(auth_routes::request_password_reset),
+        )
+        .route("/auth/password/reset", post(auth_routes::reset_password))
+        .route("/auth/password/change", post(auth_routes::change_password))
+        .route("/auth/logout", post(auth_routes::logout))
+        .route("/auth/me", get(auth_routes::me))
+        .route(
+            "/workspaces",
+            get(workspace_routes::list).post(workspace_routes::create),
+        )
+        .route(
+            "/workspaces/{workspace_id}/members",
+            get(workspace_routes::list_members),
+        )
+        .route(
+            "/workspaces/{workspace_id}/members/{user_id}",
+            patch(workspace_routes::update_member_role).delete(workspace_routes::remove_member),
+        )
+        .route(
+            "/workspaces/{workspace_id}/invites",
+            get(workspace_routes::list_invites).post(workspace_routes::invite_member),
+        )
+        .route(
+            "/workspaces/{workspace_id}/invites/{invite_id}",
+            delete(workspace_routes::revoke_invite),
+        )
+        .route(
+            "/workspace-invites/{token}",
+            get(workspace_routes::invite_preview),
+        )
+        .route(
+            "/workspace-invites/{token}/accept",
+            post(workspace_routes::accept_invite),
+        )
+        .route("/app/summary", get(app_routes::summary))
+        .layer(TraceLayer::new_for_http())
+        .layer(cors.layer())
+        .with_state(state)
+}

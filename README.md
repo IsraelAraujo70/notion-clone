@@ -36,11 +36,11 @@ What this clone borrows at portfolio scale: the block model verbatim, the operat
 
 ## Proposed Architecture
 
-Use a services-first monorepo:
+Use a services-first monorepo, bootstrapped from `microsaas-starter` (which already ships auth/sessions/password-reset, the dashboard shell, Cypress, and the Railway deploy shape proven in drive-clone):
 
-- `frontend`: TypeScript/Next.js frontend with the block editor.
-- `backend`: Rust HTTP + WebSocket API plus the worker binary entrypoint under `src/bin`.
-- `contracts`: the operation schema and AI service contract shared by both sides.
+- `frontend`: TypeScript/Next.js (App Router) frontend with the block editor, shadcn/ui, Notion-style theme.
+- `backend`: Rust HTTP + WebSocket API in the ports-and-adapters layout used by drive-clone (`domain/`, `application/` with ports, `adapters/{http,postgres,email}`, `bootstrap/`), plus the worker binary under `src/bin`.
+- `contracts`: the language-neutral spec of the block model and operation schema. TypeScript types live in `frontend/lib/contracts.ts`; the Rust side mirrors the spec (M2+).
 - `docs`: architecture notes, API docs, and deployment notes.
 
 The backend owns blocks, the operation log, sync, real-time broadcast, membership and permissions, search, trash lifecycle, the AI service, and background jobs. PostgreSQL (with pgvector) stores everything durable: metadata, operations, full-text indexes, and embeddings.
@@ -73,17 +73,21 @@ The AI is drawn inside the backend on purpose: it is a client of the same op-app
 
 ## Repository Structure
 
-Planned structure:
-
 ```text
 frontend/
+  app/            # App Router (login, signup, reset-password, dashboard)
+  components/     # shadcn/ui + editor/ (BlockEditor, SlashMenu)
+  lib/            # contracts.ts, engine/ (op apply + undo), editor/ helpers
+  cypress/
 backend/
-  src/
-  src/bin/        # worker
+  src/domain/     # entities and domain rules
+  src/application/# use-cases + ports
+  src/adapters/   # http, postgres, email
+  src/bootstrap/  # config, state, router, health
+  src/bin/        # api + worker
   migrations/
-contracts/
+contracts/        # protocol spec (README.md)
 docs/
-  api/
 ```
 
 ## Core Components
@@ -122,13 +126,14 @@ Worker:
 
 Backend:
 
-- Rust.
+- Rust, ports-and-adapters (same shape as drive-clone/microsaas-starter).
 - Axum for HTTP and WebSocket routing.
 - Tokio for async runtime.
 - SQLx for PostgreSQL.
 - Serde for JSON.
 - tower-http for tracing, CORS, and middleware.
 - pgvector via SQLx (the `pgvector` crate).
+- Auth from the starter: argon2 password hashing, opaque session tokens stored hashed, single-use reset tokens, optional Resend email (noop locally).
 
 Frontend:
 
@@ -292,15 +297,17 @@ One WebSocket caveat to verify early: Railway supports WebSockets, but confirm p
 
 ## Roadmap
 
-### M1: Local block editor
+### M1: Local block editor — DONE (2026-07-08)
 
 Deliver: block tree state, contenteditable-per-block editor, slash menu, markdown shortcuts, indent/outdent, drag reorder, undo via inverse ops. All in-memory, no server.
 
 Done when: a page with every block type can be written keyboard-only, and undo/redo is exact.
 
+Status: shipped. Engine in `frontend/lib/engine/` (op apply returns inverse ops; seeded 200-op fuzz proves invariants and exact full-undo), editor UI in `frontend/components/editor/`. The fuzz caught a real design bug: soft-delete must remove the id from the parent's `content` (ghost slots shift move indexes during undo) — hence `trashedIndex` in the contract. Auth + workspaces landed early via the starter rebase (signup creates a "Pessoal" workspace transactionally).
+
 ### M2: Persistence and pages
 
-Deliver: auth, workspaces, `blocks` table, page subtree API, sidebar tree, breadcrumbs, the five op types applied through the server, trash/restore.
+Deliver: `blocks` table, page subtree API, sidebar tree, breadcrumbs, the five op types applied through the server, trash/restore. (Auth and workspaces already landed with the starter rebase.)
 
 Done when: a page survives a refresh and trash/restore keeps subtrees intact.
 
@@ -382,19 +389,22 @@ Track:
 
 ## Local Development
 
-Planned setup, mirroring the drive-clone workflow:
+Same workflow as drive-clone/microsaas-starter:
 
 ```bash
-# Full stack with file watching:
+cp .env.example .env
+
+# Full stack (Postgres+pgvector, Rust API, Next.js web):
 make dev
 
 # URLs:
 # Web: http://localhost:3000
-# API: http://localhost:8080/health
+# API: http://localhost:18080/health
+# Postgres: localhost:55433 (db notion_clone)
 ```
 
-Docker Compose runs Postgres (pgvector image), the Rust API, the worker, and the Next.js dev server. `make test` runs the Rust and Vitest gates; `make test-e2e` runs Cypress against the composed stack; `make evals` runs the AI eval suite (requires an API key).
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. AI evals arrive with M5.
 
 ## Current Status
 
-Not started. `challenge.md` defines the target; this README defines the proposed architecture and the milestone plan. M1 (local block editor) is the first deliverable.
+M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops — engine covered by deterministic tests including a seeded fuzz. The repo was rebased on `microsaas-starter`, so auth (signup/login/logout/reset) and workspaces are already live against the Rust API. Next: M2 — persist blocks through the server (page subtree API, sidebar tree, trash/restore).
