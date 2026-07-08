@@ -295,6 +295,20 @@ Required deployment behavior:
 
 One WebSocket caveat to verify early: Railway supports WebSockets, but confirm proxy timeout behavior with a heartbeat ping so idle editors do not silently disconnect.
 
+Initial deployment status:
+
+- Project: `notion-clone` (same workspace and shape as `drive-clone`).
+- API URL: `https://api-production-30a6.up.railway.app`.
+- Web URL: `https://web-production-ec9b1.up.railway.app`.
+- API service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, Dockerfile build, healthcheck `/health`.
+- Web service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/frontend`, Dockerfile build (`output: "standalone"`), serving on port 8080.
+- Worker service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, start command `notion-clone-worker` (keep-alive tick, no jobs until M6).
+- Postgres: `ghcr.io/railwayapp-templates/postgres-ssl:18` (ships pgvector 0.8.4); `DATABASE_URL` is referenced into api and worker.
+- Migrations `0001`–`0005` run on boot, including `CREATE EXTENSION vector`.
+- Deploy smoke: `/health` 200, web `/` 200, API signup creates the user, workspace, and root page.
+
+The api healthcheck lives on the service instance, not in `backend/railway.json`, because that file is shared with the worker (same `/backend` root) and the worker serves no HTTP.
+
 ## Roadmap
 
 ### M1: Local block editor — DONE (2026-07-08)
