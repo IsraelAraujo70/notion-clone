@@ -5,6 +5,7 @@ pub enum DomainError {
     InvalidCredentials,
     Unauthorized,
     UserNotFound,
+    PageNotFound,
     Forbidden,
     AlreadyMember,
 }

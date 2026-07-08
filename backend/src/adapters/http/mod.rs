@@ -3,4 +3,5 @@ pub mod auth_extractor;
 pub mod auth_routes;
 pub mod dto;
 pub mod error;
+pub mod page_routes;
 pub mod workspace_routes;

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod pages;
 pub mod ports;
 pub mod workspaces;
 
@@ -37,6 +38,7 @@ impl From<RepositoryError> for AppError {
         match error {
             RepositoryError::DuplicateEmail => Self::DuplicateEmail,
             RepositoryError::NotFound => Self::Domain(DomainError::UserNotFound),
+            RepositoryError::Domain(domain) => domain.into(),
             RepositoryError::Unexpected => Self::Repository,
         }
     }

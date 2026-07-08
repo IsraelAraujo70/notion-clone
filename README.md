@@ -305,15 +305,19 @@ Done when: a page with every block type can be written keyboard-only, and undo/r
 
 Status: shipped. Engine in `frontend/lib/engine/` (op apply returns inverse ops; seeded 200-op fuzz proves invariants and exact full-undo), editor UI in `frontend/components/editor/`. The fuzz caught a real design bug: soft-delete must remove the id from the parent's `content` (ghost slots shift move indexes during undo) — hence `trashedIndex` in the contract. Auth + workspaces landed early via the starter rebase (signup creates a "Pessoal" workspace transactionally).
 
-### M2: Persistence and pages
+### M2: Persistence and pages — DONE (2026-07-08)
 
 Deliver: `blocks` table, page subtree API, sidebar tree, breadcrumbs, the five op types applied through the server, trash/restore. (Auth and workspaces already landed with the starter rebase.)
 
 Done when: a page survives a refresh and trash/restore keeps subtrees intact.
 
+Status: shipped. Pages live at `/dashboard/pages/[pageId]`; `/dashboard` redirects to the workspace's root page, which is created in the same transaction as the workspace. The five operations go through `POST /workspaces/{id}/operations`, applied by a Rust mirror of the TS engine (`backend/src/domain/block.rs`) inside one transaction that locks the workspace row. `operations` already carries the monotonic per-workspace `seq` and the idempotent `op_id`, so M3 only has to add transport. Trash lists the roots of trashed subtrees; restore reinserts at `trashedIndex` (clamped) and brings the descendants back. A child page inside a parent page renders as a navigable link, never as inline content, and the subtree fetch stops there. Protocol and limits: [`contracts/README.md`](./contracts/README.md); API: [`docs/api/pages.md`](./docs/api/pages.md).
+
+Two bugs the work surfaced. Editor mutations (undo stack, outgoing queue) used to run inside a `setState` updater, which React StrictMode double-invokes — the M1 Cypress undo assertion was passing *because of* the double undo. State now lives in a ref and the updater is pure. Second: the op queue sent one request per keystroke, so it coalesces pending `update_block`s by the same key while never touching the operation already in flight.
+
 ### M3: Sync and real-time
 
-Deliver: op queue, WebSocket transport, per-workspace op log with cursors, ack/echo protocol, LWW conflict resolution, reconnection recovery, two-client e2e convergence tests.
+Deliver: WebSocket transport, cursor catch-up (`GET /sync/operations?cursor=`), ack/echo protocol, property-level LWW (`propVersions` is accepted and ignored today), reconnection recovery, two-client e2e convergence tests. The op log, the `seq` cursor, `op_id` idempotency, and the client-side op queue already landed in M2.
 
 Done when: two browsers editing the same page converge, and a disconnected client catches up from its cursor.
 
@@ -403,8 +407,12 @@ make dev
 # Postgres: localhost:55433 (db notion_clone)
 ```
 
-`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. AI evals arrive with M5.
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end against a running stack (`docs/evals/page-persistence-smoke.mjs`). AI evals arrive with M5.
 
 ## Current Status
 
-M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops — engine covered by deterministic tests including a seeded fuzz. The repo was rebased on `microsaas-starter`, so auth (signup/login/logout/reset) and workspaces are already live against the Rust API. Next: M2 — persist blocks through the server (page subtree API, sidebar tree, trash/restore).
+M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five typed operations. `/dashboard` redirects to the workspace root page; nested pages, breadcrumbs, sidebar tree, and trash/restore of whole subtrees all round-trip through Postgres. Writes are serialized per workspace, idempotent by `op_id`, and numbered by a monotonic `seq` — the M3 catch-up cursor exists before the M3 transport does. Cross-workspace reads and viewer writes fail with 403 at the one authorization function every route shares.
+
+M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops — engine covered by deterministic tests including a seeded fuzz. The repo was rebased on `microsaas-starter`, so auth (signup/login/logout/reset) and workspaces are live against the Rust API.
+
+Next: M3 — WebSocket transport, cursor catch-up, and property-level LWW.

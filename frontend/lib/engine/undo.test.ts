@@ -57,13 +57,13 @@ describe("UndoManager", () => {
     snapshots.push(visibleTree(s.tree))
 
     for (let i = snapshots.length - 2; i >= 0; i--) {
-      s.tree = s.undo.undo(s.tree)
+      s.tree = s.undo.undo(s.tree).tree
       expect(visibleTree(s.tree)).toEqual(snapshots[i])
     }
     expect(s.undo.canUndo).toBe(false)
 
     for (let i = 1; i < snapshots.length; i++) {
-      s.tree = s.undo.redo(s.tree)
+      s.tree = s.undo.redo(s.tree).tree
       expect(visibleTree(s.tree)).toEqual(snapshots[i])
     }
     expect(s.undo.canRedo).toBe(false)
@@ -90,13 +90,13 @@ describe("UndoManager", () => {
       )
     }
 
-    s.tree = s.undo.undo(s.tree) // um passo desfaz a rajada inteira
+    s.tree = s.undo.undo(s.tree).tree // um passo desfaz a rajada inteira
     expect(getBlock(s.tree, "a").properties.text).toBe("")
-    s.tree = s.undo.redo(s.tree)
+    s.tree = s.undo.redo(s.tree).tree
     expect(getBlock(s.tree, "a").properties.text).toBe("hello")
 
-    s.tree = s.undo.undo(s.tree)
-    s.tree = s.undo.undo(s.tree) // desfaz o insert
+    s.tree = s.undo.undo(s.tree).tree
+    s.tree = s.undo.undo(s.tree).tree // desfaz o insert
     expect(visibleTree(s.tree).children).toEqual([])
   })
 
@@ -129,9 +129,9 @@ describe("UndoManager", () => {
       "text:a"
     )
 
-    s.tree = s.undo.undo(s.tree)
+    s.tree = s.undo.undo(s.tree).tree
     expect(getBlock(s.tree, "a").properties.text).toBe("one")
-    s.tree = s.undo.undo(s.tree)
+    s.tree = s.undo.undo(s.tree).tree
     expect(getBlock(s.tree, "a").properties.text).toBe("")
   })
 
@@ -144,7 +144,7 @@ describe("UndoManager", () => {
       parentId: "root",
       index: 0,
     })
-    s.tree = s.undo.undo(s.tree)
+    s.tree = s.undo.undo(s.tree).tree
     expect(s.undo.canRedo).toBe(true)
     s.apply({
       type: "insert_block",

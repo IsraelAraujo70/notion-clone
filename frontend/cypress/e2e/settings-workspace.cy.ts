@@ -11,11 +11,17 @@ describe("settings and workspace", () => {
     cy.get('[data-cy="signup-confirm-password"]').type("Password123!")
     cy.get('[data-cy="signup-submit"]').click()
 
-    cy.location("pathname").should("eq", "/dashboard")
-    cy.get('[data-cy="user-menu-trigger"]').click()
-    cy.get('[data-cy="create-workspace-menu-item"]').click()
-    cy.get('[data-cy="workspace-name"]').type(workspaceName)
-    cy.get('[data-cy="create-workspace-submit"]').click()
+    cy.location("pathname").should("match", /^\/dashboard\/pages\//)
+    cy.location("pathname").then((personalPath) => {
+      cy.get('[data-cy="user-menu-trigger"]').click()
+      cy.get('[data-cy="create-workspace-menu-item"]').click()
+      cy.get('[data-cy="workspace-name"]').type(workspaceName)
+      cy.get('[data-cy="create-workspace-submit"]').click()
+
+      // O workspace novo tem a própria página raiz: a rota troca sozinha.
+      cy.location("pathname").should("not.eq", personalPath)
+      cy.get('[data-cy="page-title"]').should("be.visible")
+    })
 
     cy.get("body").then(($body) => {
       if ($body.find('[data-cy="user-settings"]').length === 0) {

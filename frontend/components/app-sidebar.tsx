@@ -1,13 +1,13 @@
 "use client"
 
-import type { ComponentProps } from "react"
+import { useState, type ComponentProps } from "react"
 import { SearchIcon, Trash2Icon } from "lucide-react"
 import Image from "next/image"
 
 import { useCommandMenu } from "@/components/command/organisms/command-menu-provider"
-import { dashboardNavItems } from "@/components/dashboard/nav-items"
-import { NavMain } from "@/components/nav-main"
+import { NavPages } from "@/components/pages/nav-pages"
 import { NavUser } from "@/components/nav-user"
+import { TrashDialog } from "@/components/pages/trash-dialog"
 import { Kbd } from "@/components/ui/kbd"
 import {
   Sidebar,
@@ -24,6 +24,7 @@ import {
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const { openMenu } = useCommandMenu()
+  const [trashOpen, setTrashOpen] = useState(false)
 
   return (
     <Sidebar collapsible="icon" variant="sidebar" {...props}>
@@ -69,7 +70,11 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton disabled tooltip="Lixeira">
+                <SidebarMenuButton
+                  data-cy="trash-trigger"
+                  tooltip="Lixeira"
+                  onClick={() => setTrashOpen(true)}
+                >
                   <Trash2Icon />
                   <span>Lixeira</span>
                 </SidebarMenuButton>
@@ -77,12 +82,13 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <NavMain items={dashboardNavItems} />
+        <NavPages />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
+      <TrashDialog open={trashOpen} onOpenChange={setTrashOpen} />
     </Sidebar>
   )
 }

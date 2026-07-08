@@ -2,7 +2,7 @@ use axum::Router;
 use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
-use crate::adapters::http::{app_routes, auth_routes, workspace_routes};
+use crate::adapters::http::{app_routes, auth_routes, page_routes, workspace_routes};
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
 use crate::bootstrap::state::AppState;
@@ -40,6 +40,22 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/workspaces/{workspace_id}/invites/{invite_id}",
             delete(workspace_routes::revoke_invite),
+        )
+        .route(
+            "/workspaces/{workspace_id}/pages",
+            get(page_routes::list_pages),
+        )
+        .route(
+            "/workspaces/{workspace_id}/pages/{page_id}",
+            get(page_routes::get_page),
+        )
+        .route(
+            "/workspaces/{workspace_id}/operations",
+            post(page_routes::apply_operation),
+        )
+        .route(
+            "/workspaces/{workspace_id}/trash",
+            get(page_routes::list_trash),
         )
         .route(
             "/workspace-invites/{token}",

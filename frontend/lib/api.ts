@@ -1,3 +1,5 @@
+import type { Block, BlockType, Operation } from "@/lib/contracts"
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080"
 
@@ -45,6 +47,41 @@ export type WorkspaceInvitePreview = {
   role: WorkspaceRole
   expires_at: string
   status: "pending" | "accepted" | "expired" | "revoked"
+}
+
+export type PageSummary = {
+  id: string
+  title: string
+  parent_page_id: string | null
+}
+
+export type PageListResponse = {
+  root_page_id: string
+  pages: PageSummary[]
+}
+
+export type Breadcrumb = {
+  id: string
+  title: string
+}
+
+export type PageResponse = {
+  page: { rootId: string; blocks: Block[] }
+  breadcrumbs: Breadcrumb[]
+  /** Cursor do log de operações do workspace no momento do fetch. */
+  seq: number
+}
+
+export type TrashEntry = {
+  id: string
+  type: BlockType
+  title: string
+  trashed_at: string
+}
+
+export type OperationAck = {
+  op_id: string
+  seq: number
 }
 
 export type AppSummarySection = {
@@ -199,4 +236,18 @@ export const api = {
     }),
   appSummary: (token: string) =>
     request<AppSummaryResponse>("/app/summary", { token }),
+  listPages: (token: string, workspaceId: string) =>
+    request<PageListResponse>(`/workspaces/${workspaceId}/pages`, { token }),
+  getPage: (token: string, workspaceId: string, pageId: string) =>
+    request<PageResponse>(`/workspaces/${workspaceId}/pages/${pageId}`, {
+      token,
+    }),
+  applyOperation: (token: string, workspaceId: string, operation: Operation) =>
+    request<OperationAck>(`/workspaces/${workspaceId}/operations`, {
+      method: "POST",
+      token,
+      body: operation,
+    }),
+  listTrash: (token: string, workspaceId: string) =>
+    request<TrashEntry[]>(`/workspaces/${workspaceId}/trash`, { token }),
 }

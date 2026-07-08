@@ -52,6 +52,11 @@ impl IntoResponse for HttpError {
                 "user_not_found",
                 "User was not found",
             ),
+            AppError::Domain(DomainError::PageNotFound) => (
+                StatusCode::NOT_FOUND,
+                "page_not_found",
+                "Page was not found",
+            ),
             AppError::Email => (
                 StatusCode::BAD_GATEWAY,
                 "email_error",

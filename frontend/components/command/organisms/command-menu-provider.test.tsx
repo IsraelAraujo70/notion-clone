@@ -30,9 +30,14 @@ describe("CommandMenuProvider", () => {
     mocks.logout.mockReset()
   })
 
-  it("opens from keyboard and navigates dashboard sections", async () => {
+  const pages = [
+    { id: "page-root", title: "Notas", parent_page_id: null },
+    { id: "page-child", title: "", parent_page_id: "page-root" },
+  ]
+
+  it("opens from keyboard and navigates to a real page", async () => {
     render(
-      <CommandMenuProvider>
+      <CommandMenuProvider pages={pages}>
         <Trigger />
       </CommandMenuProvider>
     )
@@ -42,8 +47,20 @@ describe("CommandMenuProvider", () => {
       screen.getByPlaceholderText("Buscar comandos...")
     ).toBeInTheDocument()
 
+    await userEvent.click(screen.getByText("Notas"))
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/page-root")
+  })
+
+  it("shows untitled pages and routes to them", async () => {
+    render(
+      <CommandMenuProvider pages={pages}>
+        <Trigger />
+      </CommandMenuProvider>
+    )
+
+    await userEvent.click(screen.getByText("Open commands"))
     await userEvent.click(screen.getByText("Sem título"))
-    expect(mocks.push).toHaveBeenCalledWith("/dashboard")
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/page-child")
   })
 
   it("logs out from the command palette", async () => {

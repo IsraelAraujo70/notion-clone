@@ -15,11 +15,17 @@ use crate::application::auth::request_password_reset::{
 };
 use crate::application::auth::reset_password::{ResetPasswordInput, ResetPasswordUseCase};
 use crate::application::auth::signup::{SignupInput, SignupUseCase};
+use crate::application::pages::{
+    ApplyOperationUseCase, GetPageUseCase, ListPagesUseCase, ListTrashUseCase,
+};
 use crate::application::ports::auth::{
     AuthRepository, CreateUserRecord, CreateUserWithDefaultWorkspaceRecord,
 };
 use crate::application::ports::clock::Clock;
 use crate::application::ports::email::{EmailSender, PasswordResetEmail, WorkspaceInviteEmail};
+use crate::application::ports::page::{
+    OperationAck, PageList, PageRepository, PageTree, PageView, TrashEntry,
+};
 use crate::application::ports::workspace::{CreateWorkspaceInviteRecord, WorkspaceRepository};
 use crate::application::ports::{EmailError, RepositoryError};
 use crate::application::workspaces::accept_invite::{AcceptInviteInput, AcceptInviteUseCase};
@@ -32,6 +38,7 @@ use crate::application::workspaces::invite_member::{
 use crate::application::workspaces::remove_member::RemoveMemberUseCase;
 use crate::application::workspaces::update_member_role::UpdateMemberRoleUseCase;
 use crate::domain::auth::{User, UserWithPassword, hash_password, hash_token, verify_password};
+use crate::domain::block::Operation;
 use crate::domain::workspace::{
     Workspace, WorkspaceInvite, WorkspaceInvitePreview, WorkspaceInviteStatus, WorkspaceMember,
     WorkspaceMembership, WorkspaceRole,
@@ -1049,4 +1056,182 @@ async fn cannot_remove_or_demote_last_owner() {
         .await
         .unwrap_err();
     assert!(matches!(remove, AppError::Domain(_)));
+}
+
+#[derive(Default)]
+struct FakePageRepository {
+    applied: Mutex<Vec<Operation>>,
+}
+
+#[async_trait]
+impl PageRepository for FakePageRepository {
+    async fn list_pages(&self, workspace_id: Uuid) -> Result<PageList, RepositoryError> {
+        Ok(PageList {
+            root_page_id: workspace_id,
+            pages: Vec::new(),
+        })
+    }
+
+    async fn get_page(
+        &self,
+        _workspace_id: Uuid,
+        page_id: Uuid,
+    ) -> Result<PageView, RepositoryError> {
+        Ok(PageView {
+            page: PageTree {
+                root_id: page_id,
+                blocks: Vec::new(),
+            },
+            breadcrumbs: Vec::new(),
+            seq: 0,
+        })
+    }
+
+    async fn list_trash(&self, _workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
+        Ok(Vec::new())
+    }
+
+    async fn apply_operation(
+        &self,
+        _workspace_id: Uuid,
+        _actor_id: Uuid,
+        operation: &Operation,
+        _now: DateTime<Utc>,
+    ) -> Result<OperationAck, RepositoryError> {
+        let mut applied = self.applied.lock().unwrap();
+        applied.push(operation.clone());
+        Ok(OperationAck {
+            op_id: operation.op_id(),
+            seq: applied.len() as i64,
+        })
+    }
+}
+
+fn membership(workspace_id: Uuid, role: WorkspaceRole) -> WorkspaceMembership {
+    WorkspaceMembership {
+        id: workspace_id,
+        name: "Pessoal".to_string(),
+        role,
+        created_at: fixed_now(),
+    }
+}
+
+fn delete_op(block_id: Uuid) -> Operation {
+    Operation::DeleteBlock {
+        op_id: Uuid::new_v4(),
+        block_id,
+    }
+}
+
+struct PagesFixture {
+    workspace_id: Uuid,
+    owner_id: Uuid,
+    editor_id: Uuid,
+    viewer_id: Uuid,
+    stranger_id: Uuid,
+    pages: Arc<FakePageRepository>,
+    workspaces: Arc<dyn WorkspaceRepository>,
+}
+
+fn pages_fixture() -> PagesFixture {
+    let workspace_id = Uuid::new_v4();
+    let repo = Arc::new(FakeWorkspaceRepository::default());
+    let owner_id = Uuid::new_v4();
+    let editor_id = Uuid::new_v4();
+    let viewer_id = Uuid::new_v4();
+    {
+        let mut workspaces = repo.workspaces.lock().unwrap();
+        workspaces.push((owner_id, membership(workspace_id, WorkspaceRole::Owner)));
+        workspaces.push((editor_id, membership(workspace_id, WorkspaceRole::Editor)));
+        workspaces.push((viewer_id, membership(workspace_id, WorkspaceRole::Viewer)));
+    }
+
+    PagesFixture {
+        workspace_id,
+        owner_id,
+        editor_id,
+        viewer_id,
+        stranger_id: Uuid::new_v4(),
+        pages: Arc::new(FakePageRepository::default()),
+        workspaces: repo,
+    }
+}
+
+#[tokio::test]
+async fn every_member_reads_pages_and_trash() {
+    let f = pages_fixture();
+    let page_repository: Arc<dyn PageRepository> = f.pages.clone();
+    let list = ListPagesUseCase::new(page_repository.clone(), f.workspaces.clone());
+    let get = GetPageUseCase::new(page_repository.clone(), f.workspaces.clone());
+    let trash = ListTrashUseCase::new(page_repository, f.workspaces.clone());
+
+    for user_id in [f.owner_id, f.editor_id, f.viewer_id] {
+        assert!(list.execute(user_id, f.workspace_id).await.is_ok());
+        assert!(
+            get.execute(user_id, f.workspace_id, Uuid::new_v4())
+                .await
+                .is_ok()
+        );
+        assert!(trash.execute(user_id, f.workspace_id).await.is_ok());
+    }
+}
+
+#[tokio::test]
+async fn non_member_cannot_read_or_write() {
+    let f = pages_fixture();
+    let page_repository: Arc<dyn PageRepository> = f.pages.clone();
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock { now: fixed_now() });
+
+    let list = ListPagesUseCase::new(page_repository.clone(), f.workspaces.clone());
+    assert_eq!(
+        list.execute(f.stranger_id, f.workspace_id).await.unwrap_err(),
+        AppError::Forbidden
+    );
+
+    let get = GetPageUseCase::new(page_repository.clone(), f.workspaces.clone());
+    assert_eq!(
+        get.execute(f.stranger_id, f.workspace_id, Uuid::new_v4())
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+
+    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+    assert_eq!(
+        apply
+            .execute(f.stranger_id, f.workspace_id, delete_op(Uuid::new_v4()))
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert!(f.pages.applied.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn owner_and_editor_write_but_viewer_cannot() {
+    let f = pages_fixture();
+    let page_repository: Arc<dyn PageRepository> = f.pages.clone();
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock { now: fixed_now() });
+    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+
+    let owner_ack = apply
+        .execute(f.owner_id, f.workspace_id, delete_op(Uuid::new_v4()))
+        .await
+        .unwrap();
+    assert_eq!(owner_ack.seq, 1);
+
+    let editor_ack = apply
+        .execute(f.editor_id, f.workspace_id, delete_op(Uuid::new_v4()))
+        .await
+        .unwrap();
+    assert_eq!(editor_ack.seq, 2);
+
+    assert_eq!(
+        apply
+            .execute(f.viewer_id, f.workspace_id, delete_op(Uuid::new_v4()))
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert_eq!(f.pages.applied.lock().unwrap().len(), 2);
 }

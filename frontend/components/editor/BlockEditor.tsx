@@ -25,6 +25,7 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@/lib/id"
+import { FileTextIcon } from "lucide-react"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
 
 type DropPosition = "above" | "below"
@@ -58,6 +59,9 @@ interface BlockEditorProps {
   ) => void
   undo: () => void
   redo: () => void
+  /** Abre uma página filha. Sem handler, o bloco `page` vira uma linha inerte. */
+  onOpenPage?: (pageId: string) => void
+  readOnly?: boolean
 }
 
 const LIST_TYPES = new Set<BlockType>([
@@ -172,7 +176,10 @@ export function BlockEditor({
   dispatchBatch,
   undo,
   redo,
+  onOpenPage,
+  readOnly = false,
 }: BlockEditorProps) {
+  const workspaceId = getBlock(tree, tree.rootId).workspaceId
   const editableRefs = useRef(new Map<string, HTMLElement>())
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
@@ -240,7 +247,9 @@ export function BlockEditor({
       const index = parent.content.indexOf(block.id)
       const fresh = newBlock(
         type,
-        type === "to_do" ? { text, checked: false } : { text }
+        type === "to_do" ? { text, checked: false } : { text },
+        createId(),
+        workspaceId
       )
       return {
         op: {
@@ -253,7 +262,7 @@ export function BlockEditor({
         blockId: fresh.id,
       }
     },
-    [tree]
+    [tree, workspaceId]
   )
 
   const handleInput = useCallback(
@@ -773,7 +782,7 @@ export function BlockEditor({
         >
           <button
             type="button"
-            draggable
+            draggable={!readOnly}
             aria-label="Arrastar bloco"
             className="pointer-events-none absolute top-1/2 -left-7 flex h-7 w-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-md text-muted-foreground/35 opacity-0 transition-[background,color,opacity] group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring active:cursor-grabbing"
             onDragStart={(event) => {
@@ -800,12 +809,33 @@ export function BlockEditor({
             </span>
           </button>
 
-          {block.type === "divider" ? (
+          {block.type === "page" ? (
+            // Uma página dentro de outra é um link, nunca conteúdo expandido:
+            // é o servidor que decide onde a subárvore da filha começa.
+            <button
+              type="button"
+              data-cy={`page-link-${block.id}`}
+              className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-base leading-7 font-medium underline-offset-4 hover:underline"
+              onClick={() => onOpenPage?.(block.id)}
+            >
+              <FileTextIcon
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="truncate">
+                {typeof block.properties.title === "string" &&
+                block.properties.title.length > 0
+                  ? block.properties.title
+                  : "Sem título"}
+              </span>
+            </button>
+          ) : block.type === "divider" ? (
             <div
               tabIndex={0}
               className={blockClasses(block.type)}
               onClick={() => onSelectedBlockChange(block.id)}
               onKeyDown={(event) => {
+                if (readOnly) return
                 if (event.key === "Backspace") {
                   event.preventDefault()
                   dispatchBatch(
@@ -831,6 +861,7 @@ export function BlockEditor({
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={readOnly}
                   className="mt-2 h-4 w-4 accent-zinc-900"
                   onChange={(event) =>
                     dispatchBatch(
@@ -871,7 +902,7 @@ export function BlockEditor({
                 ) : null}
                 <div
                   ref={(element) => setRef(block.id, element)}
-                  contentEditable
+                  contentEditable={!readOnly}
                   suppressContentEditableWarning
                   spellCheck={block.type !== "code"}
                   className={`min-h-7 w-full break-words outline-none ${blockClasses(block.type)} ${

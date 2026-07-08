@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: help dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-frontend-components clean
+.PHONY: help dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-frontend-components clean
 
 help:
 	@printf '%s\n' \
@@ -15,6 +15,7 @@ help:
 		'  make test                      Run API and web gate tests' \
 		'  make test-e2e                  Run Cypress full-stack E2E tests' \
 		'  make eval-password-reset       Run password-reset smoke eval against local API' \
+		'  make eval-page-persistence     Run block persistence smoke eval against local API' \
 		'  make eval-frontend-components  Check frontend boundary rules' \
 		'  make clean                     Stop containers and remove local volumes'
 
@@ -52,6 +53,9 @@ test-e2e:
 
 eval-password-reset:
 	bash docs/evals/password-reset-smoke.sh
+
+eval-page-persistence:
+	node docs/evals/page-persistence-smoke.mjs
 
 eval-frontend-components:
 	bash docs/evals/frontend-component-boundaries.sh

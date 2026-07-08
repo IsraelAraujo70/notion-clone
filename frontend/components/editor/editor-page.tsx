@@ -2,22 +2,34 @@
 
 import type { Operation } from "@/lib/contracts"
 import {
+  Fragment,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
 } from "react"
+import { useRouter } from "next/navigation"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
+import { pagePath, usePages } from "@/components/pages/page-provider"
+import { useWorkspace } from "@/components/workspace/workspace-provider"
 import {
-  applyOperation,
-  createPageTree,
-  getBlock,
-  newBlock,
-  type BlockTree,
-} from "@/lib/engine/tree"
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import { api, type Breadcrumb as Crumb } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
+import { applyOperation, getBlock, treeFromBlocks, type BlockTree } from "@/lib/engine/tree"
+import { createOpQueue, type OpQueue, type SaveState } from "@/lib/engine/op-queue"
 import { UndoManager } from "@/lib/engine/undo"
 import { createId } from "@/lib/id"
 
@@ -25,30 +37,77 @@ function opId() {
   return createId()
 }
 
-function createInitialTree(): BlockTree {
-  // Ids fixos: o estado inicial renderiza no SSR e no cliente; ids aleatorios
-  // divergem entre os dois e quebram a hidratacao do React.
-  const page = createPageTree("", "page-root")
-  const first = newBlock("paragraph", { text: "" }, "first-paragraph")
-  return applyOperation(page, {
-    type: "insert_block",
-    opId: "op-initial",
-    block: first,
-    parentId: page.rootId,
-    index: 0,
-  }).tree
-}
-
 function titleText(tree: BlockTree) {
   const value = getBlock(tree, tree.rootId).properties.title
   return typeof value === "string" ? value : ""
 }
 
-export function EditorPage() {
-  const [tree, setTree] = useState<BlockTree>(() => createInitialTree())
-  const undoRef = useRef(new UndoManager())
+const SAVE_LABEL: Record<SaveState, string> = {
+  saved: "Salvo",
+  saving: "Salvando…",
+  error: "Não foi possível salvar",
+}
+
+export function EditorPage({ pageId }: { pageId: string }) {
+  const router = useRouter()
+  const { token } = useAuth()
+  const { activeWorkspaceId } = useWorkspace()
+  const { canWrite, refreshPages, pageRevision } = usePages()
+
+  const [tree, setTree] = useState<BlockTree | null>(null)
+  const [breadcrumbs, setBreadcrumbs] = useState<Crumb[]>([])
+  const [saveState, setSaveState] = useState<SaveState>("saved")
+  const [loadError, setLoadError] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const undoRef = useRef(new UndoManager())
+  const queueRef = useRef<OpQueue | null>(null)
+  // Espelho do estado: as mutações do editor têm efeitos colaterais (undo stack,
+  // fila de envio) e não podem morar dentro de um updater do setState.
+  const treeRef = useRef<BlockTree | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const commit = useCallback((next: BlockTree | null) => {
+    treeRef.current = next
+    setTree(next)
+  }, [])
+
+  useEffect(() => {
+    if (!token || !activeWorkspaceId) return
+    let cancelled = false
+    undoRef.current = new UndoManager()
+    queueMicrotask(() => {
+      if (cancelled) return
+      commit(null)
+      setLoadError(false)
+      setSaveState("saved")
+      api
+        .getPage(token, activeWorkspaceId, pageId)
+        .then((response) => {
+          if (cancelled) return
+          commit(treeFromBlocks(response.page.rootId, response.page.blocks))
+          setBreadcrumbs(response.breadcrumbs)
+        })
+        .catch(() => {
+          if (!cancelled) setLoadError(true)
+        })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspaceId, commit, pageId, pageRevision, reloadKey, token])
+
+  useEffect(() => {
+    if (!token || !activeWorkspaceId || !canWrite) return
+    queueRef.current = createOpQueue({
+      send: (operation) => api.applyOperation(token, activeWorkspaceId, operation),
+      onStateChange: setSaveState,
+    })
+    return () => {
+      queueRef.current = null
+    }
+  }, [activeWorkspaceId, canWrite, token])
 
   const dispatchBatch = useCallback(
     (
@@ -56,48 +115,57 @@ export function EditorPage() {
       options?: { coalesceKey?: string; breakCoalescing?: boolean }
     ) => {
       if (options?.breakCoalescing) undoRef.current.breakCoalescing()
-      if (ops.length === 0) return
-      setTree((current) => {
-        let next = current
-        const inverse: Operation[] = []
-        for (const op of ops) {
-          const result = applyOperation(next, op)
-          next = result.tree
-          inverse.unshift(...result.inverse)
-        }
-        undoRef.current.record(inverse, options?.coalesceKey)
-        return next
-      })
+      const current = treeRef.current
+      if (ops.length === 0 || !canWrite || !current) return
+      let next = current
+      const inverse: Operation[] = []
+      for (const op of ops) {
+        const result = applyOperation(next, op)
+        next = result.tree
+        inverse.unshift(...result.inverse)
+      }
+      undoRef.current.record(inverse, options?.coalesceKey)
+      commit(next)
+      // Aplicação local é otimista; a fila serializa o envio e nunca bloqueia a digitação.
+      queueRef.current?.push(ops, options?.coalesceKey)
     },
-    []
+    [canWrite, commit]
   )
 
   const updateTitle = useCallback(
     (title: string) => {
+      const current = treeRef.current
+      if (!current) return
       dispatchBatch(
         [
           {
             type: "update_block",
             opId: opId(),
-            blockId: tree.rootId,
+            blockId: current.rootId,
             properties: { title },
           },
         ],
         { coalesceKey: "title" }
       )
     },
-    [dispatchBatch, tree.rootId]
+    [dispatchBatch]
   )
 
   const undo = useCallback(() => {
     undoRef.current.breakCoalescing()
-    setTree((current) => undoRef.current.undo(current))
-  }, [])
+    if (!treeRef.current) return
+    const { tree: next, ops } = undoRef.current.undo(treeRef.current)
+    commit(next)
+    queueRef.current?.push(ops)
+  }, [commit])
 
   const redo = useCallback(() => {
     undoRef.current.breakCoalescing()
-    setTree((current) => undoRef.current.redo(current))
-  }, [])
+    if (!treeRef.current) return
+    const { tree: next, ops } = undoRef.current.redo(treeRef.current)
+    commit(next)
+    queueRef.current?.push(ops)
+  }, [commit])
 
   const toggleCollapsed = useCallback((blockId: string) => {
     setCollapsed((current) => {
@@ -110,6 +178,7 @@ export function EditorPage() {
 
   const handleTitleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLHeadingElement>) => {
+      if (!tree) return
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault()
         if (event.shiftKey) redo()
@@ -130,7 +199,7 @@ export function EditorPage() {
     [redo, tree, undo]
   )
 
-  const pageTitle = titleText(tree)
+  const pageTitle = tree ? titleText(tree) : ""
   const titleRef = useRef<HTMLHeadingElement>(null)
 
   // Mesmo contrato do BlockEditor: o título nunca é filho React do
@@ -142,32 +211,107 @@ export function EditorPage() {
     }
   }, [pageTitle])
 
+  if (loadError) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+          Não foi possível abrir esta página.
+          <Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+            Tentar de novo
+          </Button>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-svh bg-background text-foreground">
+      <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-4 border-b bg-background/80 px-6 backdrop-blur">
+        <Breadcrumb>
+          <BreadcrumbList>
+            {breadcrumbs.map((crumb, index) => (
+              <Fragment key={crumb.id}>
+                <BreadcrumbItem>
+                  {index === breadcrumbs.length - 1 ? (
+                    <BreadcrumbPage data-cy="breadcrumb-current">
+                      {crumb.title || "Sem título"}
+                    </BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink
+                      href={pagePath(crumb.id)}
+                      data-cy={`breadcrumb-${crumb.id}`}
+                    >
+                      {crumb.title || "Sem título"}
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+                {index < breadcrumbs.length - 1 ? <BreadcrumbSeparator /> : null}
+              </Fragment>
+            ))}
+          </BreadcrumbList>
+        </Breadcrumb>
+        <span
+          data-cy="save-state"
+          data-state={canWrite ? saveState : "read-only"}
+          className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
+        </span>
+      </header>
+
+      {saveState === "error" ? (
+        <div
+          role="alert"
+          data-cy="save-error"
+          className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm"
+        >
+          <span>Uma edição foi rejeitada. Recarregue para ver o estado real.</span>
+          <Button size="sm" variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+            Recarregar
+          </Button>
+        </div>
+      ) : null}
+
       <section className="mx-auto flex w-full max-w-[708px] flex-col px-6 py-14 leading-7 md:py-20">
-        <h1
-          ref={titleRef}
-          data-cy="page-title"
-          contentEditable
-          suppressContentEditableWarning
-          spellCheck
-          className="mb-6 min-h-12 text-[40px] leading-tight font-bold break-words outline-none empty:before:text-muted-foreground/40 empty:before:content-['Sem_título']"
-          onInput={(event: FormEvent<HTMLHeadingElement>) =>
-            updateTitle(event.currentTarget.textContent ?? "")
-          }
-          onBlur={() => undoRef.current.breakCoalescing()}
-          onKeyDown={handleTitleKeyDown}
-        />
-        <BlockEditor
-          tree={tree}
-          collapsed={collapsed}
-          onToggleCollapsed={toggleCollapsed}
-          selectedBlockId={selectedBlockId}
-          onSelectedBlockChange={setSelectedBlockId}
-          dispatchBatch={dispatchBatch}
-          undo={undo}
-          redo={redo}
-        />
+        {!tree ? (
+          <div className="space-y-4" data-cy="page-loading">
+            <Skeleton className="h-12 w-2/3" />
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-7 w-4/5" />
+          </div>
+        ) : (
+          <>
+            <h1
+              ref={titleRef}
+              data-cy="page-title"
+              contentEditable={canWrite}
+              suppressContentEditableWarning
+              spellCheck
+              className="mb-6 min-h-12 text-[40px] leading-tight font-bold break-words outline-none empty:before:text-muted-foreground/40 empty:before:content-['Sem_título']"
+              onInput={(event: FormEvent<HTMLHeadingElement>) =>
+                updateTitle(event.currentTarget.textContent ?? "")
+              }
+              onBlur={() => {
+                undoRef.current.breakCoalescing()
+                // Sidebar e breadcrumbs só reagem ao título quando a rajada termina.
+                void refreshPages()
+              }}
+              onKeyDown={handleTitleKeyDown}
+            />
+            <BlockEditor
+              tree={tree}
+              collapsed={collapsed}
+              onToggleCollapsed={toggleCollapsed}
+              selectedBlockId={selectedBlockId}
+              onSelectedBlockChange={setSelectedBlockId}
+              dispatchBatch={dispatchBatch}
+              undo={undo}
+              redo={redo}
+              onOpenPage={(childId) => router.push(pagePath(childId))}
+              readOnly={!canWrite}
+            />
+          </>
+        )}
       </section>
     </main>
   )

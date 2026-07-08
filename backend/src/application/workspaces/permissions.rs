@@ -31,6 +31,20 @@ pub async fn require_owner(
     }
 }
 
+/// Escrita de conteúdo: owner e editor. Viewer lê e nada mais.
+pub async fn require_writer(
+    workspace_repository: &Arc<dyn WorkspaceRepository>,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<WorkspaceMembership, AppError> {
+    let membership = require_member(workspace_repository, workspace_id, user_id).await?;
+    if membership.role.can_write_content() {
+        Ok(membership)
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
 pub fn member_not_found() -> AppError {
     DomainError::Validation("Workspace member was not found").into()
 }

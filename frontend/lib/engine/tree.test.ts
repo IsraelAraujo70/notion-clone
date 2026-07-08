@@ -9,6 +9,7 @@ import {
   getBlock,
   getChildren,
   newBlock,
+  treeFromBlocks,
   visibleTree,
   type BlockTree,
 } from "./tree"
@@ -336,5 +337,29 @@ describe("fuzz: random ops keep invariants and undo returns to the start", () =>
     const undone = applyAll(tree, undoLog).tree
     checkInvariants(undone)
     expect(visibleTree(undone)).toEqual(initial)
+  })
+})
+
+describe("server-backed blocks", () => {
+  it("newBlock takes the real workspace id, defaulting to the local one", () => {
+    expect(newBlock("paragraph").workspaceId).toBe("local")
+    expect(
+      newBlock("paragraph", { text: "" }, "b1", "ws-1").workspaceId
+    ).toBe("ws-1")
+  })
+
+  it("treeFromBlocks rebuilds the tree the server sent", () => {
+    const root: Block = {
+      ...newBlock("page", { title: "Notas" }, "root", "ws-1"),
+      content: ["child"],
+    }
+    const child: Block = {
+      ...newBlock("paragraph", { text: "oi" }, "child", "ws-1"),
+      parentId: "root",
+    }
+
+    const tree = treeFromBlocks("root", [root, child])
+    checkInvariants(tree)
+    expect(getChildren(tree, "root").map((block) => block.id)).toEqual(["child"])
   })
 })

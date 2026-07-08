@@ -1,11 +1,18 @@
 // Regressão: digitação em ordem (o bug do texto invertido vinha do React
 // reescrevendo o text node do contenteditable a cada keystroke), split com
-// Enter e undo coalescido.
+// Enter e undo coalescido. A partir do M2, tudo isso atravessa o servidor.
 describe("block editor", () => {
   function firstBlock() {
     return cy
       .get('[data-block-type="paragraph"] [contenteditable="true"]')
       .first()
+  }
+
+  /** Espera a fila de operações esvaziar. */
+  function saved() {
+    return cy
+      .get('[data-cy="save-state"]')
+      .should("have.attr", "data-state", "saved")
   }
 
   beforeEach(() => {
@@ -16,7 +23,8 @@ describe("block editor", () => {
     cy.get('[data-cy="signup-password"]').type("Password123!")
     cy.get('[data-cy="signup-confirm-password"]').type("Password123!")
     cy.get('[data-cy="signup-submit"]').click()
-    cy.location("pathname").should("eq", "/dashboard")
+    cy.location("pathname").should("match", /^\/dashboard\/pages\//)
+    cy.get('[data-cy="page-title"]').should("be.visible")
   })
 
   it("types in order, splits with Enter, and undoes a typing burst", () => {
@@ -32,9 +40,17 @@ describe("block editor", () => {
       .eq(1)
       .should("have.text", "segunda linha")
 
-    // Undo coalescido: a rajada "segunda linha" desfaz num passo só.
+    // Undo coalescido: a rajada "segunda linha" desfaz num passo só...
+    cy.get("body").type("{meta}z")
+    cy.get('[data-block-type="paragraph"]').should("have.length", 2)
+    cy.get('[data-block-type="paragraph"] [contenteditable="true"]')
+      .eq(1)
+      .should("have.text", "")
+
+    // ...e o passo seguinte desfaz o split que criou o bloco.
     cy.get("body").type("{meta}z")
     cy.get('[data-block-type="paragraph"]').should("have.length", 1)
+    firstBlock().should("have.text", "Teste de digitação")
   })
 
   it("keeps symbol-heavy typing stable", () => {
@@ -46,5 +62,137 @@ describe("block editor", () => {
     cy.get('[data-block-type="paragraph"]')
       .eq(1)
       .should("have.text", "- item de lista")
+  })
+
+  it("persists title and blocks across a reload", () => {
+    cy.get('[data-cy="page-title"]').click().type("Notas de lançamento")
+    firstBlock().click().type("Toda edição é uma operação.")
+    firstBlock().type("{enter}Segundo bloco")
+    saved()
+
+    cy.reload()
+
+    cy.get('[data-cy="page-title"]').should("have.text", "Notas de lançamento")
+    cy.get('[data-block-type="paragraph"]')
+      .eq(0)
+      .should("have.text", "Toda edição é uma operação.")
+    cy.get('[data-block-type="paragraph"]')
+      .eq(1)
+      .should("have.text", "Segundo bloco")
+    cy.get('[data-cy="breadcrumb-current"]').should(
+      "have.text",
+      "Notas de lançamento"
+    )
+  })
+
+  it("creates a nested page, navigates by breadcrumb, and persists its content", () => {
+    cy.get('[data-cy="page-title"]').click().type("Pai")
+    cy.get('[data-cy="page-title"]').blur()
+    saved()
+
+    cy.location("pathname").then((parentPath) => {
+      cy.get('[data-cy="nav-page-create"]').click()
+      cy.location("pathname").should("not.eq", parentPath)
+
+      cy.get('[data-cy="page-title"]').click().type("Filha")
+      firstBlock().click().type("corpo da filha")
+      saved()
+
+      cy.reload()
+      cy.get('[data-cy="page-title"]').should("have.text", "Filha")
+      firstBlock().should("have.text", "corpo da filha")
+
+      cy.get('[data-cy="breadcrumb-current"]').should("have.text", "Filha")
+      cy.get('[data-cy^="breadcrumb-"]')
+        .not('[data-cy="breadcrumb-current"]')
+        .click()
+      cy.location("pathname").should("eq", parentPath)
+
+      // Na página pai, a filha é um link — nunca conteúdo expandido.
+      cy.get('[data-cy^="page-link-"]').should("have.text", "Filha")
+      cy.contains("corpo da filha").should("not.exist")
+      cy.get('[data-cy^="page-link-"]').click()
+      cy.get('[data-cy="page-title"]').should("have.text", "Filha")
+    })
+  })
+
+  it("trashes a block subtree and restores it with its children", () => {
+    // Monta pai > filho > neto. Cypress não digita Tab: disparamos o keydown.
+    const blocks = () =>
+      cy.get('[data-block-type="paragraph"] [contenteditable="true"]')
+    const indent = (index: number) =>
+      blocks().eq(index).trigger("keydown", { key: "Tab" })
+
+    firstBlock().click().type("pai")
+    firstBlock().type("{enter}filho")
+    indent(1)
+    blocks().eq(1).type("{enter}neto")
+    indent(2)
+    cy.get('[data-block-type="paragraph"]').should("have.length", 3)
+    saved()
+
+    // Backspace no início de "filho" funde o texto no pai e manda a subárvore
+    // (filho + neto) para o lixo numa única `delete_block`.
+    blocks()
+      .eq(1)
+      .type("{leftarrow}{leftarrow}{leftarrow}{leftarrow}{leftarrow}{backspace}")
+    cy.get('[data-block-type="paragraph"]').should("have.length", 1)
+    firstBlock().should("have.text", "paifilho")
+    saved()
+
+    cy.reload()
+    cy.get('[data-block-type="paragraph"]').should("have.length", 1)
+
+    cy.get('[data-cy="trash-trigger"]').click()
+    cy.get('[data-cy="trash-dialog"]').should("be.visible")
+    cy.get('[data-cy^="trash-entry-"]').should("have.length", 1).contains("filho")
+    cy.get('[data-cy^="trash-restore-"]').click()
+    cy.get('[data-cy^="trash-entry-"]').should("not.exist")
+
+    // Restore devolve filho E neto, sem recarregar a página.
+    cy.get('[data-cy="trash-dialog"]').type("{esc}")
+    cy.get('[data-block-type="paragraph"]').should("have.length", 3)
+    cy.contains("neto").should("be.visible")
+  })
+})
+
+describe("workspace scoping", () => {
+  it("refuses a page read from a workspace the user does not belong to", () => {
+    const id = Date.now()
+    cy.signupByApi(`owner-${id}@example.com`).then((owner) => {
+      cy.api<Array<{ id: string }>>("GET", "/workspaces", {
+        token: owner.token,
+      }).then((workspaces) => {
+        const workspaceId = workspaces.body[0].id
+        cy.api<{ root_page_id: string }>(
+          "GET",
+          `/workspaces/${workspaceId}/pages`,
+          { token: owner.token }
+        ).then((pages) => {
+          cy.signupByApi(`stranger-${id}@example.com`).then((stranger) => {
+            cy.api(
+              "GET",
+              `/workspaces/${workspaceId}/pages/${pages.body.root_page_id}`,
+              { token: stranger.token, failOnStatusCode: false }
+            )
+              .its("status")
+              .should("eq", 403)
+
+            cy.api("POST", `/workspaces/${workspaceId}/operations`, {
+              token: stranger.token,
+              failOnStatusCode: false,
+              body: {
+                type: "update_block",
+                opId: "11111111-1111-4111-8111-111111111111",
+                blockId: pages.body.root_page_id,
+                properties: { title: "hack" },
+              },
+            })
+              .its("status")
+              .should("eq", 403)
+          })
+        })
+      })
+    })
   })
 })

@@ -25,6 +25,8 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { pagePath } from "@/components/pages/page-provider"
+import type { PageSummary } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 
 type CommandMenuContextValue = {
@@ -43,7 +45,14 @@ export function useCommandMenu(): CommandMenuContextValue {
   return context
 }
 
-export function CommandMenuProvider({ children }: { children: ReactNode }) {
+export function CommandMenuProvider({
+  children,
+  // Recebidas por prop, não por contexto: o menu também renderiza fora do PageProvider.
+  pages = [],
+}: {
+  children: ReactNode
+  pages?: PageSummary[]
+}) {
   const router = useRouter()
   const { logout } = useAuth()
   const [open, setOpen] = useState(false)
@@ -85,15 +94,20 @@ export function CommandMenuProvider({ children }: { children: ReactNode }) {
             />
             <CommandList>
               <CommandGroup heading="Ir para">
-                <CommandItem
-                  data-cy="command-go-page"
-                  value="sem titulo documento dashboard"
-                  onSelect={() => runCommand(() => router.push("/dashboard"))}
-                >
-                  <FileTextIcon />
-                  Sem título
-                  <CommandShortcut>G P</CommandShortcut>
-                </CommandItem>
+                {pages.map((page, index) => (
+                  <CommandItem
+                    key={page.id}
+                    data-cy={`command-go-page-${page.id}`}
+                    value={`${page.title || "Sem título"} ${page.id}`}
+                    onSelect={() =>
+                      runCommand(() => router.push(pagePath(page.id)))
+                    }
+                  >
+                    <FileTextIcon />
+                    {page.title || "Sem título"}
+                    {index === 0 ? <CommandShortcut>G P</CommandShortcut> : null}
+                  </CommandItem>
+                ))}
               </CommandGroup>
               <CommandSeparator />
               <CommandGroup heading="Conta">

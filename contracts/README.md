@@ -2,8 +2,10 @@
 
 Spec canônica do modelo de dados e das cinco operações. As implementações espelham este documento:
 
-- TypeScript (cliente): `frontend/lib/contracts.ts` — tipos usados pelo editor e pelo engine local.
-- Rust (servidor, a partir do M2): structs em `backend/src/` — o apply do servidor reimplementa a mesma semântica, coberta pelos mesmos casos de teste.
+- TypeScript (cliente): `frontend/lib/contracts.ts` — tipos usados pelo editor e pelo engine local (`frontend/lib/engine/tree.ts`).
+- Rust (servidor): `backend/src/domain/block.rs` — o apply do servidor reimplementa a mesma semântica, coberta pelos mesmos casos de teste.
+
+A API HTTP está em [`docs/api/pages.md`](../docs/api/pages.md).
 
 Quando um segundo consumidor TypeScript existir (ex.: desktop client), promova `frontend/lib/contracts.ts` de volta a pacote compartilhado.
 
@@ -37,3 +39,20 @@ Toda op carrega `opId` (uuid do cliente, chave de idempotência no servidor).
 Invariantes que o apply valida (nos dois lados): pai existe e não está trashed, sem ciclos em `move`, raiz não move nem vai ao trash, id duplicado em `insert` rejeitado, índices sofrem clamp.
 
 Undo: aplicar uma op retorna sua inversa; o undo aplica inversas em ordem reversa e o redo é a inversa da inversa, calculada na hora. Rajadas de digitação coalescem num único passo (mesma `coalesceKey`).
+
+## Persistência (M2)
+
+Cada bloco é uma linha em `blocks` (`backend/migrations/0005_blocks_and_operations.sql`); os campos do contrato mapeiam 1:1, em snake_case. `content` é `uuid[]`, `properties` é `jsonb`. Todo workspace tem exatamente uma página raiz (`workspace_page_roots`), criada na mesma transação que o workspace.
+
+Cada write vira uma linha em `operations` (`workspace_id`, `seq`, `op_id`, `actor_id`, `operation` jsonb):
+
+- **Idempotência.** `(workspace_id, op_id)` é único. Reenviar a mesma op devolve o `{op_id, seq}` original sem reaplicar nada.
+- **Cursor.** `seq` é monotônico por workspace (`workspaces.operation_seq`). Op rejeitada não consome `seq`. É este o cursor de catch-up do M3.
+- **Serialização.** O apply trava a linha do workspace com `SELECT … FOR UPDATE`, aplica no engine e persiste na mesma transação. Ops estruturais nunca se cruzam.
+
+Limites conhecidos do M2 (endereçados no M3):
+
+- Transporte é HTTP, uma op por requisição. Sem WebSocket, sem broadcast: um segundo cliente só vê a mudança ao recarregar.
+- Sem LWW por propriedade. `propVersions` é aceito e ignorado; o último write que chega ao servidor vence a propriedade inteira. Como as escritas do workspace são serializadas, a árvore nunca corrompe — só a última escrita de texto ganha.
+- Sem catch-up por cursor: o cliente que perde ops recarrega a página.
+- Uma página filha renderizada dentro do pai é um link, nunca conteúdo inline: o `GET /pages/{id}` para a descida na página filha e devolve o bloco dela com `content: []`.

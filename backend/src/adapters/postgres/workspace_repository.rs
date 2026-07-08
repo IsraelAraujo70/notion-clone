@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::adapters::postgres::page_repository::create_workspace_root_page;
 use crate::adapters::postgres::tx::map_sqlx_error;
 use crate::application::ports::RepositoryError;
 use crate::application::ports::workspace::{CreateWorkspaceInviteRecord, WorkspaceRepository};
@@ -182,6 +183,11 @@ impl WorkspaceRepository for PostgresWorkspaceRepository {
         .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
+
+        create_workspace_root_page(&mut tx, workspace.id, owner_id)
+            .await
+            .map_err(map_sqlx_error)?;
+
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(workspace.into())
     }

@@ -4,14 +4,20 @@ use sqlx::PgPool;
 
 use crate::adapters::email::noop::NoopEmailSender;
 use crate::adapters::email::resend::ResendEmailSender;
-use crate::adapters::postgres::{PostgresAuthRepository, PostgresWorkspaceRepository};
+use crate::adapters::postgres::{
+    PostgresAuthRepository, PostgresPageRepository, PostgresWorkspaceRepository,
+};
 use crate::application::auth::{
     ChangePasswordUseCase, GetCurrentUserUseCase, LoginUseCase, LogoutUseCase,
     RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
 };
+use crate::application::pages::{
+    ApplyOperationUseCase, GetPageUseCase, ListPagesUseCase, ListTrashUseCase,
+};
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
+use crate::application::ports::page::PageRepository;
 use crate::application::ports::workspace::WorkspaceRepository;
 use crate::application::workspaces::{
     AcceptInviteUseCase, CreateWorkspaceUseCase, InviteMemberUseCase, ListInvitesUseCase,
@@ -38,6 +44,10 @@ pub struct AppState {
     pub update_member_role: UpdateMemberRoleUseCase,
     pub remove_member: RemoveMemberUseCase,
     pub accept_invite: AcceptInviteUseCase,
+    pub list_pages: ListPagesUseCase,
+    pub get_page: GetPageUseCase,
+    pub apply_operation: ApplyOperationUseCase,
+    pub list_trash: ListTrashUseCase,
 }
 
 impl AppState {
@@ -51,6 +61,8 @@ impl AppState {
             Arc::new(PostgresAuthRepository::new(pool.clone()));
         let workspace_repository: Arc<dyn WorkspaceRepository> =
             Arc::new(PostgresWorkspaceRepository::new(pool.clone()));
+        let page_repository: Arc<dyn PageRepository> =
+            Arc::new(PostgresPageRepository::new(pool.clone()));
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let email_sender: Arc<dyn EmailSender> = match resend_api_key {
             Some(api_key) => Arc::new(ResendEmailSender::new(api_key, resend_from_email)),
@@ -85,6 +97,14 @@ impl AppState {
             update_member_role: UpdateMemberRoleUseCase::new(workspace_repository.clone()),
             remove_member: RemoveMemberUseCase::new(workspace_repository.clone()),
             accept_invite: AcceptInviteUseCase::new(workspace_repository.clone(), clock.clone()),
+            list_pages: ListPagesUseCase::new(page_repository.clone(), workspace_repository.clone()),
+            get_page: GetPageUseCase::new(page_repository.clone(), workspace_repository.clone()),
+            apply_operation: ApplyOperationUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+                clock.clone(),
+            ),
+            list_trash: ListTrashUseCase::new(page_repository, workspace_repository),
         }
     }
 }

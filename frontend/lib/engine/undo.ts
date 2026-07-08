@@ -12,6 +12,12 @@ interface UndoEntry {
   coalesceKey?: string
 }
 
+/** `ops` são as operações efetivamente aplicadas — o editor as envia ao servidor. */
+export interface UndoResult {
+  tree: BlockTree
+  ops: Operation[]
+}
+
 export class UndoManager {
   private undoStack: UndoEntry[] = []
   private redoStack: Operation[][] = []
@@ -37,19 +43,19 @@ export class UndoManager {
     return this.redoStack.length > 0
   }
 
-  undo(tree: BlockTree): BlockTree {
+  undo(tree: BlockTree): UndoResult {
     const entry = this.undoStack.pop()
-    if (!entry) return tree
+    if (!entry) return { tree, ops: [] }
     const { tree: next, inverse } = applyAll(tree, entry.inverse)
     this.redoStack.push(inverse)
-    return next
+    return { tree: next, ops: entry.inverse }
   }
 
-  redo(tree: BlockTree): BlockTree {
+  redo(tree: BlockTree): UndoResult {
     const ops = this.redoStack.pop()
-    if (!ops) return tree
+    if (!ops) return { tree, ops: [] }
     const { tree: next, inverse } = applyAll(tree, ops)
     this.undoStack.push({ inverse })
-    return next
+    return { tree: next, ops }
   }
 }

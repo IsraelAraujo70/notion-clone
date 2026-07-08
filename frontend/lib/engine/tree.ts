@@ -24,11 +24,12 @@ export const WORKSPACE_ID = "local"
 export function newBlock(
   type: BlockType,
   properties: BlockProperties = {},
-  id: string = createId()
+  id: string = createId(),
+  workspaceId: string = WORKSPACE_ID
 ): Block {
   return {
     id,
-    workspaceId: WORKSPACE_ID,
+    workspaceId,
     type,
     properties,
     content: [],
@@ -44,6 +45,11 @@ export function createPageTree(
 ): BlockTree {
   const root = newBlock("page", { title }, rootId)
   return { rootId, blocks: new Map([[rootId, root]]) }
+}
+
+/** Monta a árvore a partir do que o servidor devolveu em `GET /pages/{id}`. */
+export function treeFromBlocks(rootId: string, blocks: Block[]): BlockTree {
+  return { rootId, blocks: new Map(blocks.map((block) => [block.id, block])) }
 }
 
 export function getBlock(tree: BlockTree, id: string): Block {

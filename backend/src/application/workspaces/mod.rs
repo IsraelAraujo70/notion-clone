@@ -4,7 +4,7 @@ pub mod invite_member;
 pub mod list_invites;
 pub mod list_members;
 pub mod list_workspaces;
-mod permissions;
+pub mod permissions;
 pub mod remove_member;
 pub mod revoke_invite;
 pub mod update_member_role;
