@@ -27,9 +27,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/microsaas-starter-api /usr/local/bin/microsaas-starter-api
+COPY --from=builder /app/target/release/notion-clone-api /usr/local/bin/notion-clone-api
+COPY --from=builder /app/target/release/notion-clone-worker /usr/local/bin/notion-clone-worker
 
 ENV HOST=0.0.0.0
 ENV PORT=8080
 
-CMD ["/usr/local/bin/microsaas-starter-api"]
+CMD ["/usr/local/bin/notion-clone-api"]
