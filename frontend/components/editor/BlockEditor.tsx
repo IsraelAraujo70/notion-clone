@@ -153,7 +153,9 @@ function blockClasses(type: BlockType) {
     case "code":
       return "min-h-10 rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6 whitespace-pre-wrap"
     case "callout":
-      return "rounded-md bg-secondary px-3 py-2 text-secondary-foreground"
+      // Fundo e padding ficam no wrapper (ícone + texto) para a lâmpada
+      // ficar no centro vertical do bloco, não flutuando ao lado.
+      return "min-h-7 text-secondary-foreground"
     case "divider":
       return "py-3"
     default:
@@ -1047,7 +1049,13 @@ export function BlockEditor({
               <hr className="border-border" />
             </div>
           ) : (
-            <div className="relative flex items-start gap-2">
+            <div
+              className={
+                block.type === "callout"
+                  ? "relative flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-secondary-foreground"
+                  : "relative flex items-start gap-2"
+              }
+            >
               {block.type === "bulleted_list_item" ? (
                 <span className="flex h-7 w-4 items-center justify-center text-lg leading-none text-muted-foreground">
                   •
@@ -1093,7 +1101,11 @@ export function BlockEditor({
                 </button>
               ) : null}
               {block.type === "callout" ? (
-                <span className="flex h-7 items-center text-base leading-none">
+                <span
+                  aria-hidden="true"
+                  data-callout-icon
+                  className="flex shrink-0 items-center justify-center text-base leading-none"
+                >
                   💡
                 </span>
               ) : null}

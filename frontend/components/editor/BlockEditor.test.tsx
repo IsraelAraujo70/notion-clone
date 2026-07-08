@@ -206,3 +206,34 @@ describe("BlockEditor block context menu", () => {
     )
   })
 })
+
+function treeWithCallout(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const callout = newBlock("callout", { text: "Aviso" }, "callout-1")
+  return applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-callout",
+    block: callout,
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+}
+
+describe("BlockEditor callout layout", () => {
+  // A lâmpada e o conteúdo compartilham o mesmo wrapper com items-center,
+  // para o centro vertical do bloco bater com o ícone (não items-start + h-7).
+  it("wraps icon and content in a centered callout shell", () => {
+    render(<BlockEditor {...editorProps(treeWithCallout(), new Set())} />)
+
+    const row = document.querySelector('[data-block-id="callout-1"]')
+    expect(row).toBeTruthy()
+
+    const icon = row!.querySelector("[data-callout-icon]")
+    expect(icon).toBeTruthy()
+    expect(icon).toHaveTextContent("💡")
+
+    const shell = icon!.parentElement
+    expect(shell).toHaveClass("items-center", "bg-secondary", "rounded-md")
+    expect(shell?.contains(row!.querySelector("[contenteditable]")!)).toBe(true)
+  })
+})
