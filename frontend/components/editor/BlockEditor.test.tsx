@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -118,5 +118,91 @@ describe("BlockEditor page blocks", () => {
 
     expect(document.querySelectorAll('[contenteditable="true"]')).toHaveLength(0)
     expect(screen.getByText("corpo")).toBeInTheDocument()
+  })
+})
+
+function treeWithToggle(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const toggle = newBlock("toggle", { text: "Toggle" }, "toggle-1")
+  const child = newBlock("paragraph", { text: "filho um" }, "child-1")
+  const withToggle = applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-toggle",
+    block: toggle,
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+  return applyOperation(withToggle, {
+    type: "insert_block",
+    opId: "insert-child",
+    block: child,
+    parentId: toggle.id,
+    index: 0,
+  }).tree
+}
+
+function editorProps(tree: BlockTree, collapsed: Set<string>) {
+  return {
+    tree,
+    collapsed,
+    onToggleCollapsed: vi.fn(),
+    selectedBlockId: null,
+    onSelectedBlockChange: vi.fn(),
+    dispatchBatch: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+  }
+}
+
+describe("BlockEditor toggle collapse", () => {
+  // Regressão: o efeito que escreve o texto no contenteditable dependia só de
+  // `tree`; expandir um toggle remontava os filhos sem tocar `tree` e eles
+  // voltavam em branco. O efeito agora também depende de `collapsed`.
+  it("keeps child text after collapse then expand", () => {
+    const tree = treeWithToggle()
+    const { rerender } = render(<BlockEditor {...editorProps(tree, new Set())} />)
+
+    const childText = () =>
+      document.querySelector('[data-block-id="child-1"] [contenteditable]')
+        ?.textContent
+
+    expect(childText()).toBe("filho um")
+
+    rerender(<BlockEditor {...editorProps(tree, new Set(["toggle-1"]))} />)
+    expect(
+      document.querySelector('[data-block-id="child-1"] [contenteditable]')
+    ).toBeNull()
+
+    rerender(<BlockEditor {...editorProps(tree, new Set())} />)
+    expect(childText()).toBe("filho um")
+  })
+})
+
+describe("BlockEditor block context menu", () => {
+  it("right-clicking the drag handle opens copy/cut/delete for that block", async () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor {...editorProps(createTree(), new Set())} dispatchBatch={dispatchBatch} />
+    )
+
+    const handle = container.querySelector(
+      '[data-cy="block-handle-numbered-item"]'
+    )!
+    fireEvent.contextMenu(handle)
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-cy="block-context-menu"]')
+      ).toBeInTheDocument()
+    )
+    expect(document.querySelector('[data-cy="block-menu-copy"]')).toBeInTheDocument()
+    expect(document.querySelector('[data-cy="block-menu-cut"]')).toBeInTheDocument()
+
+    fireEvent.click(document.querySelector('[data-cy="block-menu-delete"]')!)
+
+    expect(dispatchBatch).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: "delete_block", blockId: "numbered-item" })],
+      { breakCoalescing: true }
+    )
   })
 })

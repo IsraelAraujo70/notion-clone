@@ -44,10 +44,12 @@ export function Brand({
       href={href}
       className={cn(
         "flex items-center gap-3 rounded-sm font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+        // Colapsado: sem gap e centralizado, senão a marca encosta na borda esquerda.
+        "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0",
         className
       )}
     >
-      <span className="grid size-9 shrink-0 place-items-center group-data-[collapsible=icon]:size-8">
+      <span className="grid size-6 shrink-0 place-items-center">
         <ReasonMark />
       </span>
       <span className="group-data-[collapsible=icon]:hidden">reason</span>

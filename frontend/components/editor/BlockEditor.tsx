@@ -4,6 +4,7 @@ import type { Block, BlockType, Operation } from "@/lib/contracts"
 import {
   KeyboardEvent,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -25,6 +26,7 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@/lib/id"
+import { CopyIcon, ScissorsIcon, Trash2Icon } from "lucide-react"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
 
 type DropPosition = "above" | "below"
@@ -44,6 +46,12 @@ interface SlashState {
 interface DropState {
   blockId: string
   position: DropPosition
+}
+
+interface BlockMenuState {
+  x: number
+  y: number
+  ids: string[]
 }
 
 interface BlockEditorProps {
@@ -180,11 +188,22 @@ export function BlockEditor({
 }: BlockEditorProps) {
   const workspaceId = getBlock(tree, tree.rootId).workspaceId
   const editableRefs = useRef(new Map<string, HTMLElement>())
+  const containerRef = useRef<HTMLDivElement>(null)
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [slash, setSlash] = useState<SlashState | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [drop, setDrop] = useState<DropState | null>(null)
+  // Seleção de vários blocos (arrasto no gutter) + menu de contexto do bloco.
+  const [selection, setSelection] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
+  const selectionRef = useRef<ReadonlySet<string>>(new Set())
+  const [blockMenu, setBlockMenu] = useState<BlockMenuState | null>(null)
+  const marqueeRef = useRef<{ startY: number; active: boolean }>({
+    startY: 0,
+    active: false,
+  })
   const rows = useMemo(() => visibleBlocks(tree, collapsed), [tree, collapsed])
   const rowById = useMemo(
     () =>
@@ -211,12 +230,14 @@ export function BlockEditor({
   // (era isso que fazia a digitação sair invertida). O DOM é a fonte durante a
   // digitação; este efeito só escreve quando estado e DOM divergem — ou seja,
   // em mudanças externas (undo/redo, conversões, merge/split).
+  // `collapsed` entra nas deps: expandir um toggle remonta os contenteditables
+  // dos filhos sem mudar `tree`; sem re-rodar aqui eles voltariam em branco.
   useLayoutEffect(() => {
     for (const [blockId, element] of editableRefs.current) {
       const block = tree.blocks.get(blockId)
       if (block && isTextBlock(block)) setElementText(element, blockText(block))
     }
-  }, [tree])
+  }, [tree, collapsed])
 
   useLayoutEffect(() => {
     const request = focusRequestRef.current
@@ -748,6 +769,171 @@ export function BlockEditor({
     [dispatchBatch, draggingId, drop, focusVisible, tree]
   )
 
+  const setSelectionBoth = useCallback((next: ReadonlySet<string>) => {
+    selectionRef.current = next
+    setSelection(next)
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    if (selectionRef.current.size > 0) setSelectionBoth(new Set())
+  }, [setSelectionBoth])
+
+  // Ids na ordem visível; usado para copiar em ordem e para o range do arrasto.
+  const orderedIds = useCallback(
+    (ids: Iterable<string>) =>
+      [...ids].sort(
+        (a, b) =>
+          (rowById.get(a)?.visibleIndex ?? 0) -
+          (rowById.get(b)?.visibleIndex ?? 0)
+      ),
+    [rowById]
+  )
+
+  const collectText = useCallback(
+    (ids: string[]) =>
+      orderedIds(ids)
+        .map((id) => {
+          const block = tree.blocks.get(id)
+          return block ? blockText(block) : ""
+        })
+        .join("\n"),
+    [orderedIds, tree]
+  )
+
+  const deleteBlocks = useCallback(
+    (ids: string[]) => {
+      const idSet = new Set(ids)
+      // Só as raízes da seleção: se um ancestral também está selecionado, o
+      // delete dele já leva a subárvore junto (deletar um descendente trashed
+      // depois seria rejeitado pelo engine). A raiz da página nunca vai.
+      const roots = ids.filter((id) => {
+        const block = tree.blocks.get(id)
+        if (!block || !block.parentId) return false
+        let parent = block.parentId
+        while (parent) {
+          if (idSet.has(parent)) return false
+          parent = tree.blocks.get(parent)?.parentId ?? ""
+        }
+        return true
+      })
+      const ops = roots.map(
+        (id) =>
+          ({ type: "delete_block", opId: opId(), blockId: id }) satisfies Operation
+      )
+      if (ops.length) dispatchBatch(ops, { breakCoalescing: true })
+    },
+    [dispatchBatch, tree]
+  )
+
+  const openBlockMenu = useCallback(
+    (event: React.MouseEvent, blockId: string) => {
+      event.preventDefault()
+      if (readOnly) return
+      const current = selectionRef.current
+      const ids =
+        current.size > 0 && current.has(blockId) ? [...current] : [blockId]
+      if (!(current.size > 0 && current.has(blockId)))
+        setSelectionBoth(new Set([blockId]))
+      setBlockMenu({
+        x: Math.min(event.clientX, window.innerWidth - 208),
+        y: event.clientY,
+        ids,
+      })
+    },
+    [readOnly, setSelectionBoth]
+  )
+
+  const runBlockMenu = useCallback(
+    async (action: "copy" | "cut" | "delete") => {
+      const ids = blockMenu?.ids ?? []
+      setBlockMenu(null)
+      if (action !== "delete") {
+        try {
+          await navigator.clipboard.writeText(collectText(ids))
+        } catch {
+          // clipboard bloqueado (permissão/insegura): segue sem copiar.
+        }
+      }
+      if (action !== "copy") deleteBlocks(ids)
+      clearSelection()
+    },
+    [blockMenu, clearSelection, collectText, deleteBlocks]
+  )
+
+  // Arrasto no gutter/espaço vazio pinta os blocos entre o Y inicial e o atual.
+  const selectBetween = useCallback(
+    (y1: number, y2: number) => {
+      const container = containerRef.current
+      if (!container) return
+      const min = Math.min(y1, y2)
+      const max = Math.max(y1, y2)
+      const ids: string[] = []
+      container.querySelectorAll<HTMLElement>("[data-block-id]").forEach((node) => {
+        const rect = node.getBoundingClientRect()
+        if (rect.bottom >= min && rect.top <= max && node.dataset.blockId)
+          ids.push(node.dataset.blockId)
+      })
+      setSelectionBoth(new Set(ids))
+    },
+    [setSelectionBoth]
+  )
+
+  const handleContainerMouseDown = useCallback(
+    (event: React.MouseEvent) => {
+      if (readOnly || event.button !== 0) return
+      const target = event.target as HTMLElement
+      // Clique no texto/controles é edição normal; só o fundo inicia a seleção.
+      if (
+        target.closest('[contenteditable="true"]') ||
+        target.closest("button") ||
+        target.closest("input") ||
+        target.closest("a")
+      ) {
+        clearSelection()
+        return
+      }
+      marqueeRef.current = { startY: event.clientY, active: true }
+      clearSelection()
+    },
+    [clearSelection, readOnly]
+  )
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      if (!marqueeRef.current.active) return
+      if ((event.buttons & 1) === 0) {
+        marqueeRef.current.active = false
+        return
+      }
+      selectBetween(marqueeRef.current.startY, event.clientY)
+    }
+    const onUp = () => {
+      marqueeRef.current.active = false
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+  }, [selectBetween])
+
+  // Delete/Backspace com blocos selecionados apaga a seleção inteira.
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (selectionRef.current.size === 0) return
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault()
+        deleteBlocks([...selectionRef.current])
+        clearSelection()
+      } else if (event.key === "Escape") {
+        clearSelection()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [clearSelection, deleteBlocks])
+
   const renderBlock = (block: Block, depth: number): React.ReactNode => {
     const isFocused = focusedBlockId === block.id
     const text = blockText(block)
@@ -775,14 +961,26 @@ export function BlockEditor({
           draggable={false}
           onDragOver={(event) => handleDragOver(event, block)}
           onDrop={(event) => handleDrop(event, block)}
-          className={`group relative rounded px-8 py-0.5 transition-colors hover:bg-muted/40 ${
-            selectedBlockId === block.id ? "bg-muted/40" : ""
+          onContextMenu={(event) => {
+            // Right-click só abre o menu customizado quando o bloco está numa
+            // seleção; fora disso deixa o menu nativo do navegador (copiar texto).
+            if (selectionRef.current.has(block.id))
+              openBlockMenu(event, block.id)
+          }}
+          className={`group relative rounded px-8 py-0.5 transition-colors ${
+            selection.has(block.id)
+              ? "bg-primary/15"
+              : selectedBlockId === block.id
+                ? "bg-muted/40"
+                : "hover:bg-muted/40"
           }`}
         >
           <button
             type="button"
             draggable={!readOnly}
             aria-label="Arrastar bloco"
+            data-cy={`block-handle-${block.id}`}
+            onContextMenu={(event) => openBlockMenu(event, block.id)}
             className="pointer-events-none absolute top-1/2 -left-7 flex h-7 w-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-md text-muted-foreground/35 opacity-0 transition-[background,color,opacity] group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring active:cursor-grabbing"
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move"
@@ -851,10 +1049,12 @@ export function BlockEditor({
           ) : (
             <div className="relative flex items-start gap-2">
               {block.type === "bulleted_list_item" ? (
-                <span className="mt-1.5 w-4 text-center text-muted-foreground">•</span>
+                <span className="flex h-7 w-4 items-center justify-center text-lg leading-none text-muted-foreground">
+                  •
+                </span>
               ) : null}
               {block.type === "numbered_list_item" ? (
-                <span className="mt-0.5 w-6 text-right text-muted-foreground">
+                <span className="flex h-7 w-6 items-center justify-end text-muted-foreground">
                   {numberedValue(tree, block)}.
                 </span>
               ) : null}
@@ -863,7 +1063,7 @@ export function BlockEditor({
                   type="checkbox"
                   checked={checked}
                   disabled={readOnly}
-                  className="mt-2 h-4 w-4 accent-primary"
+                  className="mt-1.5 h-4 w-4 accent-primary"
                   onChange={(event) =>
                     dispatchBatch(
                       [
@@ -883,7 +1083,7 @@ export function BlockEditor({
                 <button
                   type="button"
                   aria-label="Alternar filhos"
-                  className={`mt-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-transform hover:bg-muted ${
+                  className={`flex h-7 w-5 items-center justify-center rounded text-muted-foreground transition-transform hover:bg-muted ${
                     isCollapsed ? "" : "rotate-90"
                   }`}
                   onMouseDown={(event) => event.preventDefault()}
@@ -893,7 +1093,9 @@ export function BlockEditor({
                 </button>
               ) : null}
               {block.type === "callout" ? (
-                <span className="mt-1 text-base">💡</span>
+                <span className="flex h-7 items-center text-base leading-none">
+                  💡
+                </span>
               ) : null}
               <div className="relative min-w-0 flex-1">
                 {showPlaceholder ? (
@@ -912,6 +1114,7 @@ export function BlockEditor({
                   onFocus={() => {
                     setFocusedBlockId(block.id)
                     onSelectedBlockChange(block.id)
+                    clearSelection()
                   }}
                   onBlur={() => {
                     setFocusedBlockId((current) =>
@@ -949,10 +1152,61 @@ export function BlockEditor({
   }
 
   return (
-    <div className="space-y-0.5">
+    <div
+      ref={containerRef}
+      className="space-y-0.5"
+      onMouseDown={handleContainerMouseDown}
+    >
       {getBlock(tree, tree.rootId).content.map((childId) =>
         renderBlock(getBlock(tree, childId), 0)
       )}
+
+      {blockMenu ? (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onMouseDown={() => setBlockMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setBlockMenu(null)
+            }}
+          />
+          <div
+            data-cy="block-context-menu"
+            className="fixed z-50 min-w-48 rounded-md border bg-popover p-1 text-sm text-popover-foreground shadow-md"
+            style={{ left: blockMenu.x, top: blockMenu.y }}
+          >
+            <button
+              type="button"
+              data-cy="block-menu-copy"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              onClick={() => void runBlockMenu("copy")}
+            >
+              <CopyIcon className="size-4" />
+              Copiar
+            </button>
+            <button
+              type="button"
+              data-cy="block-menu-cut"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              onClick={() => void runBlockMenu("cut")}
+            >
+              <ScissorsIcon className="size-4" />
+              Recortar
+            </button>
+            <button
+              type="button"
+              data-cy="block-menu-delete"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-destructive hover:bg-destructive/10"
+              onClick={() => void runBlockMenu("delete")}
+            >
+              <Trash2Icon className="size-4" />
+              Apagar
+              {blockMenu.ids.length > 1 ? ` (${blockMenu.ids.length})` : ""}
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

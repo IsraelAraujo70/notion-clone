@@ -103,7 +103,13 @@ export function CommandMenuProvider({
                       runCommand(() => router.push(pagePath(page.id)))
                     }
                   >
-                    <FileTextIcon />
+                    {page.icon ? (
+                      <span aria-hidden="true" className="text-base leading-none">
+                        {page.icon}
+                      </span>
+                    ) : (
+                      <FileTextIcon />
+                    )}
                     {page.title || "Sem título"}
                     {index === 0 ? <CommandShortcut>G P</CommandShortcut> : null}
                   </CommandItem>
