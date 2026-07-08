@@ -16,7 +16,7 @@ Quando um segundo consumidor TypeScript existir (ex.: desktop client), promova `
 | `id` | uuid | Gerado no cliente. |
 | `workspaceId` | uuid | Chave de partição de tudo. |
 | `type` | enum | `page`, `paragraph`, `heading1..3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`. |
-| `properties` | json | Por tipo: `text`, `checked`, `language`, `title`, `icon`. |
+| `properties` | json | Por tipo: `text`, `checked`, `language`, `title` (page), `icon` (page, um emoji). |
 | `content` | uuid[] | Filhos **vivos**, na ordem. `content` manda na ordem; `parentId` na pertinência. Os dois sempre concordam. |
 | `parentId` | uuid \| null | Null só na raiz. |
 | `trashedAt` | timestamp \| null | Soft delete. Bloco trashed sai do `content` do pai; descendentes ficam intactos. |

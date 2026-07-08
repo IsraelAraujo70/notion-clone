@@ -53,7 +53,7 @@ describe("BlockEditor drag handle", () => {
 
 function treeWithChildPage(): BlockTree {
   const page = createPageTree("Pai", "page-root")
-  const child = newBlock("page", { title: "Filha" }, "child-page")
+  const child = newBlock("page", { title: "Filha", icon: "🚀" }, "child-page")
   const body = newBlock("paragraph", { text: "corpo" }, "body")
 
   return applyOperation(
@@ -92,6 +92,7 @@ describe("BlockEditor page blocks", () => {
     )
 
     const link = screen.getByRole("button", { name: "Filha" })
+    expect(link).toHaveTextContent("🚀")
     await userEvent.click(link)
     expect(onOpenPage).toHaveBeenCalledWith("child-page")
 

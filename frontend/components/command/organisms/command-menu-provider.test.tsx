@@ -31,8 +31,8 @@ describe("CommandMenuProvider", () => {
   })
 
   const pages = [
-    { id: "page-root", title: "Notas", parent_page_id: null },
-    { id: "page-child", title: "", parent_page_id: "page-root" },
+    { id: "page-root", title: "Notas", icon: "", parent_page_id: null },
+    { id: "page-child", title: "", icon: "", parent_page_id: "page-root" },
   ]
 
   it("opens from keyboard and navigates to a real page", async () => {

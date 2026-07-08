@@ -303,11 +303,11 @@ describe("api client", () => {
   it("reads pages, page trees and trash with the session token", async () => {
     const pageList = {
       root_page_id: "page-root",
-      pages: [{ id: "page-root", title: "Notas", parent_page_id: null }],
+      pages: [{ id: "page-root", title: "Notas", icon: "🚀", parent_page_id: null }],
     }
     const page = {
       page: { rootId: "page-root", blocks: [] },
-      breadcrumbs: [{ id: "page-root", title: "Notas" }],
+      breadcrumbs: [{ id: "page-root", title: "Notas", icon: "🚀" }],
       seq: 7,
     }
     const trash = [

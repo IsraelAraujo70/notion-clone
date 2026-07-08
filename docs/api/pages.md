@@ -20,8 +20,8 @@ Sidebar tree. Ordered by the editor's own block order (depth-first over `content
 {
   "root_page_id": "0d3b…",
   "pages": [
-    { "id": "0d3b…", "title": "Notas de lançamento", "parent_page_id": null },
-    { "id": "77af…", "title": "Sub-página", "parent_page_id": "0d3b…" }
+    { "id": "0d3b…", "title": "Notas de lançamento", "icon": "🚀", "parent_page_id": null },
+    { "id": "77af…", "title": "Sub-página", "icon": "", "parent_page_id": "0d3b…" }
   ]
 }
 ```
@@ -42,7 +42,7 @@ page arrives as a block with `content: []`, and the editor renders it as a link.
         "id": "0d3b…",
         "workspaceId": "9c11…",
         "type": "page",
-        "properties": { "title": "Notas de lançamento" },
+        "properties": { "title": "Notas de lançamento", "icon": "🚀" },
         "content": ["4e02…", "77af…"],
         "parentId": null,
         "trashedAt": null,
@@ -70,7 +70,7 @@ page arrives as a block with `content: []`, and the editor renders it as a link.
       }
     ]
   },
-  "breadcrumbs": [{ "id": "0d3b…", "title": "Notas de lançamento" }],
+  "breadcrumbs": [{ "id": "0d3b…", "title": "Notas de lançamento", "icon": "🚀" }],
   "seq": 6
 }
 ```
@@ -124,6 +124,10 @@ Other operations:
 
 { "type": "restore_block", "opId": "…", "blockId": "…" }
 ```
+
+A page block carries `title` and, optionally, `icon` (a single emoji). Renaming a
+page, setting its icon, and moving it to the trash are just `update_block` /
+`delete_block` on the page block — there is no page-specific endpoint.
 
 `properties` is a patch: `null` removes the key. `propVersions` is accepted and
 ignored until M3 (property-level LWW).

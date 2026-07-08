@@ -2,14 +2,14 @@ import Link from "next/link"
 
 import { cn } from "@/lib/utils"
 
-// Mesma marca do sidebar (`public/reason-logo-sidebar-*.svg`), inline para herdar
-// a cor do tema e não pagar uma requisição no topo da landing.
-function ReasonMark() {
+// Uma marca só, herdando `currentColor`: no tema escuro ela vira branca sem
+// precisar de um segundo arquivo SVG nem de troca de asset por classe.
+export function ReasonMark({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
       viewBox="0 0 256 256"
-      className="size-full"
+      className={cn("size-full", className)}
       fill="none"
     >
       <rect
@@ -18,11 +18,10 @@ function ReasonMark() {
         width="224"
         height="224"
         rx="47"
-        fill="#ffffff"
-        stroke="#111111"
+        stroke="currentColor"
         strokeWidth="14"
       />
-      <g fill="#111111">
+      <g fill="currentColor">
         <rect x="58" y="58" width="40" height="40" rx="2" />
         <rect x="58" y="108" width="40" height="40" rx="2" />
         <rect x="58" y="158" width="40" height="40" rx="2" />
@@ -33,16 +32,22 @@ function ReasonMark() {
   )
 }
 
-export function Brand({ className }: { className?: string }) {
+export function Brand({
+  className,
+  href = "/",
+}: {
+  className?: string
+  href?: string
+}) {
   return (
     <Link
-      href="/"
+      href={href}
       className={cn(
         "flex items-center gap-3 rounded-sm font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
         className
       )}
     >
-      <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg group-data-[collapsible=icon]:size-8">
+      <span className="grid size-9 shrink-0 place-items-center group-data-[collapsible=icon]:size-8">
         <ReasonMark />
       </span>
       <span className="group-data-[collapsible=icon]:hidden">reason</span>

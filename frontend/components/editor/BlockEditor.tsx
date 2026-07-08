@@ -25,7 +25,6 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@/lib/id"
-import { FileTextIcon } from "lucide-react"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
 
 type DropPosition = "above" | "below"
@@ -142,11 +141,11 @@ function blockClasses(type: BlockType) {
     case "heading3":
       return "text-xl font-semibold leading-snug"
     case "quote":
-      return "border-l-4 border-zinc-300 pl-3 italic text-zinc-700"
+      return "border-l-4 border-border pl-3 italic text-muted-foreground"
     case "code":
-      return "min-h-10 rounded-md bg-zinc-100 px-3 py-2 font-mono text-sm leading-6 whitespace-pre-wrap"
+      return "min-h-10 rounded-md bg-muted px-3 py-2 font-mono text-sm leading-6 whitespace-pre-wrap"
     case "callout":
-      return "rounded-md bg-amber-50 px-3 py-2 text-zinc-800"
+      return "rounded-md bg-secondary px-3 py-2 text-secondary-foreground"
     case "divider":
       return "py-3"
     default:
@@ -768,7 +767,7 @@ export function BlockEditor({
         style={{ paddingLeft: depth > 0 ? 24 : 0 }}
       >
         {drop?.blockId === block.id && drop.position === "above" ? (
-          <div className="h-0.5 rounded bg-sky-500" />
+          <div className="h-0.5 rounded bg-primary" />
         ) : null}
         <div
           data-block-id={block.id}
@@ -776,8 +775,8 @@ export function BlockEditor({
           draggable={false}
           onDragOver={(event) => handleDragOver(event, block)}
           onDrop={(event) => handleDrop(event, block)}
-          className={`group relative rounded px-8 py-0.5 transition-colors hover:bg-zinc-50 ${
-            selectedBlockId === block.id ? "bg-zinc-50" : ""
+          className={`group relative rounded px-8 py-0.5 transition-colors hover:bg-muted/40 ${
+            selectedBlockId === block.id ? "bg-muted/40" : ""
           }`}
         >
           <button
@@ -818,10 +817,12 @@ export function BlockEditor({
               className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-base leading-7 font-medium underline-offset-4 hover:underline"
               onClick={() => onOpenPage?.(block.id)}
             >
-              <FileTextIcon
-                className="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
+              <span aria-hidden="true" className="shrink-0 text-base leading-none">
+                {typeof block.properties.icon === "string" &&
+                block.properties.icon.length > 0
+                  ? block.properties.icon
+                  : "📄"}
+              </span>
               <span className="truncate">
                 {typeof block.properties.title === "string" &&
                 block.properties.title.length > 0
@@ -845,15 +846,15 @@ export function BlockEditor({
                 }
               }}
             >
-              <hr className="border-zinc-200" />
+              <hr className="border-border" />
             </div>
           ) : (
             <div className="relative flex items-start gap-2">
               {block.type === "bulleted_list_item" ? (
-                <span className="mt-1.5 w-4 text-center text-zinc-500">•</span>
+                <span className="mt-1.5 w-4 text-center text-muted-foreground">•</span>
               ) : null}
               {block.type === "numbered_list_item" ? (
-                <span className="mt-0.5 w-6 text-right text-zinc-500">
+                <span className="mt-0.5 w-6 text-right text-muted-foreground">
                   {numberedValue(tree, block)}.
                 </span>
               ) : null}
@@ -862,7 +863,7 @@ export function BlockEditor({
                   type="checkbox"
                   checked={checked}
                   disabled={readOnly}
-                  className="mt-2 h-4 w-4 accent-zinc-900"
+                  className="mt-2 h-4 w-4 accent-primary"
                   onChange={(event) =>
                     dispatchBatch(
                       [
@@ -882,7 +883,7 @@ export function BlockEditor({
                 <button
                   type="button"
                   aria-label="Alternar filhos"
-                  className={`mt-1 flex h-5 w-5 items-center justify-center rounded text-zinc-500 transition-transform hover:bg-zinc-100 ${
+                  className={`mt-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-transform hover:bg-muted ${
                     isCollapsed ? "" : "rotate-90"
                   }`}
                   onMouseDown={(event) => event.preventDefault()}
@@ -896,7 +897,7 @@ export function BlockEditor({
               ) : null}
               <div className="relative min-w-0 flex-1">
                 {showPlaceholder ? (
-                  <span className="pointer-events-none absolute top-0 left-0 text-zinc-400">
+                  <span className="pointer-events-none absolute top-0 left-0 text-muted-foreground/60">
                     Escreva algo, ou tecle &apos;/&apos; para comandos
                   </span>
                 ) : null}
@@ -906,7 +907,7 @@ export function BlockEditor({
                   suppressContentEditableWarning
                   spellCheck={block.type !== "code"}
                   className={`min-h-7 w-full break-words outline-none ${blockClasses(block.type)} ${
-                    checked ? "text-zinc-400 line-through" : ""
+                    checked ? "text-muted-foreground line-through" : ""
                   }`}
                   onFocus={() => {
                     setFocusedBlockId(block.id)
@@ -938,7 +939,7 @@ export function BlockEditor({
           )}
         </div>
         {drop?.blockId === block.id && drop.position === "below" ? (
-          <div className="h-0.5 rounded bg-sky-500" />
+          <div className="h-0.5 rounded bg-primary" />
         ) : null}
         {block.type === "toggle" && isCollapsed
           ? null

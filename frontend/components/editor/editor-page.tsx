@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
+import { EmojiPicker } from "@/components/pages/emoji-picker"
 import { pagePath, usePages } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import {
@@ -37,8 +38,8 @@ function opId() {
   return createId()
 }
 
-function titleText(tree: BlockTree) {
-  const value = getBlock(tree, tree.rootId).properties.title
+function pageProperty(tree: BlockTree, key: "title" | "icon") {
+  const value = getBlock(tree, tree.rootId).properties[key]
   return typeof value === "string" ? value : ""
 }
 
@@ -66,6 +67,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   // fila de envio) e não podem morar dentro de um updater do setState.
   const treeRef = useRef<BlockTree | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const sidebarDirty = useRef(false)
 
   const commit = useCallback((next: BlockTree | null) => {
     treeRef.current = next
@@ -151,6 +153,36 @@ export function EditorPage({ pageId }: { pageId: string }) {
     [dispatchBatch]
   )
 
+  // Título e ícone mudam a sidebar, mas só depois que a fila entrega a op:
+  // um refresh otimista leria o servidor antes da escrita chegar nele.
+  const flushSidebar = useCallback(async () => {
+    sidebarDirty.current = true
+    await queueRef.current?.drained()
+    if (!sidebarDirty.current) return
+    sidebarDirty.current = false
+    await refreshPages()
+  }, [refreshPages])
+
+  const setIcon = useCallback(
+    (icon: string | null) => {
+      const current = treeRef.current
+      if (!current) return
+      dispatchBatch(
+        [
+          {
+            type: "update_block",
+            opId: opId(),
+            blockId: current.rootId,
+            properties: { icon },
+          },
+        ],
+        { breakCoalescing: true }
+      )
+      void flushSidebar()
+    },
+    [dispatchBatch, flushSidebar]
+  )
+
   const undo = useCallback(() => {
     undoRef.current.breakCoalescing()
     if (!treeRef.current) return
@@ -199,8 +231,17 @@ export function EditorPage({ pageId }: { pageId: string }) {
     [redo, tree, undo]
   )
 
-  const pageTitle = tree ? titleText(tree) : ""
+  const pageTitle = tree ? pageProperty(tree, "title") : ""
+  const pageIcon = tree ? pageProperty(tree, "icon") : ""
   const titleRef = useRef<HTMLHeadingElement>(null)
+
+  // Os breadcrumbs vêm do servidor, mas a última migalha é a página aberta:
+  // ela precisa acompanhar o título/ícone que o usuário está digitando agora.
+  const crumbs: Crumb[] = breadcrumbs.map((crumb, index) =>
+    index === breadcrumbs.length - 1
+      ? { ...crumb, title: pageTitle, icon: pageIcon }
+      : crumb
+  )
 
   // Mesmo contrato do BlockEditor: o título nunca é filho React do
   // contenteditable; o DOM só é escrito quando diverge do estado (undo/redo).
@@ -229,11 +270,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
       <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-4 border-b bg-background/80 px-6 backdrop-blur">
         <Breadcrumb>
           <BreadcrumbList>
-            {breadcrumbs.map((crumb, index) => (
+            {crumbs.map((crumb, index) => (
               <Fragment key={crumb.id}>
                 <BreadcrumbItem>
-                  {index === breadcrumbs.length - 1 ? (
+                  {index === crumbs.length - 1 ? (
                     <BreadcrumbPage data-cy="breadcrumb-current">
+                      <span aria-hidden="true" className="mr-1">
+                        {crumb.icon || "📄"}
+                      </span>
                       {crumb.title || "Sem título"}
                     </BreadcrumbPage>
                   ) : (
@@ -241,11 +285,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
                       href={pagePath(crumb.id)}
                       data-cy={`breadcrumb-${crumb.id}`}
                     >
+                      <span aria-hidden="true" className="mr-1">
+                        {crumb.icon || "📄"}
+                      </span>
                       {crumb.title || "Sem título"}
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>
-                {index < breadcrumbs.length - 1 ? <BreadcrumbSeparator /> : null}
+                {index < crumbs.length - 1 ? <BreadcrumbSeparator /> : null}
               </Fragment>
             ))}
           </BreadcrumbList>
@@ -281,6 +328,12 @@ export function EditorPage({ pageId }: { pageId: string }) {
           </div>
         ) : (
           <>
+            <EmojiPicker
+              value={pageProperty(tree, "icon")}
+              disabled={!canWrite}
+              onSelect={setIcon}
+              className="-ml-2 mb-1"
+            />
             <h1
               ref={titleRef}
               data-cy="page-title"
@@ -293,8 +346,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
               }
               onBlur={() => {
                 undoRef.current.breakCoalescing()
-                // Sidebar e breadcrumbs só reagem ao título quando a rajada termina.
-                void refreshPages()
+                void flushSidebar()
               }}
               onKeyDown={handleTitleKeyDown}
             />

@@ -18,6 +18,8 @@ pub struct PageTree {
 pub struct PageSummary {
     pub id: Uuid,
     pub title: String,
+    /// Emoji escolhido como ícone da página (`properties.icon`), vazio se não houver.
+    pub icon: String,
     pub parent_page_id: Option<Uuid>,
 }
 
@@ -25,6 +27,7 @@ pub struct PageSummary {
 pub struct Breadcrumb {
     pub id: Uuid,
     pub title: String,
+    pub icon: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -2,10 +2,11 @@
 
 import { useState, type ComponentProps } from "react"
 import { SearchIcon, Trash2Icon } from "lucide-react"
-import Image from "next/image"
 
+import { Brand } from "@/components/atoms/brand"
 import { useCommandMenu } from "@/components/command/organisms/command-menu-provider"
 import { NavPages } from "@/components/pages/nav-pages"
+import { pagePath, usePages } from "@/components/pages/page-provider"
 import { NavUser } from "@/components/nav-user"
 import { TrashDialog } from "@/components/pages/trash-dialog"
 import { Kbd } from "@/components/ui/kbd"
@@ -24,6 +25,7 @@ import {
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const { openMenu } = useCommandMenu()
+  const { rootPageId } = usePages()
   const [trashOpen, setTrashOpen] = useState(false)
 
   return (
@@ -31,23 +33,8 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className="h-9">
-              <Image
-                src="/reason-logo-sidebar-expanded.svg"
-                alt="reason"
-                width={110}
-                height={24}
-                className="h-7 w-auto group-data-[collapsible=icon]:hidden"
-                priority
-              />
-              <Image
-                src="/reason-logo-sidebar-collapsed.svg"
-                alt="reason"
-                width={24}
-                height={24}
-                className="hidden size-6 group-data-[collapsible=icon]:block"
-                priority
-              />
+            <SidebarMenuButton asChild className="h-9">
+              <Brand href={rootPageId ? pagePath(rootPageId) : "/dashboard"} />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

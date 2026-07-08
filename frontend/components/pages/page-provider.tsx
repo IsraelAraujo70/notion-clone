@@ -26,6 +26,10 @@ type PageContextValue = {
   canWrite: boolean
   refreshPages: () => Promise<void>
   createChildPage: (parentPageId: string) => Promise<string>
+  renamePage: (pageId: string, title: string) => Promise<void>
+  setPageIcon: (pageId: string, icon: string | null) => Promise<void>
+  /** Manda a página (e a subárvore dela) para a lixeira. A raiz não pode ir. */
+  deletePage: (pageId: string) => Promise<void>
   trash: TrashEntry[]
   refreshTrash: () => Promise<void>
   restore: (blockId: string) => Promise<void>
@@ -141,6 +145,47 @@ export function PageProvider({
     [activeWorkspaceId, loadPages, token]
   )
 
+  // Rename/ícone/delete pelo menu de contexto: a página alvo pode ser a que está
+  // aberta, então bumpamos `pageRevision` para o editor recarregar do servidor.
+  const patchPage = useCallback(
+    async (pageId: string, properties: Record<string, string | null>) => {
+      if (!token || !activeWorkspaceId) return
+      await api.applyOperation(token, activeWorkspaceId, {
+        type: "update_block",
+        opId: createId(),
+        blockId: pageId,
+        properties,
+      })
+      await loadPages()
+      setPageRevision((revision) => revision + 1)
+    },
+    [activeWorkspaceId, loadPages, token]
+  )
+
+  const renamePage = useCallback(
+    (pageId: string, title: string) => patchPage(pageId, { title }),
+    [patchPage]
+  )
+
+  const setPageIcon = useCallback(
+    (pageId: string, icon: string | null) => patchPage(pageId, { icon }),
+    [patchPage]
+  )
+
+  const deletePage = useCallback(
+    async (pageId: string) => {
+      if (!token || !activeWorkspaceId) return
+      await api.applyOperation(token, activeWorkspaceId, {
+        type: "delete_block",
+        opId: createId(),
+        blockId: pageId,
+      })
+      await loadPages()
+      setPageRevision((revision) => revision + 1)
+    },
+    [activeWorkspaceId, loadPages, token]
+  )
+
   const restore = useCallback(
     async (blockId: string) => {
       if (!token || !activeWorkspaceId) return
@@ -169,6 +214,9 @@ export function PageProvider({
         await loadPages()
       },
       createChildPage,
+      renamePage,
+      setPageIcon,
+      deletePage,
       trash,
       refreshTrash,
       restore,
@@ -177,14 +225,17 @@ export function PageProvider({
     [
       canWrite,
       createChildPage,
+      deletePage,
       loadPages,
       loading,
       pageId,
       pageRevision,
       pages,
       refreshTrash,
+      renamePage,
       restore,
       rootPageId,
+      setPageIcon,
       trash,
       workspaceLoading,
     ]

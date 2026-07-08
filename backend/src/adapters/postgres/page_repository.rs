@@ -65,6 +65,7 @@ impl TryFrom<BlockRow> for Block {
 struct PageSummaryRow {
     id: Uuid,
     title: String,
+    icon: String,
     parent_page_id: Option<Uuid>,
 }
 
@@ -72,6 +73,7 @@ struct PageSummaryRow {
 struct BreadcrumbRow {
     id: Uuid,
     title: String,
+    icon: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -218,7 +220,10 @@ impl PageRepository for PostgresPageRepository {
                  JOIN blocks c ON c.id = child.child_id
                  WHERE c.workspace_id = $1 AND c.trashed_at IS NULL
              )
-             SELECT id, COALESCE(properties->>'title', '') AS title, parent_page_id
+             SELECT id,
+                    COALESCE(properties->>'title', '') AS title,
+                    COALESCE(properties->>'icon', '') AS icon,
+                    parent_page_id
              FROM walk
              WHERE type = 'page'
              ORDER BY path",
@@ -236,6 +241,7 @@ impl PageRepository for PostgresPageRepository {
                 .map(|row| PageSummary {
                     id: row.id,
                     title: row.title,
+                    icon: row.icon,
                     parent_page_id: row.parent_page_id,
                 })
                 .collect(),
@@ -297,7 +303,9 @@ impl PageRepository for PostgresPageRepository {
                  JOIN blocks b ON b.id = a.parent_id
                  WHERE b.workspace_id = $1
              )
-             SELECT id, COALESCE(properties->>'title', '') AS title
+             SELECT id,
+                    COALESCE(properties->>'title', '') AS title,
+                    COALESCE(properties->>'icon', '') AS icon
              FROM ancestors
              WHERE type = 'page'
              ORDER BY depth DESC",
@@ -326,6 +334,7 @@ impl PageRepository for PostgresPageRepository {
                 .map(|row| Breadcrumb {
                     id: row.id,
                     title: row.title,
+                    icon: row.icon,
                 })
                 .collect(),
             seq,

@@ -52,6 +52,8 @@ export type WorkspaceInvitePreview = {
 export type PageSummary = {
   id: string
   title: string
+  /** Emoji do `properties.icon` da página; string vazia quando não há. */
+  icon: string
   parent_page_id: string | null
 }
 
@@ -63,6 +65,7 @@ export type PageListResponse = {
 export type Breadcrumb = {
   id: string
   title: string
+  icon: string
 }
 
 export type PageResponse = {

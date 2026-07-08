@@ -89,13 +89,13 @@ export function SlashMenu({
   if (items.length === 0) return null
 
   return (
-    <div className="absolute top-full left-0 z-20 mt-1 w-72 overflow-hidden rounded-md border border-zinc-200 bg-white py-1 text-zinc-900 shadow-lg">
+    <div className="absolute top-full left-0 z-20 mt-1 w-72 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg">
       {items.map((item, index) => (
         <button
           key={item.type}
           type="button"
           className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm ${
-            index === activeIndex ? "bg-zinc-100" : "hover:bg-zinc-50"
+            index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
           }`}
           onMouseEnter={() => onHover(index)}
           onMouseDown={(event) => {
@@ -103,7 +103,7 @@ export function SlashMenu({
             onSelect(item.type)
           }}
         >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-600">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border bg-muted text-xs font-semibold text-muted-foreground">
             {item.icon}
           </span>
           <span className="truncate">{item.label}</span>

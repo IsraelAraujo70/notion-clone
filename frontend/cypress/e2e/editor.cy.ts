@@ -80,7 +80,7 @@ describe("block editor", () => {
       .eq(1)
       .should("have.text", "Segundo bloco")
     cy.get('[data-cy="breadcrumb-current"]').should(
-      "have.text",
+      "contain.text",
       "Notas de lançamento"
     )
   })
@@ -91,7 +91,7 @@ describe("block editor", () => {
     saved()
 
     cy.location("pathname").then((parentPath) => {
-      cy.get('[data-cy="nav-page-create"]').click()
+      cy.get('[data-cy="nav-pages-create"]').click()
       cy.location("pathname").should("not.eq", parentPath)
 
       cy.get('[data-cy="page-title"]').click().type("Filha")
@@ -102,17 +102,80 @@ describe("block editor", () => {
       cy.get('[data-cy="page-title"]').should("have.text", "Filha")
       firstBlock().should("have.text", "corpo da filha")
 
-      cy.get('[data-cy="breadcrumb-current"]').should("have.text", "Filha")
+      cy.get('[data-cy="breadcrumb-current"]').should("contain.text", "Filha")
       cy.get('[data-cy^="breadcrumb-"]')
         .not('[data-cy="breadcrumb-current"]')
         .click()
       cy.location("pathname").should("eq", parentPath)
 
       // Na página pai, a filha é um link — nunca conteúdo expandido.
-      cy.get('[data-cy^="page-link-"]').should("have.text", "Filha")
+      cy.get('[data-cy^="page-link-"]').should("contain.text", "Filha")
       cy.contains("corpo da filha").should("not.exist")
       cy.get('[data-cy^="page-link-"]').click()
       cy.get('[data-cy="page-title"]').should("have.text", "Filha")
+    })
+  })
+
+  it("sets an emoji icon and shows it in the sidebar and breadcrumb", () => {
+    cy.get('[data-cy="page-title"]').click().type("Lançamento")
+    cy.get('[data-cy="page-title"]').blur()
+
+    cy.get('[data-cy="page-icon-trigger"]').should("have.text", "📄").click()
+    cy.get('[data-cy="page-icon-option-🚀"]').click()
+    cy.get('[data-cy="page-icon-trigger"]').should("have.text", "🚀")
+    saved()
+
+    cy.location("pathname").then((path) => {
+      const pageId = path.split("/").pop()!
+      cy.get(`[data-cy="nav-page-${pageId}"]`).should("contain.text", "🚀")
+    })
+    cy.get('[data-cy="breadcrumb-current"]').should("contain.text", "🚀")
+
+    cy.reload()
+    cy.get('[data-cy="page-icon-trigger"]').should("have.text", "🚀")
+
+    cy.get('[data-cy="page-icon-trigger"]').click()
+    cy.get('[data-cy="page-icon-remove"]').click()
+    cy.get('[data-cy="page-icon-trigger"]').should("have.text", "📄")
+  })
+
+  it("renames and trashes a page from the sidebar context menu", () => {
+    cy.location("pathname").then((rootPath) => {
+      const rootId = rootPath.split("/").pop()!
+
+      cy.get('[data-cy="nav-pages-create"]').click()
+      // O router só troca depois que as duas insert_block são aceitas.
+      cy.location("pathname").should("not.eq", rootPath)
+
+      // A raiz não pode ir para a lixeira: o item nem aparece.
+      cy.get(`[data-cy="nav-page-${rootId}"]`).rightclick()
+      cy.get('[data-cy="nav-page-rename"]').should("be.visible")
+      cy.get('[data-cy="nav-page-delete"]').should("not.exist")
+      cy.get("body").type("{esc}")
+
+      cy.location("pathname").then((childPath) => {
+        const childId = childPath.split("/").pop()!
+
+        cy.get(`[data-cy="nav-page-${childId}"]`).rightclick()
+        cy.get('[data-cy="nav-page-rename"]').click()
+        cy.get('[data-cy="rename-page-input"]')
+          .should("be.focused")
+          .type("Renomeada")
+        cy.get('[data-cy="rename-page-submit"]').click()
+
+        cy.get(`[data-cy="nav-page-${childId}"]`).should("contain.text", "Renomeada")
+        cy.get('[data-cy="page-title"]').should("have.text", "Renomeada")
+
+        cy.get(`[data-cy="nav-page-${childId}"]`).rightclick()
+        cy.get('[data-cy="nav-page-delete"]').click()
+
+        // A página aberta foi para o lixo: volta para a raiz e some da sidebar.
+        cy.location("pathname").should("eq", rootPath)
+        cy.get(`[data-cy="nav-page-${childId}"]`).should("not.exist")
+
+        cy.get('[data-cy="trash-trigger"]').click()
+        cy.get(`[data-cy="trash-entry-${childId}"]`).should("contain.text", "Renomeada")
+      })
     })
   })
 
