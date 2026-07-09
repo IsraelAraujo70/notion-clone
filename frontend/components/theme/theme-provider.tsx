@@ -5,32 +5,46 @@ import { usePathname } from "next/navigation"
 
 import {
   type AppTheme,
-  getNextTheme,
+  type AppThemeName,
+  APP_THEME_DEFINITIONS,
+  DEFAULT_APP_THEME,
+  type ThemeMode,
+  getNextMode,
   getThemeStorageKey,
-  isAppTheme,
   isAppThemeRoute,
+  normalizeStoredTheme,
 } from "@/lib/theme"
 
 type ThemeContextValue = {
-  theme: AppTheme
-  resolvedTheme: AppTheme
-  setTheme: (theme: AppTheme) => void
+  theme: AppThemeName
+  mode: ThemeMode
+  setTheme: (theme: AppThemeName) => void
+  setMode: (mode: ThemeMode) => void
 }
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null)
 
-function readStoredTheme(storageKey: string): AppTheme {
+function readStoredTheme(storageKey: string, appThemeRoute: boolean): AppTheme {
   if (typeof window === "undefined") {
-    return "light"
+    return DEFAULT_APP_THEME
   }
 
   const stored = window.localStorage.getItem(storageKey)
-  return isAppTheme(stored) ? stored : "light"
+  return normalizeStoredTheme(stored, appThemeRoute)
 }
 
-function applyResolvedTheme(theme: AppTheme) {
-  document.documentElement.dataset.theme = theme
-  document.documentElement.classList.toggle("dark", theme === "dark")
+function applyResolvedTheme({ mode, theme }: AppTheme) {
+  const tokens = APP_THEME_DEFINITIONS[theme][mode].tokens
+  const root = document.documentElement
+
+  root.dataset.theme = theme
+  root.dataset.themeMode = mode
+  root.classList.toggle("dark", mode === "dark")
+  root.style.colorScheme = mode
+
+  for (const [name, value] of Object.entries(tokens)) {
+    root.style.setProperty(`--${name}`, value)
+  }
 }
 
 function ThemeProvider({
@@ -63,28 +77,49 @@ function ThemeProviderState({
   storageKey: string
 }>) {
   const [theme, setThemeState] = React.useState<AppTheme>(() =>
-    readStoredTheme(storageKey)
+    readStoredTheme(storageKey, appThemeRoute)
   )
-  const resolvedTheme = theme
 
   React.useEffect(() => {
-    applyResolvedTheme(resolvedTheme)
-  }, [resolvedTheme])
+    applyResolvedTheme(theme)
+    window.localStorage.setItem(storageKey, JSON.stringify(theme))
+  }, [storageKey, theme])
 
   const setTheme = React.useCallback(
-    (nextTheme: AppTheme) => {
-      setThemeState(nextTheme)
-      window.localStorage.setItem(storageKey, nextTheme)
+    (nextTheme: AppThemeName) => {
+      setThemeState((currentTheme) => {
+        const themeConfig = {
+          theme: appThemeRoute ? nextTheme : "default",
+          mode: currentTheme.mode,
+        } as const satisfies AppTheme
+
+        return themeConfig
+      })
     },
-    [storageKey]
+    [appThemeRoute]
+  )
+
+  const setMode = React.useCallback(
+    (nextMode: ThemeMode) => {
+      setThemeState((currentTheme) => {
+        const themeConfig = {
+          theme: appThemeRoute ? currentTheme.theme : "default",
+          mode: nextMode,
+        } as const satisfies AppTheme
+
+        return themeConfig
+      })
+    },
+    [appThemeRoute]
   )
 
   return (
     <ThemeContext.Provider
       value={{
-        theme,
-        resolvedTheme,
+        theme: theme.theme,
+        mode: theme.mode,
         setTheme,
+        setMode,
       }}
     >
       {appThemeRoute && <ThemeHotkey />}
@@ -117,7 +152,7 @@ function isTypingTarget(target: EventTarget | null) {
 }
 
 function ThemeHotkey() {
-  const { resolvedTheme, setTheme } = useAppTheme()
+  const { mode, setMode } = useAppTheme()
 
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -137,7 +172,7 @@ function ThemeHotkey() {
         return
       }
 
-      setTheme(getNextTheme(resolvedTheme))
+      setMode(getNextMode(mode))
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -145,7 +180,7 @@ function ThemeHotkey() {
     return () => {
       window.removeEventListener("keydown", onKeyDown)
     }
-  }, [resolvedTheme, setTheme])
+  }, [mode, setMode])
 
   return null
 }

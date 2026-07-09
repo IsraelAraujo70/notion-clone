@@ -3,10 +3,16 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ChevronRightIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
+import {
+  ChevronRightIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { pagePath, usePages } from "@/components/pages/page-provider"
 import { Button } from "@/components/ui/button"
+import { isUnauthorizedApiError } from "@/lib/api"
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,6 +47,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { PageSummary } from "@/lib/api"
 
 const UNTITLED = "Sem título"
+
+function rethrowUnlessUnauthorized(error: unknown) {
+  if (!isUnauthorizedApiError(error)) {
+    throw error
+  }
+}
 
 interface PageNode extends PageSummary {
   children: PageNode[]
@@ -89,6 +101,8 @@ function RenameDialog({
     try {
       await renamePage(node.id, title.trim())
       onOpenChange(false)
+    } catch (error) {
+      rethrowUnlessUnauthorized(error)
     } finally {
       setSaving(false)
     }
@@ -116,7 +130,11 @@ function RenameDialog({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={saving} data-cy="rename-page-submit">
+            <Button
+              type="submit"
+              disabled={saving}
+              data-cy="rename-page-submit"
+            >
               Salvar
             </Button>
           </DialogFooter>
@@ -139,6 +157,8 @@ function PageRow({ node }: { node: PageNode }) {
       const pageId = await createChildPage(node.id)
       setOpen(true)
       router.push(pagePath(pageId))
+    } catch (error) {
+      rethrowUnlessUnauthorized(error)
     } finally {
       setBusy(false)
     }
@@ -207,6 +227,8 @@ function PageRow({ node }: { node: PageNode }) {
             setBusy(true)
             try {
               await deletePage(node.id)
+            } catch (error) {
+              rethrowUnlessUnauthorized(error)
             } finally {
               setBusy(false)
             }
@@ -273,7 +295,13 @@ export function NavPages() {
         <SidebarGroupAction
           data-cy="nav-pages-create"
           aria-label="Nova página"
-          onClick={async () => router.push(pagePath(await createTopLevelPage()))}
+          onClick={async () => {
+            try {
+              router.push(pagePath(await createTopLevelPage()))
+            } catch (error) {
+              rethrowUnlessUnauthorized(error)
+            }
+          }}
         >
           <PlusIcon />
         </SidebarGroupAction>

@@ -10,7 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { getNextTheme } from "@/lib/theme"
+import { getNextMode } from "@/lib/theme"
 
 function subscribeMounted() {
   return () => undefined
@@ -30,17 +30,17 @@ export function ThemeToggleButton() {
     getMountedSnapshot,
     getServerMountedSnapshot
   )
-  const { resolvedTheme, setTheme } = useAppTheme()
+  const { mode: resolvedMode, setMode } = useAppTheme()
 
   // O provider lê o tema do localStorage na inicialização do state, então o
   // primeiro render do cliente já pode divergir do HTML do servidor. Até montar,
   // renderizamos o mesmo que o servidor ("light") — senão o aria-label e o ícone
   // quebram a hidratação.
-  const theme = mounted ? resolvedTheme : "light"
-  const nextTheme = getNextTheme(theme)
+  const mode = mounted ? resolvedMode : "light"
+  const nextMode = getNextMode(mode)
   const label =
-    nextTheme === "dark" ? "Switch to dark mode" : "Switch to light mode"
-  const Icon = theme === "dark" ? Sun : Moon
+    nextMode === "dark" ? "Switch to dark mode" : "Switch to light mode"
+  const Icon = mode === "dark" ? Sun : Moon
 
   return (
     <Tooltip>
@@ -51,7 +51,7 @@ export function ThemeToggleButton() {
           size="icon"
           aria-label={label}
           disabled={!mounted}
-          onClick={() => setTheme(nextTheme)}
+          onClick={() => setMode(nextMode)}
         >
           <Icon aria-hidden="true" />
         </Button>

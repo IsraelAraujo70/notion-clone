@@ -32,16 +32,25 @@ describe("settings and workspace", () => {
     cy.get('[data-cy="settings-dialog"]').should("be.visible")
 
     cy.contains("button", "Aparência").click()
-    cy.get('[data-cy="theme-dark"]').click()
-    cy.document().its("documentElement.dataset.theme").should("eq", "dark")
+    cy.get('[data-cy="theme-github"]').click()
+    cy.document().its("documentElement.dataset.theme").should("eq", "github")
+    cy.document().its("documentElement.dataset.themeMode").should("eq", "light")
+    cy.get("html").should("not.have.class", "dark")
+
+    cy.get('[data-cy="theme-mode-dark"]').click()
+    cy.document().its("documentElement.dataset.theme").should("eq", "github")
+    cy.document().its("documentElement.dataset.themeMode").should("eq", "dark")
     cy.get("html").should("have.class", "dark")
 
     cy.get('[data-cy="theme-evergreen"]').click()
     cy.document().its("documentElement.dataset.theme").should("eq", "evergreen")
-    cy.get("html").should("not.have.class", "dark")
+    cy.document().its("documentElement.dataset.themeMode").should("eq", "dark")
+    cy.get("html").should("have.class", "dark")
 
-    cy.get('[data-cy="theme-light"]').click()
-    cy.document().its("documentElement.dataset.theme").should("eq", "light")
+    cy.get('[data-cy="theme-mode-light"]').click()
+    cy.document().its("documentElement.dataset.theme").should("eq", "evergreen")
+    cy.document().its("documentElement.dataset.themeMode").should("eq", "light")
+    cy.get("html").should("not.have.class", "dark")
 
     cy.contains("button", "Workspace").click()
     cy.get('[data-cy="workspace-invite-form"]').should("be.visible")

@@ -149,6 +149,16 @@ export class ApiError extends Error {
   }
 }
 
+export const AUTH_UNAUTHORIZED_EVENT = "reason:auth-unauthorized"
+
+export function isUnauthorizedApiError(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    error.status === 401 &&
+    error.code === "unauthorized"
+  )
+}
+
 type RequestOptions = {
   method?: string
   token?: string | null
@@ -181,11 +191,17 @@ async function request<T>(
   const payload = text ? JSON.parse(text) : null
 
   if (!response.ok) {
-    throw new ApiError(
+    const error = new ApiError(
       response.status,
       payload?.error ?? "unknown_error",
       payload?.message ?? "Request failed"
     )
+
+    if (isUnauthorizedApiError(error) && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT))
+    }
+
+    throw error
   }
 
   return payload as T

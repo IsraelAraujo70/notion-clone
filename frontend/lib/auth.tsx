@@ -11,7 +11,12 @@ import {
 import { useRouter } from "next/navigation"
 
 import { Spinner } from "@/components/ui/spinner"
-import { api, type AuthResponse, type User } from "@/lib/api"
+import {
+  AUTH_UNAUTHORIZED_EVENT,
+  api,
+  type AuthResponse,
+  type User,
+} from "@/lib/api"
 
 const TOKEN_KEY = "notion_clone_token"
 
@@ -32,6 +37,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   // Starts true and settles on the client; the stored token is only readable there.
@@ -70,6 +76,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    function onUnauthorized() {
+      localStorage.removeItem(TOKEN_KEY)
+      tokenRef.current = null
+      setToken(null)
+      setUser(null)
+      setLoading(false)
+      router.replace("/")
+    }
+
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
+
+    return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
+    }
+  }, [router])
 
   const applyAuth = (response: AuthResponse) => {
     localStorage.setItem(TOKEN_KEY, response.token)

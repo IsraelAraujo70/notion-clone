@@ -7,7 +7,11 @@ import { FileTextIcon, PlusIcon } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenuProvider } from "@/components/command/organisms/command-menu-provider"
 import { EditorPage } from "@/components/editor/editor-page"
-import { PageProvider, pagePath, usePages } from "@/components/pages/page-provider"
+import {
+  PageProvider,
+  pagePath,
+  usePages,
+} from "@/components/pages/page-provider"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -20,6 +24,7 @@ import {
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Spinner } from "@/components/ui/spinner"
 import { WorkspaceProvider } from "@/components/workspace/workspace-provider"
+import { isUnauthorizedApiError } from "@/lib/api"
 import { RequireAuth } from "@/lib/auth"
 
 function EmptyWorkspace() {
@@ -28,7 +33,10 @@ function EmptyWorkspace() {
   const [creating, setCreating] = useState(false)
 
   return (
-    <div className="grid min-h-svh place-items-center" data-cy="workspace-empty">
+    <div
+      className="grid min-h-svh place-items-center"
+      data-cy="workspace-empty"
+    >
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
@@ -48,6 +56,10 @@ function EmptyWorkspace() {
                 setCreating(true)
                 try {
                   router.push(pagePath(await createTopLevelPage()))
+                } catch (error) {
+                  if (!isUnauthorizedApiError(error)) {
+                    throw error
+                  }
                 } finally {
                   setCreating(false)
                 }

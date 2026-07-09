@@ -3,10 +3,13 @@ import {
   APP_THEME_STORAGE_KEY,
   APP_THEMES,
   PUBLIC_THEME_STORAGE_KEY,
-  getNextTheme,
+  THEME_MODES,
+  getNextMode,
   getThemeStorageKey,
   isAppTheme,
   isAppThemeRoute,
+  isThemeMode,
+  normalizeStoredTheme,
 } from "./theme"
 
 describe("theme scope", () => {
@@ -29,18 +32,64 @@ describe("theme scope", () => {
     expect(isAppThemeRoute("/login")).toBe(false)
   })
 
-  it("returns the next explicit theme", () => {
-    expect(getNextTheme("light")).toBe("dark")
-    expect(getNextTheme("dark")).toBe("evergreen")
-    expect(getNextTheme("evergreen")).toBe("light")
-    expect(getNextTheme(undefined)).toBe("light")
+  it("returns the next theme mode", () => {
+    expect(getNextMode("light")).toBe("dark")
+    expect(getNextMode("dark")).toBe("light")
+    expect(getNextMode(undefined)).toBe("dark")
   })
 
-  it("accepts only supported app themes", () => {
-    expect(APP_THEMES).toEqual(["light", "dark", "evergreen"])
-    expect(isAppTheme("light")).toBe(true)
-    expect(isAppTheme("dark")).toBe(true)
+  it("accepts only supported app themes and modes", () => {
+    expect(APP_THEMES).toEqual([
+      "default",
+      "github",
+      "evergreen",
+      "catppuccin",
+      "nord",
+      "gruvbox",
+      "rose-pine",
+      "solarized",
+      "tokyo-night",
+    ])
+    expect(THEME_MODES).toEqual(["light", "dark"])
+    expect(isAppTheme("default")).toBe(true)
+    expect(isAppTheme("github")).toBe(true)
     expect(isAppTheme("evergreen")).toBe(true)
-    expect(isAppTheme("system")).toBe(false)
+    expect(isAppTheme("tokyo-night")).toBe(true)
+    expect(isAppTheme("light")).toBe(false)
+    expect(isThemeMode("light")).toBe(true)
+    expect(isThemeMode("dark")).toBe(true)
+    expect(isThemeMode("system")).toBe(false)
+  })
+
+  it("migrates old stored theme values", () => {
+    expect(normalizeStoredTheme("light", true)).toEqual({
+      theme: "default",
+      mode: "light",
+    })
+    expect(normalizeStoredTheme("dark", true)).toEqual({
+      theme: "github",
+      mode: "dark",
+    })
+    expect(normalizeStoredTheme("evergreen", true)).toEqual({
+      theme: "evergreen",
+      mode: "light",
+    })
+    expect(normalizeStoredTheme("evergreen", false)).toEqual({
+      theme: "default",
+      mode: "light",
+    })
+  })
+
+  it("normalizes JSON theme storage", () => {
+    expect(
+      normalizeStoredTheme('{"theme":"github","mode":"dark"}', true)
+    ).toEqual({ theme: "github", mode: "dark" })
+    expect(
+      normalizeStoredTheme('{"theme":"github","mode":"dark"}', false)
+    ).toEqual({ theme: "default", mode: "dark" })
+    expect(normalizeStoredTheme("not-json", true)).toEqual({
+      theme: "default",
+      mode: "light",
+    })
   })
 })

@@ -54,16 +54,21 @@ export function PageProvider({
   children: ReactNode
 }) {
   const router = useRouter()
-  const { token } = useAuth()
-  const { activeWorkspace, activeWorkspaceId, loading: workspaceLoading } =
-    useWorkspace()
+  const { loading: authLoading, token } = useAuth()
+  const {
+    activeWorkspace,
+    activeWorkspaceId,
+    loading: workspaceLoading,
+  } = useWorkspace()
   const [pages, setPages] = useState<PageSummary[]>([])
   const [containerPageId, setContainerPageId] = useState<string | null>(null)
   const [trash, setTrash] = useState<TrashEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [pageRevision, setPageRevision] = useState(0)
 
-  const canWrite = activeWorkspace?.role !== "viewer"
+  const canWrite = Boolean(
+    token && !authLoading && activeWorkspace && activeWorkspace.role !== "viewer"
+  )
 
   const loadPages = useCallback(async () => {
     if (!token || !activeWorkspaceId) return
@@ -74,7 +79,7 @@ export function PageProvider({
   }, [activeWorkspaceId, token])
 
   useEffect(() => {
-    if (workspaceLoading || !token || !activeWorkspaceId) return
+    if (authLoading || workspaceLoading || !token || !activeWorkspaceId) return
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled) return
@@ -96,7 +101,7 @@ export function PageProvider({
     return () => {
       cancelled = true
     }
-  }, [activeWorkspaceId, token, workspaceLoading])
+  }, [activeWorkspaceId, authLoading, token, workspaceLoading])
 
   // `/dashboard` sem página, ou uma página de outro workspace (troca de workspace,
   // página no lixo): a primeira página de topo é o destino canônico. Sem nenhuma
@@ -117,7 +122,12 @@ export function PageProvider({
     async (parentPageId: string) => {
       if (!token || !activeWorkspaceId) throw new Error("No active workspace")
       // Uma página nova é dois blocos: a página e seu primeiro parágrafo vazio.
-      const page = newBlock("page", { title: "" }, createId(), activeWorkspaceId)
+      const page = newBlock(
+        "page",
+        { title: "" },
+        createId(),
+        activeWorkspaceId
+      )
       const paragraph = newBlock(
         "paragraph",
         { text: "" },
@@ -217,7 +227,7 @@ export function PageProvider({
       // o editor numa página que o redirect acima vai trocar.
       currentPageId:
         pageId && pages.some((page) => page.id === pageId) ? pageId : null,
-      loading: loading || workspaceLoading,
+      loading: loading || authLoading || workspaceLoading,
       canWrite,
       refreshPages: async () => {
         await loadPages()
@@ -248,6 +258,7 @@ export function PageProvider({
       restore,
       setPageIcon,
       trash,
+      authLoading,
       workspaceLoading,
     ]
   )

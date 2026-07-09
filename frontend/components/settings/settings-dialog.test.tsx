@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   inviteWorkspaceMember: vi.fn(),
   listWorkspaceInvites: vi.fn(),
   listWorkspaceMembers: vi.fn(),
+  setMode: vi.fn(),
   removeWorkspaceMember: vi.fn(),
   selectWorkspace: vi.fn(),
   setTheme: vi.fn(),
@@ -54,10 +55,16 @@ vi.mock("@/components/theme/theme-provider", async () => {
 
   return {
     useAppTheme: () => {
-      const [theme, setThemeState] = React.useState("light")
+      const [theme, setThemeState] = React.useState("default")
+      const [mode, setModeState] = React.useState("light")
 
       return {
+        mode,
         theme,
+        setMode: (nextMode: string) => {
+          mocks.setMode(nextMode)
+          setModeState(nextMode)
+        },
         setTheme: (nextTheme: string) => {
           mocks.setTheme(nextTheme)
           setThemeState(nextTheme)
@@ -129,6 +136,7 @@ describe("SettingsDialog", () => {
     mocks.listWorkspaceMembers.mockReset().mockResolvedValue(members)
     mocks.removeWorkspaceMember.mockReset().mockResolvedValue(undefined)
     mocks.selectWorkspace.mockReset()
+    mocks.setMode.mockReset()
     mocks.setTheme.mockReset()
     mocks.updateWorkspaceMemberRole.mockReset().mockResolvedValue(undefined)
   })
@@ -160,13 +168,17 @@ describe("SettingsDialog", () => {
     })
 
     await userEvent.click(screen.getByRole("tab", { name: "Aparência" }))
-    await userEvent.click(screen.getByRole("radio", { name: "Dark" }))
+    await userEvent.click(screen.getByRole("radio", { name: "GitHub" }))
     await userEvent.click(screen.getByRole("radio", { name: "Evergreen" }))
+    await userEvent.click(screen.getByRole("radio", { name: "Default" }))
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }))
     await userEvent.click(screen.getByRole("radio", { name: "Light" }))
 
-    expect(mocks.setTheme).toHaveBeenCalledWith("dark")
+    expect(mocks.setTheme).toHaveBeenCalledWith("github")
     expect(mocks.setTheme).toHaveBeenCalledWith("evergreen")
-    expect(mocks.setTheme).toHaveBeenCalledWith("light")
+    expect(mocks.setTheme).toHaveBeenCalledWith("default")
+    expect(mocks.setMode).toHaveBeenCalledWith("dark")
+    expect(mocks.setMode).toHaveBeenCalledWith("light")
   })
 
   it("lets an owner invite, update roles and remove members", async () => {

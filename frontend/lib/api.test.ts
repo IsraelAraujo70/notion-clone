@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Operation } from "@/lib/contracts"
-import { ApiError, api, API_BASE_URL } from "./api"
+import { AUTH_UNAUTHORIZED_EVENT, ApiError, api, API_BASE_URL } from "./api"
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -314,7 +314,9 @@ describe("api client", () => {
   it("reads pages, page trees and trash with the session token", async () => {
     const pageList = {
       root_page_id: "page-root",
-      pages: [{ id: "page-root", title: "Notas", icon: "🚀", parent_page_id: null }],
+      pages: [
+        { id: "page-root", title: "Notas", icon: "🚀", parent_page_id: null },
+      ],
     }
     const page = {
       page: { rootId: "page-root", blocks: [] },
@@ -334,26 +336,38 @@ describe("api client", () => {
       .mockResolvedValueOnce(jsonResponse(200, page))
       .mockResolvedValueOnce(jsonResponse(200, trash))
 
-    await expect(api.listPages("secret-token", "ws-1")).resolves.toEqual(pageList)
-    await expect(api.getPage("secret-token", "ws-1", "page-root")).resolves.toEqual(page)
+    await expect(api.listPages("secret-token", "ws-1")).resolves.toEqual(
+      pageList
+    )
+    await expect(
+      api.getPage("secret-token", "ws-1", "page-root")
+    ).resolves.toEqual(page)
     await expect(api.listTrash("secret-token", "ws-1")).resolves.toEqual(trash)
 
     const headers = { Authorization: "Bearer secret-token" }
-    expect(fetch).toHaveBeenNthCalledWith(1, `${API_BASE_URL}/workspaces/ws-1/pages`, {
-      method: "GET",
-      headers,
-      body: undefined,
-    })
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE_URL}/workspaces/ws-1/pages`,
+      {
+        method: "GET",
+        headers,
+        body: undefined,
+      }
+    )
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       `${API_BASE_URL}/workspaces/ws-1/pages/page-root`,
       { method: "GET", headers, body: undefined }
     )
-    expect(fetch).toHaveBeenNthCalledWith(3, `${API_BASE_URL}/workspaces/ws-1/trash`, {
-      method: "GET",
-      headers,
-      body: undefined,
-    })
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE_URL}/workspaces/ws-1/trash`,
+      {
+        method: "GET",
+        headers,
+        body: undefined,
+      }
+    )
   })
 
   it("lists operations after a cursor for catch-up", async () => {
@@ -410,14 +424,17 @@ describe("api client", () => {
       api.applyOperation("secret-token", "ws-1", operation)
     ).resolves.toEqual({ op_id: "op-1", seq: 12 })
 
-    expect(fetch).toHaveBeenCalledWith(`${API_BASE_URL}/workspaces/ws-1/operations`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer secret-token",
-      },
-      body: JSON.stringify(operation),
-    })
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE_URL}/workspaces/ws-1/operations`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret-token",
+        },
+        body: JSON.stringify(operation),
+      }
+    )
   })
 
   it("surfaces api errors", async () => {
@@ -433,5 +450,23 @@ describe("api client", () => {
     ).rejects.toMatchObject(
       new ApiError(401, "invalid_credentials", "Invalid email or password")
     )
+  })
+
+  it("emits an auth event for invalid sessions", async () => {
+    const onUnauthorized = vi.fn()
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(401, {
+        error: "unauthorized",
+        message: "Missing or invalid session token",
+      })
+    )
+
+    await expect(api.appSummary("expired-token")).rejects.toMatchObject(
+      new ApiError(401, "unauthorized", "Missing or invalid session token")
+    )
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+    window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
   })
 })
