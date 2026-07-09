@@ -16,7 +16,7 @@ pub trait ObjectStorage: Send + Sync {
     fn public_url(&self, key: &str) -> Option<String>;
 
     fn avatar_key_for(&self, user_id: Uuid, ext: &str) -> String {
-        // Bucket `avatars`; avatares sob {user_id}/…
+        // Avatares ficam sob {user_id}/… dentro do bucket de mídia.
         format!("{user_id}/{}.{}", Uuid::new_v4(), ext)
     }
 
@@ -32,4 +32,6 @@ pub trait ObjectStorage: Send + Sync {
         content_type: &str,
         max_bytes: u64,
     ) -> Result<PresignedUpload, StorageError>;
+
+    async fn presign_get(&self, key: &str) -> Result<String, StorageError>;
 }

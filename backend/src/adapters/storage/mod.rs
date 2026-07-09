@@ -2,10 +2,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
-use crate::application::ports::storage::{ObjectStorage, PresignedUpload};
 use crate::application::ports::StorageError;
+use crate::application::ports::storage::{ObjectStorage, PresignedUpload};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -18,7 +17,7 @@ pub struct S3Config {
     pub bucket: String,
     pub access_key: String,
     pub secret_key: String,
-    /// Prefixo público das URLs de leitura. Ex: http://localhost:9000/avatars
+    /// Prefixo público das URLs de leitura. Ex: http://localhost:9000/media
     pub public_base_url: String,
     pub force_path_style: bool,
 }
@@ -62,10 +61,7 @@ impl ObjectStorage for S3ObjectStorage {
     ) -> Result<PresignedUpload, StorageError> {
         let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
         let date_stamp = &amz_date[..8];
-        let credential_scope = format!(
-            "{}/{}/s3/aws4_request",
-            date_stamp, self.config.region
-        );
+        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, self.config.region);
         let credential = format!("{}/{}", self.config.access_key, credential_scope);
 
         let host = if self.config.force_path_style {
@@ -128,6 +124,59 @@ impl ObjectStorage for S3ObjectStorage {
             headers: vec![("Content-Type".to_string(), content_type.to_string())],
         })
     }
+
+    async fn presign_get(&self, key: &str) -> Result<String, StorageError> {
+        let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = &amz_date[..8];
+        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, self.config.region);
+        let credential = format!("{}/{}", self.config.access_key, credential_scope);
+
+        let host = if self.config.force_path_style {
+            self.host()
+        } else {
+            format!("{}.{}", self.config.bucket, self.host())
+        };
+        let canonical_uri = if self.config.force_path_style {
+            format!("/{}/{}", self.config.bucket, key)
+        } else {
+            format!("/{key}")
+        };
+        let signed_headers = "host";
+        let algorithm = "AWS4-HMAC-SHA256";
+        let expires = "300";
+        let canonical_query = format!(
+            "X-Amz-Algorithm={}&X-Amz-Credential={}&X-Amz-Date={}&X-Amz-Expires={}&X-Amz-SignedHeaders={}",
+            algorithm,
+            uri_encode(&credential),
+            amz_date,
+            expires,
+            uri_encode(signed_headers),
+        );
+        let canonical_headers = format!("host:{host}\n");
+        let canonical_request = format!(
+            "GET\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\nUNSIGNED-PAYLOAD"
+        );
+        let string_to_sign = format!(
+            "{algorithm}\n{amz_date}\n{credential_scope}\n{}",
+            hex_sha256(&canonical_request)
+        );
+        let signing_key = derive_signing_key(
+            &self.config.secret_key,
+            date_stamp,
+            &self.config.region,
+            "s3",
+        );
+        let signature = hex_hmac(&signing_key, string_to_sign.as_bytes());
+        let scheme = if self.config.public_endpoint.starts_with("https") {
+            "https"
+        } else {
+            "http"
+        };
+
+        Ok(format!(
+            "{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -149,6 +198,10 @@ impl ObjectStorage for NoopObjectStorage {
         _content_type: &str,
         _max_bytes: u64,
     ) -> Result<PresignedUpload, StorageError> {
+        Err(StorageError::NotConfigured)
+    }
+
+    async fn presign_get(&self, _key: &str) -> Result<String, StorageError> {
         Err(StorageError::NotConfigured)
     }
 }
@@ -195,6 +248,7 @@ fn uri_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn avatar_key_uses_user_prefix() {

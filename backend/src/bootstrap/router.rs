@@ -2,7 +2,9 @@ use axum::Router;
 use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
-use crate::adapters::http::{app_routes, auth_routes, page_routes, workspace_routes, ws_routes};
+use crate::adapters::http::{
+    app_routes, auth_routes, media_routes, page_routes, workspace_routes, ws_routes,
+};
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
 use crate::bootstrap::state::AppState;
@@ -11,6 +13,7 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
     Router::new()
         .route("/", get(root))
         .route("/health", get(health))
+        .route("/media/{*key}", get(media_routes::get_media))
         .route("/auth/signup", post(auth_routes::signup))
         .route("/auth/login", post(auth_routes::login))
         .route(
@@ -24,10 +27,7 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             "/auth/me",
             get(auth_routes::me).patch(auth_routes::update_profile),
         )
-        .route(
-            "/auth/me/avatar/presign",
-            post(auth_routes::presign_avatar),
-        )
+        .route("/auth/me/avatar/presign", post(auth_routes::presign_avatar))
         .route(
             "/workspaces",
             get(workspace_routes::list).post(workspace_routes::create),
