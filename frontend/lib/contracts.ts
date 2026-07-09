@@ -15,6 +15,7 @@ export const BLOCK_TYPES = [
   "code",
   "callout",
   "divider",
+  "image",
 ] as const
 
 export type BlockType = (typeof BLOCK_TYPES)[number]
@@ -23,7 +24,8 @@ export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 // Propriedades por tipo (todas opcionais; o tipo do bloco decide o que é lido):
-// text (todos os textuais), checked (to_do), language (code), title/icon (page).
+// text (textuais), checked (to_do), language (code), title/icon (page),
+// url/key/caption (image).
 export type BlockProperties = Record<string, JsonValue>
 
 /** Versão LWW sintética para mudança de `type` (não colide com props do produto). */

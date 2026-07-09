@@ -50,7 +50,7 @@ impl ApplyOperationUseCase {
         // Replay idempotente devolve o seq original; ainda assim o evento é
         // inofensivo se o cliente filtrar por op_id — e cobre o caso de um
         // peer que perdeu o broadcast da primeira entrega.
-        self.hub.publish(AppliedOpEvent {
+        self.hub.publish_op(AppliedOpEvent {
             workspace_id,
             seq: ack.seq,
             op_id,

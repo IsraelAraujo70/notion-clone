@@ -12,7 +12,7 @@ use crate::application::ports::auth::{
 use crate::domain::auth::{User, UserWithPassword};
 use crate::domain::workspace::Workspace;
 
-const USER_COLUMNS: &str = "id, email, display_name, created_at";
+const USER_COLUMNS: &str = "id, email, display_name, avatar_key, created_at";
 
 #[derive(Debug, Clone)]
 pub struct PostgresAuthRepository {
@@ -30,6 +30,7 @@ struct UserRow {
     id: Uuid,
     email: String,
     display_name: String,
+    avatar_key: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -39,6 +40,8 @@ impl From<UserRow> for User {
             id: row.id,
             email: row.email,
             display_name: row.display_name,
+            avatar_key: row.avatar_key,
+            avatar_url: None,
             created_at: row.created_at,
         }
     }
@@ -49,6 +52,7 @@ struct UserWithPasswordRow {
     id: Uuid,
     email: String,
     display_name: String,
+    avatar_key: Option<String>,
     created_at: DateTime<Utc>,
     password_hash: String,
 }
@@ -60,6 +64,8 @@ impl From<UserWithPasswordRow> for UserWithPassword {
                 id: row.id,
                 email: row.email,
                 display_name: row.display_name,
+                avatar_key: row.avatar_key,
+                avatar_url: None,
                 created_at: row.created_at,
             },
             password_hash: row.password_hash,
@@ -326,5 +332,42 @@ impl AuthRepository for PostgresAuthRepository {
             .map_err(map_sqlx_error)?;
 
         tx.commit().await.map_err(map_sqlx_error)
+    }
+
+    async fn update_profile(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        avatar_key: Option<Option<String>>,
+    ) -> Result<User, RepositoryError> {
+        let query = format!(
+            "UPDATE users SET
+                 display_name = COALESCE($2, display_name),
+                 avatar_key = CASE WHEN $3::boolean THEN $4 ELSE avatar_key END
+             WHERE id = $1
+             RETURNING {USER_COLUMNS}"
+        );
+        let set_avatar = avatar_key.is_some();
+        let avatar_value = avatar_key.flatten();
+        sqlx::query_as::<_, UserRow>(&query)
+            .bind(user_id)
+            .bind(display_name)
+            .bind(set_avatar)
+            .bind(avatar_value)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?
+            .map(Into::into)
+            .ok_or(RepositoryError::NotFound)
+    }
+
+    async fn find_user_by_id(&self, user_id: Uuid) -> Result<Option<User>, RepositoryError> {
+        let query = format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1");
+        sqlx::query_as::<_, UserRow>(&query)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|row| row.map(Into::into))
+            .map_err(map_sqlx_error)
     }
 }

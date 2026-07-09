@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::adapters::postgres::tx::map_sqlx_error;
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageList, PageRepository,
+    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList, PageRepository,
     PageSummary, PageTree, PageView, TrashEntry,
 };
 use crate::domain::block::{
@@ -111,8 +111,28 @@ struct TrashRow {
     trashed_at: DateTime<Utc>,
 }
 
+#[derive(sqlx::FromRow)]
+struct RecentEditorRow {
+    user_id: Uuid,
+    display_name: String,
+    avatar_key: Option<String>,
+    last_edited_at: DateTime<Utc>,
+}
+
 fn page_not_found() -> RepositoryError {
     RepositoryError::Domain(DomainError::PageNotFound)
+}
+
+/// Sobe a árvore até a página que contém o bloco (ignora o container se for o pai).
+fn resolve_containing_page(tree: &BlockTree, block_id: Uuid) -> Option<Uuid> {
+    let mut current = block_id;
+    loop {
+        let block = tree.blocks.get(&current)?;
+        if block.block_type == BlockType::Page {
+            return Some(block.id);
+        }
+        current = block.parent_id?;
+    }
 }
 
 /// Cria o container do workspace e a primeira página de topo (com um parágrafo
@@ -393,6 +413,19 @@ impl PageRepository for PostgresPageRepository {
             .ok_or(RepositoryError::NotFound)?
             .0;
 
+        let editor_rows = sqlx::query_as::<_, RecentEditorRow>(
+            "SELECT e.user_id, u.display_name, u.avatar_key, e.last_edited_at
+             FROM page_recent_editors e
+             JOIN users u ON u.id = e.user_id
+             WHERE e.page_id = $1
+             ORDER BY e.last_edited_at DESC
+             LIMIT 5",
+        )
+        .bind(page_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
         Ok(PageView {
             page: PageTree {
                 root_id: page_id,
@@ -407,6 +440,16 @@ impl PageRepository for PostgresPageRepository {
                 })
                 .collect(),
             seq,
+            recent_editors: editor_rows
+                .into_iter()
+                .map(|row| PageEditor {
+                    user_id: row.user_id,
+                    display_name: row.display_name,
+                    avatar_key: row.avatar_key,
+                    avatar_url: None,
+                    last_edited_at: row.last_edited_at,
+                })
+                .collect(),
         })
     }
 
@@ -494,13 +537,34 @@ impl PageRepository for PostgresPageRepository {
             _ => None,
         };
 
-        for id in touched {
-            let block = tree.blocks.get(&id).expect("touched block exists");
-            if Some(id) == inserted_id {
+        for id in &touched {
+            let block = tree.blocks.get(id).expect("touched block exists");
+            if Some(*id) == inserted_id {
                 insert_block_row(&mut tx, block, actor_id).await?;
             } else {
                 update_block_row(&mut tx, block).await?;
             }
+        }
+
+        let mut page_ids = std::collections::HashSet::new();
+        for id in &touched {
+            if let Some(page_id) = resolve_containing_page(&tree, *id) {
+                page_ids.insert(page_id);
+            }
+        }
+        for page_id in page_ids {
+            sqlx::query(
+                "INSERT INTO page_recent_editors (page_id, user_id, last_edited_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (page_id, user_id)
+                 DO UPDATE SET last_edited_at = EXCLUDED.last_edited_at",
+            )
+            .bind(page_id)
+            .bind(actor_id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
         }
 
         let seq = sqlx::query_as::<_, (i64,)>(

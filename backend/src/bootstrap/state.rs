@@ -7,19 +7,22 @@ use crate::adapters::email::resend::ResendEmailSender;
 use crate::adapters::postgres::{
     PostgresAuthRepository, PostgresPageRepository, PostgresWorkspaceRepository,
 };
+use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
 use crate::application::realtime::RealtimeHub;
 use crate::application::auth::{
     ChangePasswordUseCase, GetCurrentUserUseCase, LoginUseCase, LogoutUseCase,
-    RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
+    PresignAvatarUseCase, RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
+    UpdateProfileUseCase,
 };
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
-    ListTrashUseCase,
+    ListTrashUseCase, PresignPageImageUseCase,
 };
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
 use crate::application::ports::page::PageRepository;
+use crate::application::ports::storage::ObjectStorage;
 use crate::application::ports::workspace::WorkspaceRepository;
 use crate::application::workspaces::{
     AcceptInviteUseCase, CreateWorkspaceUseCase, InviteMemberUseCase, ListInvitesUseCase,
@@ -31,6 +34,7 @@ use crate::application::workspaces::{
 pub struct AppState {
     pub pool: PgPool,
     pub hub: RealtimeHub,
+    pub storage: Arc<dyn ObjectStorage>,
     pub signup: SignupUseCase,
     pub login: LoginUseCase,
     pub logout: LogoutUseCase,
@@ -38,6 +42,8 @@ pub struct AppState {
     pub reset_password: ResetPasswordUseCase,
     pub change_password: ChangePasswordUseCase,
     pub get_current_user: GetCurrentUserUseCase,
+    pub update_profile: UpdateProfileUseCase,
+    pub presign_avatar: PresignAvatarUseCase,
     pub list_workspaces: ListWorkspacesUseCase,
     pub create_workspace: CreateWorkspaceUseCase,
     pub list_members: ListMembersUseCase,
@@ -52,6 +58,7 @@ pub struct AppState {
     pub apply_operation: ApplyOperationUseCase,
     pub list_operations: ListOperationsUseCase,
     pub list_trash: ListTrashUseCase,
+    pub presign_page_image: PresignPageImageUseCase,
 }
 
 impl AppState {
@@ -60,6 +67,7 @@ impl AppState {
         public_web_url: String,
         resend_api_key: Option<String>,
         resend_from_email: String,
+        s3: Option<S3Config>,
     ) -> Self {
         let auth_repository: Arc<dyn AuthRepository> =
             Arc::new(PostgresAuthRepository::new(pool.clone()));
@@ -69,6 +77,10 @@ impl AppState {
             Arc::new(PostgresPageRepository::new(pool.clone()));
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let hub = RealtimeHub::new();
+        let storage: Arc<dyn ObjectStorage> = match s3 {
+            Some(config) => Arc::new(S3ObjectStorage::new(config)),
+            None => Arc::new(NoopObjectStorage),
+        };
         let email_sender: Arc<dyn EmailSender> = match resend_api_key {
             Some(api_key) => Arc::new(ResendEmailSender::new(api_key, resend_from_email)),
             None => Arc::new(NoopEmailSender),
@@ -77,6 +89,7 @@ impl AppState {
         Self {
             pool,
             hub: hub.clone(),
+            storage: storage.clone(),
             signup: SignupUseCase::new(auth_repository.clone(), clock.clone()),
             login: LoginUseCase::new(auth_repository.clone(), clock.clone()),
             logout: LogoutUseCase::new(auth_repository.clone()),
@@ -89,6 +102,8 @@ impl AppState {
             reset_password: ResetPasswordUseCase::new(auth_repository.clone(), clock.clone()),
             change_password: ChangePasswordUseCase::new(auth_repository.clone()),
             get_current_user: GetCurrentUserUseCase::new(auth_repository.clone(), clock.clone()),
+            update_profile: UpdateProfileUseCase::new(auth_repository.clone(), storage.clone()),
+            presign_avatar: PresignAvatarUseCase::new(storage.clone()),
             list_workspaces: ListWorkspacesUseCase::new(workspace_repository.clone()),
             create_workspace: CreateWorkspaceUseCase::new(workspace_repository.clone()),
             list_members: ListMembersUseCase::new(workspace_repository.clone()),
@@ -115,7 +130,11 @@ impl AppState {
                 page_repository.clone(),
                 workspace_repository.clone(),
             ),
-            list_trash: ListTrashUseCase::new(page_repository, workspace_repository),
+            list_trash: ListTrashUseCase::new(page_repository, workspace_repository.clone()),
+            presign_page_image: PresignPageImageUseCase::new(
+                workspace_repository,
+                storage,
+            ),
         }
     }
 }

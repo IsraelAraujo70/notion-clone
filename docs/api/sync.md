@@ -41,10 +41,21 @@ Server → client messages (JSON, tagged `type`):
 | `hello` | `{ latest_seq }` |
 | `op` | `{ event: { workspace_id, seq, op_id, actor_id, operation } }` |
 | `ping` | `{}` every ~25s (Railway idle timeout) |
+| `presence_snapshot` | `{ peers: PresencePeer[] }` right after hello |
+| `presence_update` | `{ peer }` when someone joins/moves focus |
+| `presence_leave` | `{ connection_id }` when a socket closes |
 
-Client may send anything (ignored for now) or close. On reconnect: open WS, then
-`GET .../operations?after_seq=<lastAcked>` and apply in order before trusting the
-live stream. Clients ignore their own echo by `op_id`.
+Client → server:
+
+| type | payload |
+| --- | --- |
+| `presence` | `{ page_id?, focused_block_id? }` |
+
+`PresencePeer`: `{ connection_id, user_id, display_name, avatar_url?, page_id?, focused_block_id?, color, last_seen }`.
+Presence is ephemeral (in-memory hub), not part of the op log.
+
+On reconnect: open WS, then `GET .../operations?after_seq=<lastAcked>` and apply
+in order before trusting the live stream. Clients ignore their own echo by `op_id`.
 
 ## Property-level LWW
 

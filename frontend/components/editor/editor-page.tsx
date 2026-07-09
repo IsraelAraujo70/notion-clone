@@ -27,7 +27,12 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, type Breadcrumb as Crumb, type OperationAck } from "@/lib/api"
+import {
+  api,
+  type Breadcrumb as Crumb,
+  type OperationAck,
+  type PageEditor,
+} from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import {
   applyOperation,
@@ -39,11 +44,12 @@ import {
 import { createOpQueue, type OpQueue, type SaveState } from "@/lib/engine/op-queue"
 import { UndoManager } from "@/lib/engine/undo"
 import { createId } from "@/lib/id"
+import { useWorkspacePresence } from "@/lib/sync/use-presence"
 import {
   catchUpOperations,
-  connectWorkspaceSocket,
   type AppliedOpEvent,
 } from "@/lib/sync/workspace-socket"
+import { PresenceAvatarStack } from "@/components/editor/presence-avatars"
 
 function opId() {
   return createId()
@@ -101,6 +107,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const [loadError, setLoadError] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [recentEditors, setRecentEditors] = useState<PageEditor[]>([])
   const undoRef = useRef(new UndoManager())
   const queueRef = useRef<OpQueue | null>(null)
   // Espelho do estado: as mutações do editor têm efeitos colaterais (undo stack,
@@ -158,6 +165,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
           lastSeqRef.current = response.seq
           commit(treeFromBlocks(response.page.rootId, response.page.blocks))
           setBreadcrumbs(response.breadcrumbs)
+          setRecentEditors(response.recent_editors ?? [])
           // Ops que chegaram entre o GET e o commit (ou durante o load).
           try {
             const { operations } = await catchUpOperations(
@@ -208,52 +216,44 @@ export function EditorPage({ pageId }: { pageId: string }) {
     }
   }, [activeWorkspaceId, canWrite, token])
 
-  // Realtime: WS + catch-up no reconnect (membros, inclusive viewer).
-  useEffect(() => {
-    if (!token || !activeWorkspaceId) return
-    let active = true
-
-    const runCatchUp = async () => {
-      if (catchingUpRef.current || !active) return
-      catchingUpRef.current = true
-      try {
-        const { operations } = await catchUpOperations(
-          token,
-          activeWorkspaceId,
-          lastSeqRef.current
-        )
-        if (!active) return
-        for (const entry of operations) {
-          applyRemoteEventRef.current({
-            workspace_id: activeWorkspaceId,
-            seq: entry.seq,
-            op_id: entry.op_id,
-            actor_id: entry.actor_id,
-            operation: entry.operation,
-          })
-        }
-      } catch {
-        // Falha de catch-up: o próximo reconnect tenta de novo.
-      } finally {
-        catchingUpRef.current = false
+  // Realtime: WS + presence + catch-up no reconnect.
+  const runCatchUp = useCallback(async () => {
+    if (!token || !activeWorkspaceId || catchingUpRef.current) return
+    catchingUpRef.current = true
+    try {
+      const { operations } = await catchUpOperations(
+        token,
+        activeWorkspaceId,
+        lastSeqRef.current
+      )
+      for (const entry of operations) {
+        applyRemoteEventRef.current({
+          workspace_id: activeWorkspaceId,
+          seq: entry.seq,
+          op_id: entry.op_id,
+          actor_id: entry.actor_id,
+          operation: entry.operation,
+        })
       }
-    }
-
-    const socket = connectWorkspaceSocket(activeWorkspaceId, token, {
-      onOp: (event) => {
-        if (!active) return
-        applyRemoteEventRef.current(event)
-      },
-      onStatus: (status) => {
-        if (status === "open") void runCatchUp()
-      },
-    })
-
-    return () => {
-      active = false
-      socket.close()
+    } catch {
+      // Falha de catch-up: o próximo reconnect tenta de novo.
+    } finally {
+      catchingUpRef.current = false
     }
   }, [activeWorkspaceId, token])
+
+  const { pagePeers, blockPresence, sendPresence } = useWorkspacePresence(
+    activeWorkspaceId,
+    pageId,
+    (event) => applyRemoteEventRef.current(event),
+    () => {
+      void runCatchUp()
+    }
+  )
+
+  useEffect(() => {
+    sendPresence(pageId, selectedBlockId)
+  }, [pageId, selectedBlockId, sendPresence])
 
   const dispatchBatch = useCallback(
     (
@@ -447,13 +447,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <span
-          data-cy="save-state"
-          data-state={canWrite ? saveState : "read-only"}
-          className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
-        >
-          {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
-        </span>
+        <div className="flex items-center gap-3">
+          <PresenceAvatarStack live={pagePeers} recent={recentEditors} />
+          <span
+            data-cy="save-state"
+            data-state={canWrite ? saveState : "read-only"}
+            className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
+          </span>
+        </div>
       </header>
 
       {saveState === "error" ? (
@@ -511,6 +514,31 @@ export function EditorPage({ pageId }: { pageId: string }) {
               redo={redo}
               onOpenPage={(childId) => router.push(pagePath(childId))}
               readOnly={!canWrite}
+              blockPresence={blockPresence}
+              onUploadImage={
+                token && activeWorkspaceId && canWrite
+                  ? async (file) => {
+                      const presign = await api.presignPageImage(
+                        token,
+                        activeWorkspaceId,
+                        file.type
+                      )
+                      const headers = new Headers()
+                      for (const header of presign.headers) {
+                        headers.set(header.name, header.value)
+                      }
+                      const put = await fetch(presign.upload_url, {
+                        method: "PUT",
+                        headers,
+                        body: file,
+                      })
+                      if (!put.ok) {
+                        throw new Error("Upload falhou")
+                      }
+                      return { url: presign.public_url, key: presign.key }
+                    }
+                  : undefined
+              }
             />
           </>
         )}

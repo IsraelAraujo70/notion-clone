@@ -7,7 +7,34 @@ export type User = {
   id: string
   email: string
   display_name: string
+  avatar_url?: string | null
+  avatar_key?: string | null
   created_at: string
+}
+
+export type PageEditor = {
+  user_id: string
+  display_name: string
+  avatar_url?: string | null
+  last_edited_at: string
+}
+
+export type PresencePeer = {
+  connection_id: string
+  user_id: string
+  display_name: string
+  avatar_url?: string | null
+  page_id?: string | null
+  focused_block_id?: string | null
+  color: string
+  last_seen: string
+}
+
+export type PresignAvatarResponse = {
+  upload_url: string
+  key: string
+  public_url: string
+  headers: { name: string; value: string }[]
 }
 
 export type AuthResponse = {
@@ -73,6 +100,7 @@ export type PageResponse = {
   breadcrumbs: Breadcrumb[]
   /** Cursor do log de operações do workspace no momento do fetch. */
   seq: number
+  recent_editors?: PageEditor[]
 }
 
 export type TrashEntry = {
@@ -191,6 +219,21 @@ export const api = {
   logout: (token: string) =>
     request<void>("/auth/logout", { method: "POST", token }),
   me: (token: string) => request<User>("/auth/me", { token }),
+  updateProfile: (
+    token: string,
+    input: { display_name?: string; avatar_key?: string | null }
+  ) =>
+    request<User>("/auth/me", {
+      method: "PATCH",
+      token,
+      body: input,
+    }),
+  presignAvatar: (token: string, contentType: string) =>
+    request<PresignAvatarResponse>("/auth/me/avatar/presign", {
+      method: "POST",
+      token,
+      body: { content_type: contentType },
+    }),
   listWorkspaces: (token: string) =>
     request<Workspace[]>("/workspaces", { token }),
   createWorkspace: (token: string, input: { name: string }) =>
@@ -278,6 +321,15 @@ export const api = {
   },
   listTrash: (token: string, workspaceId: string) =>
     request<TrashEntry[]>(`/workspaces/${workspaceId}/trash`, { token }),
+  presignPageImage: (token: string, workspaceId: string, contentType: string) =>
+    request<PresignAvatarResponse>(
+      `/workspaces/${workspaceId}/uploads/presign`,
+      {
+        method: "POST",
+        token,
+        body: { content_type: contentType },
+      }
+    ),
   workspaceWsUrl: (workspaceId: string, token: string) => {
     const base = API_BASE_URL.replace(/^http/, "ws")
     return `${base}/workspaces/${workspaceId}/ws?token=${encodeURIComponent(token)}`

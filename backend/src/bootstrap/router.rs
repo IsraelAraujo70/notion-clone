@@ -20,7 +20,14 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route("/auth/password/reset", post(auth_routes::reset_password))
         .route("/auth/password/change", post(auth_routes::change_password))
         .route("/auth/logout", post(auth_routes::logout))
-        .route("/auth/me", get(auth_routes::me))
+        .route(
+            "/auth/me",
+            get(auth_routes::me).patch(auth_routes::update_profile),
+        )
+        .route(
+            "/auth/me/avatar/presign",
+            post(auth_routes::presign_avatar),
+        )
         .route(
             "/workspaces",
             get(workspace_routes::list).post(workspace_routes::create),
@@ -60,6 +67,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/workspaces/{workspace_id}/trash",
             get(page_routes::list_trash),
+        )
+        .route(
+            "/workspaces/{workspace_id}/uploads/presign",
+            post(page_routes::presign_image),
         )
         .route(
             "/workspace-invites/{token}",

@@ -15,7 +15,7 @@ Quando um segundo consumidor TypeScript existir (ex.: desktop client), promova `
 | --- | --- | --- |
 | `id` | uuid | Gerado no cliente. |
 | `workspaceId` | uuid | Chave de partição de tudo. |
-| `type` | enum | `page`, `paragraph`, `heading1..3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`. |
+| `type` | enum | `page`, `paragraph`, `heading1..3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`, `image`. |
 | `properties` | json | Por tipo: `text`, `checked`, `language`, `title` (page), `icon` (page, um emoji). |
 | `propVersions` | `{ [key]: number }` | Contadores LWW por propriedade; `_type` para mudança de tipo. |
 | `content` | uuid[] | Filhos **vivos**, na ordem. `content` manda na ordem; `parentId` na pertinência. Os dois sempre concordam. |

@@ -18,6 +18,7 @@ pub enum AppError {
     Forbidden,
     Repository,
     Email,
+    StorageNotConfigured,
     Internal,
 }
 

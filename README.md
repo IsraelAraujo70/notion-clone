@@ -221,7 +221,7 @@ Measurable outcomes:
 
 - One WebSocket per client, subscriptions per workspace with page-level filtering server-side.
 - Broadcast fan-out happens in-process in v1 (single backend instance). The documented scale path is a pub/sub layer (Redis or NATS) between backend instances; nothing in the protocol changes.
-- Presence (cursors, avatars) is a future extension carried over the same socket.
+- Presence (page avatars + block focus) rides the same workspace WebSocket as ops (`presence` client msgs; snapshot/update/leave from server). Avatars use MinIO locally / Railway S3 bucket in prod.
 
 Measurable outcomes:
 

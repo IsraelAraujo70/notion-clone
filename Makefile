@@ -1,5 +1,5 @@
 COMPOSE ?= docker compose
-BACKEND_SERVICES ?= postgres api
+BACKEND_SERVICES ?= postgres minio minio-create-bucket api
 WEB_DIR ?= frontend
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
 DOCKER_WAIT_SECONDS ?= 120
@@ -9,8 +9,8 @@ DOCKER_WAIT_SECONDS ?= 120
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make dev                       Start Postgres+API in Docker, Next via npm run dev' \
-		'  make backend                   Start only Postgres+API containers' \
+		'  make dev                       Start Postgres+MinIO+API in Docker, Next via npm run dev' \
+		'  make backend                   Start Postgres+MinIO+API containers' \
 		'  make watch                     Backend with Docker Compose Watch' \
 		'  make up                        Same as backend (background)' \
 		'  make down                      Stop containers and free local :3000' \
@@ -51,7 +51,7 @@ docker-ready:
 	echo "Open Docker Desktop, wait until it says Running, then re-run make."; \
 	exit 1
 
-# Frontend is local Next (`npm run dev`). Only Postgres + API stay in Docker.
+# Frontend is local Next (`npm run dev`). Postgres + MinIO + API stay in Docker.
 backend: docker-ready
 	$(COMPOSE) up -d --build $(BACKEND_SERVICES)
 

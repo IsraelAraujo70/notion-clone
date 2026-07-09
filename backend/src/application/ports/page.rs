@@ -60,10 +60,23 @@ pub struct OperationAck {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PageEditor {
+    pub user_id: Uuid,
+    pub display_name: String,
+    #[serde(skip_serializing)]
+    pub avatar_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    pub last_edited_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PageView {
     pub page: PageTree,
     pub breadcrumbs: Vec<Breadcrumb>,
     pub seq: i64,
+    #[serde(default)]
+    pub recent_editors: Vec<PageEditor>,
 }
 
 #[derive(Debug, Clone, Serialize)]

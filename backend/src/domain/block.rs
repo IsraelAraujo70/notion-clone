@@ -26,6 +26,7 @@ pub enum BlockType {
     Code,
     Callout,
     Divider,
+    Image,
 }
 
 impl BlockType {
@@ -44,6 +45,7 @@ impl BlockType {
             Self::Code => "code",
             Self::Callout => "callout",
             Self::Divider => "divider",
+            Self::Image => "image",
         }
     }
 }
@@ -63,6 +65,7 @@ pub fn parse_block_type(value: &str) -> Result<BlockType, DomainError> {
         "code" => Ok(BlockType::Code),
         "callout" => Ok(BlockType::Callout),
         "divider" => Ok(BlockType::Divider),
+        "image" => Ok(BlockType::Image),
         _ => Err(DomainError::Validation("Unknown block type")),
     }
 }

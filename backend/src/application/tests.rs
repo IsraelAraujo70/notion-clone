@@ -64,6 +64,8 @@ fn user(id: Uuid, email: &str) -> User {
         id,
         email: email.to_string(),
         display_name: "Israel".to_string(),
+        avatar_key: None,
+        avatar_url: None,
         created_at: fixed_now(),
     }
 }
@@ -90,6 +92,8 @@ impl AuthRepository for FakeAuthRepository {
             id: Uuid::new_v4(),
             email: input.email,
             display_name: input.display_name,
+            avatar_key: None,
+            avatar_url: None,
             created_at: fixed_now(),
         };
         users.insert(
@@ -246,6 +250,32 @@ impl AuthRepository for FakeAuthRepository {
                 *session_user_id != user_id || token_hash == current_token_hash
             });
         Ok(())
+    }
+
+    async fn update_profile(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        avatar_key: Option<Option<String>>,
+    ) -> Result<User, RepositoryError> {
+        let mut users = self.users.lock().unwrap();
+        let record = users.get_mut(&user_id).ok_or(RepositoryError::NotFound)?;
+        if let Some(name) = display_name {
+            record.user.display_name = name;
+        }
+        if let Some(key) = avatar_key {
+            record.user.avatar_key = key;
+        }
+        Ok(record.user.clone())
+    }
+
+    async fn find_user_by_id(&self, user_id: Uuid) -> Result<Option<User>, RepositoryError> {
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .get(&user_id)
+            .map(|record| record.user.clone()))
     }
 }
 
@@ -1084,6 +1114,7 @@ impl PageRepository for FakePageRepository {
             },
             breadcrumbs: Vec::new(),
             seq: 0,
+            recent_editors: Vec::new(),
         })
     }
 

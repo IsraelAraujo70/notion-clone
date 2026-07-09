@@ -39,6 +39,22 @@ page arrives as a block with `content: []`, and the editor renders it as a link.
 
 `seq` is the workspace's operation cursor at read time (the catch-up cursor in M3).
 
+`recent_editors` (optional array, max 5) lists users who recently applied ops
+that touched this page:
+
+```json
+{
+  "recent_editors": [
+    {
+      "user_id": "…",
+      "display_name": "Israel",
+      "avatar_url": "…",
+      "last_edited_at": "2026-07-09T12:00:00Z"
+    }
+  ]
+}
+```
+
 ```json
 {
   "page": {

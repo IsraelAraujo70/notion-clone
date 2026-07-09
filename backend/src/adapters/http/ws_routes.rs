@@ -3,13 +3,17 @@ use std::time::Duration;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::response::IntoResponse;
+use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::time::{interval, MissedTickBehavior};
 use uuid::Uuid;
 
 use crate::adapters::http::error::HttpError;
-use crate::application::realtime::AppliedOpEvent;
+use crate::application::auth::attach_avatar_url;
+use crate::application::realtime::{
+    presence_color, PresencePeer, RealtimeEvent,
+};
 use crate::bootstrap::state::AppState;
 
 const HEARTBEAT_SECS: u64 = 25;
@@ -23,8 +27,22 @@ pub struct WsQuery {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ServerMessage {
     Hello { latest_seq: i64 },
-    Op { event: AppliedOpEvent },
+    Op {
+        event: crate::application::realtime::AppliedOpEvent,
+    },
     Ping,
+    PresenceSnapshot { peers: Vec<PresencePeer> },
+    PresenceUpdate { peer: PresencePeer },
+    PresenceLeave { connection_id: Uuid },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ClientMessage {
+    Presence {
+        page_id: Option<Uuid>,
+        focused_block_id: Option<Uuid>,
+    },
 }
 
 pub async fn workspace_ws(
@@ -41,7 +59,10 @@ pub async fn workspace_ws(
         .await?;
     let latest_seq = snapshot.latest_seq;
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, workspace_id, latest_seq)))
+    let user = attach_avatar_url(current.user, &state.storage);
+    Ok(ws.on_upgrade(move |socket| {
+        handle_socket(socket, state, workspace_id, latest_seq, user)
+    }))
 }
 
 async fn handle_socket(
@@ -49,14 +70,39 @@ async fn handle_socket(
     state: AppState,
     workspace_id: Uuid,
     latest_seq: i64,
+    user: crate::domain::auth::User,
 ) {
     let (mut sender, mut receiver) = socket.split();
     let mut events = state.hub.subscribe(workspace_id);
+    let connection_id = Uuid::new_v4();
+
+    let peer = PresencePeer {
+        connection_id,
+        user_id: user.id,
+        display_name: user.display_name.clone(),
+        avatar_url: user.avatar_url.clone(),
+        page_id: None,
+        focused_block_id: None,
+        color: presence_color(user.id),
+        last_seen: Utc::now(),
+    };
+    let peers = state.hub.join_presence(workspace_id, peer);
 
     if send_json(&mut sender, &ServerMessage::Hello { latest_seq })
         .await
         .is_err()
     {
+        state.hub.leave_presence(workspace_id, connection_id);
+        return;
+    }
+    if send_json(
+        &mut sender,
+        &ServerMessage::PresenceSnapshot { peers },
+    )
+    .await
+    .is_err()
+    {
+        state.hub.leave_presence(workspace_id, connection_id);
         return;
     }
 
@@ -68,8 +114,30 @@ async fn handle_socket(
         tokio::select! {
             event = events.recv() => {
                 match event {
-                    Ok(event) => {
+                    Ok(RealtimeEvent::Op { event }) => {
                         if send_json(&mut sender, &ServerMessage::Op { event }).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(RealtimeEvent::PresenceSnapshot { peers }) => {
+                        if send_json(&mut sender, &ServerMessage::PresenceSnapshot { peers }).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(RealtimeEvent::PresenceUpdate { peer }) => {
+                        // Não ecoa o próprio update de volta (join já mandou snapshot).
+                        if peer.connection_id == connection_id {
+                            continue;
+                        }
+                        if send_json(&mut sender, &ServerMessage::PresenceUpdate { peer }).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(RealtimeEvent::PresenceLeave { connection_id: left }) => {
+                        if left == connection_id {
+                            continue;
+                        }
+                        if send_json(&mut sender, &ServerMessage::PresenceLeave { connection_id: left }).await.is_err() {
                             break;
                         }
                     }
@@ -79,7 +147,20 @@ async fn handle_socket(
             }
             client = receiver.next() => {
                 match client {
-                    Some(Ok(Message::Text(_))) | Some(Ok(Message::Binary(_))) => {}
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(ClientMessage::Presence { page_id, focused_block_id }) =
+                            serde_json::from_str::<ClientMessage>(&text)
+                        {
+                            state.hub.update_presence(
+                                workspace_id,
+                                connection_id,
+                                page_id,
+                                focused_block_id,
+                                Utc::now(),
+                            );
+                        }
+                    }
+                    Some(Ok(Message::Binary(_))) => {}
                     Some(Ok(Message::Ping(payload))) => {
                         if sender.send(Message::Pong(payload)).await.is_err() {
                             break;
@@ -97,6 +178,8 @@ async fn handle_socket(
             }
         }
     }
+
+    state.hub.leave_presence(workspace_id, connection_id);
 }
 
 async fn send_json<S>(sender: &mut S, message: &ServerMessage) -> Result<(), ()>

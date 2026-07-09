@@ -1,6 +1,6 @@
 "use client"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChangePasswordForm } from "@/components/settings/change-password-form"
+import { ProfileForm } from "@/components/settings/profile-form"
 import { ThemeSelector } from "@/components/settings/theme-selector"
 import { WorkspaceMembersPanel } from "@/components/settings/workspace-members-panel"
 import { useAuth } from "@/lib/auth"
@@ -55,6 +56,9 @@ export function SettingsDialog({
           <TabsContent value="account" className="flex flex-col gap-6">
             <div className="flex items-center gap-3 rounded-lg border p-3">
               <Avatar className="size-10 rounded-lg">
+                {user?.avatar_url ? (
+                  <AvatarImage src={user.avatar_url} alt={displayName} />
+                ) : null}
                 <AvatarFallback className="rounded-lg">
                   {initials(displayName)}
                 </AvatarFallback>
@@ -66,6 +70,7 @@ export function SettingsDialog({
                 </p>
               </div>
             </div>
+            <ProfileForm />
             <ChangePasswordForm />
           </TabsContent>
           <TabsContent value="workspace">
