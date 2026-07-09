@@ -472,4 +472,13 @@ impl WorkspaceRepository for PostgresWorkspaceRepository {
             .map(|_| ())
             .map_err(map_sqlx_error)
     }
+
+    async fn delete_workspace(&self, workspace_id: Uuid) -> Result<(), RepositoryError> {
+        sqlx::query("DELETE FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(map_sqlx_error)
+    }
 }

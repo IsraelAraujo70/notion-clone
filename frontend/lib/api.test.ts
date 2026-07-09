@@ -161,6 +161,7 @@ describe("api client", () => {
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
 
     await api.listWorkspaces("secret-token")
     await api.createWorkspace("secret-token", { name: "Product" })
@@ -178,6 +179,7 @@ describe("api client", () => {
       "viewer"
     )
     await api.removeWorkspaceMember("secret-token", "workspace-1", "user-2")
+    await api.deleteWorkspace("secret-token", "workspace-1")
 
     expect(fetch).toHaveBeenNthCalledWith(1, `${API_BASE_URL}/workspaces`, {
       method: "GET",
@@ -249,6 +251,15 @@ describe("api client", () => {
     expect(fetch).toHaveBeenNthCalledWith(
       8,
       `${API_BASE_URL}/workspaces/workspace-1/members/user-2`,
+      {
+        method: "DELETE",
+        headers: { Authorization: "Bearer secret-token" },
+        body: undefined,
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      9,
+      `${API_BASE_URL}/workspaces/workspace-1`,
       {
         method: "DELETE",
         headers: { Authorization: "Bearer secret-token" },

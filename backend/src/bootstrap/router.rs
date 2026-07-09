@@ -33,6 +33,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             get(workspace_routes::list).post(workspace_routes::create),
         )
         .route(
+            "/workspaces/{workspace_id}",
+            delete(workspace_routes::delete_workspace),
+        )
+        .route(
             "/workspaces/{workspace_id}/members",
             get(workspace_routes::list_members),
         )

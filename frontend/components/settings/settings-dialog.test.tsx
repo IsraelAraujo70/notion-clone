@@ -5,14 +5,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
 
 const mocks = vi.hoisted(() => ({
+  activeWorkspace: {
+    id: "workspace-1",
+    name: "Product",
+    role: "owner" as "owner" | "editor" | "viewer",
+    created_at: "2026-07-08T12:00:00Z",
+  },
   activeRole: "owner" as "owner" | "editor" | "viewer",
   changePassword: vi.fn(),
+  deleteWorkspace: vi.fn(),
   inviteWorkspaceMember: vi.fn(),
   listWorkspaceInvites: vi.fn(),
   listWorkspaceMembers: vi.fn(),
   removeWorkspaceMember: vi.fn(),
+  selectWorkspace: vi.fn(),
   setTheme: vi.fn(),
   updateWorkspaceMemberRole: vi.fn(),
+  workspaces: [
+    {
+      id: "workspace-1",
+      name: "Product",
+      role: "owner" as "owner" | "editor" | "viewer",
+      created_at: "2026-07-08T12:00:00Z",
+    },
+    {
+      id: "workspace-2",
+      name: "Design",
+      role: "owner" as "owner" | "editor" | "viewer",
+      created_at: "2026-07-08T12:00:00Z",
+    },
+  ],
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -47,12 +69,10 @@ vi.mock("@/components/theme/theme-provider", async () => {
 
 vi.mock("@/components/workspace/workspace-provider", () => ({
   useWorkspace: () => ({
-    activeWorkspace: {
-      id: "workspace-1",
-      name: "Product",
-      role: mocks.activeRole,
-      created_at: "2026-07-08T12:00:00Z",
-    },
+    activeWorkspace: mocks.activeWorkspace,
+    deleteWorkspace: mocks.deleteWorkspace,
+    selectWorkspace: mocks.selectWorkspace,
+    workspaces: mocks.workspaces,
   }),
 }))
 
@@ -60,6 +80,7 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {},
   api: {
     changePassword: mocks.changePassword,
+    deleteWorkspace: mocks.deleteWorkspace,
     inviteWorkspaceMember: mocks.inviteWorkspaceMember,
     listWorkspaceInvites: mocks.listWorkspaceInvites,
     listWorkspaceMembers: mocks.listWorkspaceMembers,
@@ -99,11 +120,15 @@ const invites = [
 describe("SettingsDialog", () => {
   beforeEach(() => {
     mocks.activeRole = "owner"
+    mocks.activeWorkspace.role = "owner"
+    mocks.workspaces[0].role = "owner"
     mocks.changePassword.mockReset().mockResolvedValue(undefined)
+    mocks.deleteWorkspace.mockReset().mockResolvedValue(undefined)
     mocks.inviteWorkspaceMember.mockReset().mockResolvedValue(invites[0])
     mocks.listWorkspaceInvites.mockReset().mockResolvedValue(invites)
     mocks.listWorkspaceMembers.mockReset().mockResolvedValue(members)
     mocks.removeWorkspaceMember.mockReset().mockResolvedValue(undefined)
+    mocks.selectWorkspace.mockReset()
     mocks.setTheme.mockReset()
     mocks.updateWorkspaceMemberRole.mockReset().mockResolvedValue(undefined)
   })
@@ -148,7 +173,11 @@ describe("SettingsDialog", () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
-    await screen.findByText("Product")
+    await screen.findByText("Workspace selecionado")
+
+    await userEvent.click(screen.getAllByRole("combobox")[0])
+    await userEvent.click(screen.getByRole("option", { name: "Design" }))
+    expect(mocks.selectWorkspace).toHaveBeenCalledWith("workspace-2")
 
     await userEvent.type(screen.getByLabelText("Email"), "new@example.com")
     await userEvent.click(
@@ -186,8 +215,33 @@ describe("SettingsDialog", () => {
     })
   })
 
+  it("requires the workspace name before hard deleting it", async () => {
+    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
+    await screen.findByText("Zona de perigo")
+
+    const deleteButton = screen.getByRole("button", {
+      name: "Apagar workspace",
+    })
+    expect(deleteButton).toBeDisabled()
+
+    await userEvent.type(
+      screen.getByLabelText("Digite Product para confirmar"),
+      "Product"
+    )
+    await waitFor(() => expect(deleteButton).toBeEnabled())
+    await userEvent.click(deleteButton)
+
+    await waitFor(() => {
+      expect(mocks.deleteWorkspace).toHaveBeenCalledWith("workspace-1")
+    })
+  })
+
   it("blocks management actions when the active member is not owner", async () => {
     mocks.activeRole = "viewer"
+    mocks.activeWorkspace.role = "viewer"
+    mocks.workspaces[0].role = "viewer"
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))

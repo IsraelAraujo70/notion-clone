@@ -20,6 +20,7 @@ type WorkspaceContextValue = {
   loading: boolean
   selectWorkspace: (workspaceId: string) => void
   createWorkspace: (name: string) => Promise<Workspace>
+  deleteWorkspace: (workspaceId: string) => Promise<void>
   refreshWorkspaces: () => Promise<void>
 }
 
@@ -101,6 +102,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [persistActiveWorkspace, token]
   )
 
+  const deleteWorkspace = useCallback(
+    async (workspaceId: string) => {
+      if (!token) {
+        throw new Error("Missing session token")
+      }
+
+      await api.deleteWorkspace(token, workspaceId)
+      setWorkspaces((current) => {
+        const next = current.filter((workspace) => workspace.id !== workspaceId)
+        if (activeWorkspaceId === workspaceId) {
+          const selected = next[0] ?? null
+          setActiveWorkspaceId(selected?.id ?? null)
+          if (user && selected) {
+            window.localStorage.setItem(storageKey(user.id), selected.id)
+          } else if (user) {
+            window.localStorage.removeItem(storageKey(user.id))
+          }
+        }
+        return next
+      })
+    },
+    [activeWorkspaceId, token, user]
+  )
+
   const activeWorkspace = useMemo(
     () =>
       workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
@@ -115,6 +140,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     loading,
     selectWorkspace: persistActiveWorkspace,
     createWorkspace,
+    deleteWorkspace,
     refreshWorkspaces: loadWorkspaces,
   }
 

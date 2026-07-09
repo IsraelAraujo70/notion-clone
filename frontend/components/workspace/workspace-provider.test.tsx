@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   },
   listWorkspaces: vi.fn(),
   createWorkspace: vi.fn(),
+  deleteWorkspace: vi.fn(),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/lib/api", () => ({
   api: {
     listWorkspaces: mocks.listWorkspaces,
     createWorkspace: mocks.createWorkspace,
+    deleteWorkspace: mocks.deleteWorkspace,
   },
 }))
 
@@ -51,6 +53,7 @@ function Probe() {
   const {
     activeWorkspace,
     createWorkspace,
+    deleteWorkspace,
     loading,
     selectWorkspace,
     workspaces,
@@ -66,6 +69,9 @@ function Probe() {
       </button>
       <button type="button" onClick={() => void createWorkspace("Sales")}>
         Create sales
+      </button>
+      <button type="button" onClick={() => void deleteWorkspace("workspace-1")}>
+        Delete product
       </button>
     </div>
   )
@@ -84,6 +90,7 @@ describe("WorkspaceProvider", () => {
     localStorage.clear()
     mocks.listWorkspaces.mockReset()
     mocks.createWorkspace.mockReset()
+    mocks.deleteWorkspace.mockReset().mockResolvedValue(undefined)
   })
 
   it("loads workspaces and selects the first when no saved workspace exists", async () => {
@@ -137,6 +144,27 @@ describe("WorkspaceProvider", () => {
     })
     expect(localStorage.getItem("reason_active_workspace:user-1")).toBe(
       "workspace-3"
+    )
+  })
+
+  it("deletes the active workspace and selects the next one", async () => {
+    mocks.listWorkspaces.mockResolvedValue(workspaces)
+
+    renderProvider()
+
+    await screen.findByText("ready")
+    await userEvent.click(screen.getByRole("button", { name: "Delete product" }))
+
+    await waitFor(() => {
+      expect(mocks.deleteWorkspace).toHaveBeenCalledWith(
+        "secret-token",
+        "workspace-1"
+      )
+    })
+    expect(screen.getByTestId("count")).toHaveTextContent("1")
+    expect(screen.getByTestId("active")).toHaveTextContent("workspace-2")
+    expect(localStorage.getItem("reason_active_workspace:user-1")).toBe(
+      "workspace-2"
     )
   })
 })

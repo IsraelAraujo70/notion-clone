@@ -58,11 +58,17 @@ function roleLabel(role: WorkspaceRole) {
 
 export function WorkspaceMembersPanel() {
   const { token, user } = useAuth()
-  const { activeWorkspace } = useWorkspace()
+  const {
+    activeWorkspace,
+    deleteWorkspace,
+    selectWorkspace,
+    workspaces,
+  } = useWorkspace()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invites, setInvites] = useState<WorkspaceInvite[]>([])
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<WorkspaceRole>("editor")
+  const [deleteConfirmation, setDeleteConfirmation] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -88,6 +94,7 @@ export function WorkspaceMembersPanel() {
   }, [activeWorkspace, token])
 
   useEffect(() => {
+    setDeleteConfirmation("")
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled) {
@@ -201,17 +208,67 @@ export function WorkspaceMembersPanel() {
     }
   }
 
+  async function handleDeleteWorkspace() {
+    if (!activeWorkspace || !isOwner) {
+      return
+    }
+    setPending(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await deleteWorkspace(activeWorkspace.id)
+      setDeleteConfirmation("")
+      setNotice("Workspace apagado.")
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Não foi possível apagar o workspace."
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
   if (!activeWorkspace) {
     return <p className="text-sm text-muted-foreground">Nenhum workspace.</p>
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h3 className="font-medium">{activeWorkspace.name}</h3>
-        <p className="text-sm text-muted-foreground">
-          Sua permissão: {roleLabel(activeWorkspace.role)}
-        </p>
+      <div className="rounded-xl border bg-muted/20 p-4">
+        <div className="grid gap-3 md:grid-cols-[1fr_240px] md:items-end">
+          <div>
+            <h3 className="font-medium">Workspace</h3>
+            <p className="text-sm text-muted-foreground">
+              Escolha o workspace antes de gerenciar membros, convites e páginas.
+            </p>
+          </div>
+          <Field>
+            <FieldLabel>Workspace selecionado</FieldLabel>
+            <Select
+              value={activeWorkspace.id}
+              onValueChange={(workspaceId) => selectWorkspace(workspaceId)}
+            >
+              <SelectTrigger className="w-full" data-cy="settings-workspace-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {workspaces.map((workspace) => (
+                    <SelectItem key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-sm text-muted-foreground">
+          <Badge variant="secondary">{activeWorkspace.name}</Badge>
+          <span>Sua permissão: {roleLabel(activeWorkspace.role)}</span>
+        </div>
       </div>
       {error && (
         <Alert variant="destructive">
@@ -234,8 +291,14 @@ export function WorkspaceMembersPanel() {
         <form
           data-cy="workspace-invite-form"
           onSubmit={handleInvite}
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-3 rounded-xl border p-4"
         >
+          <div>
+            <h3 className="font-medium">Convites</h3>
+            <p className="text-sm text-muted-foreground">
+              Envie acesso por email para o workspace selecionado.
+            </p>
+          </div>
           <FieldGroup className="grid gap-3 md:grid-cols-[1fr_140px_auto]">
             <Field>
               <FieldLabel htmlFor="invite-email">Email</FieldLabel>
@@ -285,7 +348,7 @@ export function WorkspaceMembersPanel() {
         </form>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border p-4">
         <h3 className="font-medium">Membros</h3>
         <Table>
           <TableHeader>
@@ -362,7 +425,7 @@ export function WorkspaceMembersPanel() {
       </div>
 
       {isOwner && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 rounded-xl border p-4">
           <h3 className="font-medium">Convites pendentes</h3>
           {invites.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -398,6 +461,42 @@ export function WorkspaceMembersPanel() {
               </TableBody>
             </Table>
           )}
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <div className="flex flex-col gap-1">
+            <h3 className="font-medium text-destructive">Zona de perigo</h3>
+            <p className="text-sm text-muted-foreground">
+              Apagar o workspace remove páginas, membros, convites e histórico. Essa ação é permanente.
+            </p>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <Field>
+              <FieldLabel htmlFor="delete-workspace-confirmation">
+                Digite {activeWorkspace.name} para confirmar
+              </FieldLabel>
+              <Input
+                id="delete-workspace-confirmation"
+                data-cy="delete-workspace-confirmation"
+                value={deleteConfirmation}
+                onChange={(event) => setDeleteConfirmation(event.target.value)}
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="destructive"
+              data-cy="delete-workspace-submit"
+              disabled={
+                pending || deleteConfirmation.trim() !== activeWorkspace.name
+              }
+              onClick={() => void handleDeleteWorkspace()}
+            >
+              {pending && <Spinner data-icon="inline-start" />}
+              Apagar workspace
+            </Button>
+          </div>
         </div>
       )}
     </div>

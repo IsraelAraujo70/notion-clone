@@ -8,7 +8,6 @@ use crate::adapters::postgres::{
     PostgresAuthRepository, PostgresPageRepository, PostgresWorkspaceRepository,
 };
 use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
-use crate::application::realtime::RealtimeHub;
 use crate::application::auth::{
     ChangePasswordUseCase, GetCurrentUserUseCase, LoginUseCase, LogoutUseCase,
     PresignAvatarUseCase, RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
@@ -24,10 +23,11 @@ use crate::application::ports::email::EmailSender;
 use crate::application::ports::page::PageRepository;
 use crate::application::ports::storage::ObjectStorage;
 use crate::application::ports::workspace::WorkspaceRepository;
+use crate::application::realtime::RealtimeHub;
 use crate::application::workspaces::{
-    AcceptInviteUseCase, CreateWorkspaceUseCase, InviteMemberUseCase, ListInvitesUseCase,
-    ListMembersUseCase, ListWorkspacesUseCase, RemoveMemberUseCase, RevokeInviteUseCase,
-    UpdateMemberRoleUseCase,
+    AcceptInviteUseCase, CreateWorkspaceUseCase, DeleteWorkspaceUseCase, InviteMemberUseCase,
+    ListInvitesUseCase, ListMembersUseCase, ListWorkspacesUseCase, RemoveMemberUseCase,
+    RevokeInviteUseCase, UpdateMemberRoleUseCase,
 };
 
 #[derive(Clone)]
@@ -46,6 +46,7 @@ pub struct AppState {
     pub presign_avatar: PresignAvatarUseCase,
     pub list_workspaces: ListWorkspacesUseCase,
     pub create_workspace: CreateWorkspaceUseCase,
+    pub delete_workspace: DeleteWorkspaceUseCase,
     pub list_members: ListMembersUseCase,
     pub list_invites: ListInvitesUseCase,
     pub invite_member: InviteMemberUseCase,
@@ -106,6 +107,7 @@ impl AppState {
             presign_avatar: PresignAvatarUseCase::new(storage.clone()),
             list_workspaces: ListWorkspacesUseCase::new(workspace_repository.clone()),
             create_workspace: CreateWorkspaceUseCase::new(workspace_repository.clone()),
+            delete_workspace: DeleteWorkspaceUseCase::new(workspace_repository.clone()),
             list_members: ListMembersUseCase::new(workspace_repository.clone()),
             list_invites: ListInvitesUseCase::new(workspace_repository.clone(), clock.clone()),
             invite_member: InviteMemberUseCase::new(
@@ -118,7 +120,10 @@ impl AppState {
             update_member_role: UpdateMemberRoleUseCase::new(workspace_repository.clone()),
             remove_member: RemoveMemberUseCase::new(workspace_repository.clone()),
             accept_invite: AcceptInviteUseCase::new(workspace_repository.clone(), clock.clone()),
-            list_pages: ListPagesUseCase::new(page_repository.clone(), workspace_repository.clone()),
+            list_pages: ListPagesUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+            ),
             get_page: GetPageUseCase::new(page_repository.clone(), workspace_repository.clone()),
             apply_operation: ApplyOperationUseCase::new(
                 page_repository.clone(),
@@ -131,10 +136,7 @@ impl AppState {
                 workspace_repository.clone(),
             ),
             list_trash: ListTrashUseCase::new(page_repository, workspace_repository.clone()),
-            presign_page_image: PresignPageImageUseCase::new(
-                workspace_repository,
-                storage,
-            ),
+            presign_page_image: PresignPageImageUseCase::new(workspace_repository, storage),
         }
     }
 }

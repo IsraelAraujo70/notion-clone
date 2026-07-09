@@ -1,5 +1,6 @@
 pub mod accept_invite;
 pub mod create_workspace;
+pub mod delete_workspace;
 pub mod invite_member;
 pub mod list_invites;
 pub mod list_members;
@@ -11,6 +12,7 @@ pub mod update_member_role;
 
 pub use accept_invite::AcceptInviteUseCase;
 pub use create_workspace::CreateWorkspaceUseCase;
+pub use delete_workspace::DeleteWorkspaceUseCase;
 pub use invite_member::InviteMemberUseCase;
 pub use list_invites::ListInvitesUseCase;
 pub use list_members::ListMembersUseCase;

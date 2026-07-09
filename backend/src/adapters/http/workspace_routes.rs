@@ -42,6 +42,18 @@ pub async fn create(
     ))
 }
 
+pub async fn delete_workspace(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path(workspace_id): Path<Uuid>,
+) -> Result<StatusCode, HttpError> {
+    state
+        .delete_workspace
+        .execute(auth.user.id, workspace_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn list_members(
     State(state): State<AppState>,
     auth: AuthenticatedUser,

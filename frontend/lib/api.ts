@@ -242,6 +242,11 @@ export const api = {
       token,
       body: input,
     }),
+  deleteWorkspace: (token: string, workspaceId: string) =>
+    request<void>(`/workspaces/${workspaceId}`, {
+      method: "DELETE",
+      token,
+    }),
   listWorkspaceMembers: (token: string, workspaceId: string) =>
     request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`, {
       token,

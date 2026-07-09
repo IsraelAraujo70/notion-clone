@@ -102,4 +102,6 @@ pub trait WorkspaceRepository: Send + Sync {
 
     async fn remove_member(&self, workspace_id: Uuid, user_id: Uuid)
     -> Result<(), RepositoryError>;
+
+    async fn delete_workspace(&self, workspace_id: Uuid) -> Result<(), RepositoryError>;
 }

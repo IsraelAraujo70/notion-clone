@@ -32,6 +32,7 @@ use crate::application::workspaces::accept_invite::{AcceptInviteInput, AcceptInv
 use crate::application::workspaces::create_workspace::{
     CreateWorkspaceInput, CreateWorkspaceUseCase,
 };
+use crate::application::workspaces::delete_workspace::DeleteWorkspaceUseCase;
 use crate::application::workspaces::invite_member::{
     InviteMemberInput, InviteMemberUseCase, WORKSPACE_INVITE_TTL_DAYS,
 };
@@ -607,6 +608,22 @@ impl WorkspaceRepository for FakeWorkspaceRepository {
             .retain(|(member_workspace_id, member)| {
                 !(*member_workspace_id == workspace_id && member.user_id == user_id)
             });
+        Ok(())
+    }
+
+    async fn delete_workspace(&self, workspace_id: Uuid) -> Result<(), RepositoryError> {
+        self.workspaces
+            .lock()
+            .unwrap()
+            .retain(|(_, membership)| membership.id != workspace_id);
+        self.members
+            .lock()
+            .unwrap()
+            .retain(|(member_workspace_id, _)| *member_workspace_id != workspace_id);
+        self.invites
+            .lock()
+            .unwrap()
+            .retain(|invite| invite.workspace_id != workspace_id);
         Ok(())
     }
 }
@@ -1201,6 +1218,50 @@ fn pages_fixture() -> PagesFixture {
 }
 
 #[tokio::test]
+async fn owner_deletes_workspace_but_editor_cannot() {
+    let workspace_id = Uuid::new_v4();
+    let owner_id = Uuid::new_v4();
+    let editor_id = Uuid::new_v4();
+    let repo = Arc::new(FakeWorkspaceRepository::default());
+    {
+        let mut workspaces = repo.workspaces.lock().unwrap();
+        workspaces.push((owner_id, membership(workspace_id, WorkspaceRole::Owner)));
+        workspaces.push((editor_id, membership(workspace_id, WorkspaceRole::Editor)));
+    }
+    repo.members.lock().unwrap().push((
+        workspace_id,
+        WorkspaceMember {
+            user_id: owner_id,
+            email: "owner@example.com".to_string(),
+            display_name: "Owner".to_string(),
+            role: WorkspaceRole::Owner,
+            joined_at: fixed_now(),
+        },
+    ));
+
+    let use_case = DeleteWorkspaceUseCase::new(repo.clone());
+    assert_eq!(
+        use_case.execute(editor_id, workspace_id).await.unwrap_err(),
+        AppError::Forbidden
+    );
+    assert!(
+        repo.find_membership(workspace_id, owner_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    use_case.execute(owner_id, workspace_id).await.unwrap();
+    assert!(repo.list_members(workspace_id).await.unwrap().is_empty());
+    assert!(
+        repo.find_membership(workspace_id, owner_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn every_member_reads_pages_and_trash() {
     let f = pages_fixture();
     let page_repository: Arc<dyn PageRepository> = f.pages.clone();
@@ -1227,7 +1288,9 @@ async fn non_member_cannot_read_or_write() {
 
     let list = ListPagesUseCase::new(page_repository.clone(), f.workspaces.clone());
     assert_eq!(
-        list.execute(f.stranger_id, f.workspace_id).await.unwrap_err(),
+        list.execute(f.stranger_id, f.workspace_id)
+            .await
+            .unwrap_err(),
         AppError::Forbidden
     );
 
