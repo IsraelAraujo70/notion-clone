@@ -92,10 +92,7 @@ Se você não pediu isso, ignore este e-mail.",
             workspace
         };
         let role_label = role_pt(&email.role);
-        let subject = format!(
-            "Convite para {} no {PRODUCT_NAME}",
-            workspace_label
-        );
+        let subject = format!("Convite para {} no {PRODUCT_NAME}", workspace_label);
         let expires = format_expires(email.expires_at);
         let inviter = email.inviter_display_name.trim();
         let inviter_label = if inviter.is_empty() {

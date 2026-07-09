@@ -201,14 +201,14 @@ Op types (defined once in `contracts/`, imported by both sides):
 Flow:
 
 1. The editor applies the op to local state immediately (optimistic) and pushes it to the outgoing queue with a client-generated `op_id` (uuid).
-2. The queue sends ops over the WebSocket in order.
+2. The queue sends ops over HTTP in order; the WebSocket is the broadcast lane.
 3. The server authorizes, resolves conflicts (below), persists the block change and the op row in one transaction, assigns the next per-workspace `seq`, and acks with `{op_id, seq}`.
 4. The server broadcasts the op to every other subscriber of that workspace/page.
 5. Remote clients apply incoming ops; the sender ignores its own echo by `op_id`.
 
 Conflict resolution: last-writer-wins per block property. Each property carries a version counter; an `update` op includes the version it saw, and the server keeps the write with the highest version (server arrival order breaks ties). Structural ops (`move`, `insert`) are serialized by the per-workspace transaction, so the tree never corrupts. This is deliberately not CRDT, and the README of record says so: it is the same tradeoff Notion made.
 
-Recovery: on reconnect the client sends its last acked `seq` and receives everything after it from `GET /sync/operations?cursor=`. Idempotency: `op_id` is unique; replays are acked without reapplying.
+Recovery: after the WebSocket `hello`, the client fetches everything after its last contiguous `seq` from `GET /workspaces/{id}/operations?after_seq=`. It freezes the first `latest_seq`, paginates with `up_to_seq`, and buffers live events until every preceding sequence is present. HTTP ACKs do not advance the delivery cursor. Idempotency: `op_id` is unique; replays are acked without reapplying.
 
 Measurable outcomes:
 
@@ -335,7 +335,7 @@ Deliver: WebSocket transport, cursor catch-up (`GET /workspaces/{id}/operations?
 
 Done when: two browsers editing the same page converge, and a disconnected client catches up from its cursor.
 
-Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines; editor opens a socket, ignores its own `op_id` echo, and catch-up runs after page load and on reconnect. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
+Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines. Catch-up starts only after `hello`, paginates to a stable snapshot, buffers out-of-order live events, and never advances its delivery cursor from a write ACK. The 501-operation regression is covered by a gate test and `make eval-sync-catch-up`. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
 
 ### M4: Membership, permissions, search
 
@@ -427,11 +427,11 @@ make backend
 ```
 
 
-`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end against a running stack (`docs/evals/page-persistence-smoke.mjs`). AI evals arrive with M5.
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit against Postgres. AI evals arrive with M5.
 
 ## Current Status
 
-M3 done (2026-07-09): real-time sync. Clients load a page (with `seq`), open a workspace WebSocket, catch up from the cursor, and apply remote ops without refresh. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations` so evals and the op queue stay simple; broadcast is the only new write-side side effect.
+M3 done (2026-07-09): real-time sync. Clients load a page and cursor from one repeatable-read snapshot, wait for the workspace WebSocket `hello`, catch up every page to a stable cursor, then drain buffered live ops in contiguous order. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations`; broadcast is the only write-side side effect.
 
 M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five typed operations. Nested pages, breadcrumbs, sidebar tree, and trash/restore round-trip through Postgres. Writes are serialized per workspace, idempotent by `op_id`, and numbered by a monotonic `seq`.
 

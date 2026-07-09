@@ -30,10 +30,11 @@ impl ListOperationsUseCase {
         workspace_id: Uuid,
         after_seq: i64,
         limit: Option<i64>,
+        up_to_seq: Option<i64>,
     ) -> Result<OperationsPage, AppError> {
         require_member(&self.workspace_repository, workspace_id, user_id).await?;
         self.page_repository
-            .list_operations_after(workspace_id, after_seq, limit)
+            .list_operations_after(workspace_id, after_seq, limit, up_to_seq)
             .await
             .map_err(Into::into)
     }

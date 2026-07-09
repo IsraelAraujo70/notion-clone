@@ -28,6 +28,7 @@ export type WorkspaceSocketHandlers = {
 
 const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 8000
+const CATCH_UP_PAGE_SIZE = 500
 
 /**
  * WebSocket do workspace: recebe ops remotas, presence e heartbeat.
@@ -144,12 +145,107 @@ export function connectWorkspaceSocket(
   }
 }
 
-/** Puxa ops com seq > afterSeq e devolve a lista ordenada + latest_seq. */
+/**
+ * Mantém eventos do workspace em ordem de `seq`. Eventos WebSocket podem chegar
+ * enquanto o cliente ainda busca um gap; nesse caso ficam retidos até todas as
+ * operações anteriores existirem no buffer.
+ */
+export class RemoteOperationBuffer {
+  private currentSeq: number
+  private readonly pending = new Map<number, AppliedOpEvent>()
+
+  constructor(initialSeq = 0) {
+    this.currentSeq = initialSeq
+  }
+
+  get cursor() {
+    return this.currentSeq
+  }
+
+  reset(cursor: number) {
+    this.currentSeq = cursor
+    this.pending.clear()
+  }
+
+  setBaseline(cursor: number) {
+    this.currentSeq = cursor
+    for (const seq of this.pending.keys()) {
+      if (seq <= cursor) this.pending.delete(seq)
+    }
+  }
+
+  enqueue(event: AppliedOpEvent) {
+    if (event.seq <= this.currentSeq) return
+    this.pending.set(event.seq, event)
+  }
+
+  drain(apply: (event: AppliedOpEvent) => void) {
+    for (;;) {
+      const nextSeq = this.currentSeq + 1
+      const event = this.pending.get(nextSeq)
+      if (!event) return this.currentSeq
+      apply(event)
+      this.pending.delete(nextSeq)
+      this.currentSeq = nextSeq
+    }
+  }
+
+  hasGap() {
+    return this.pending.size > 0 && !this.pending.has(this.currentSeq + 1)
+  }
+}
+
+/**
+ * Puxa todas as operações até um cursor estável. A primeira resposta captura o
+ * limite do workspace; páginas seguintes usam `up_to_seq` para que novas
+ * escritas não transformem o catch-up em um loop sem fim.
+ */
 export async function catchUpOperations(
   token: string,
   workspaceId: string,
   afterSeq: number
 ): Promise<{ operations: LoggedOperation[]; latestSeq: number }> {
-  const page = await api.listOperations(token, workspaceId, afterSeq)
-  return { operations: page.operations, latestSeq: page.latest_seq }
+  const operations: LoggedOperation[] = []
+  let cursor = afterSeq
+  let targetSeq: number | null = null
+
+  while (targetSeq === null || cursor < targetSeq) {
+    const previousCursor = cursor
+    const page = await api.listOperations(
+      token,
+      workspaceId,
+      cursor,
+      CATCH_UP_PAGE_SIZE,
+      targetSeq ?? undefined
+    )
+
+    if (targetSeq === null) {
+      targetSeq = Math.max(afterSeq, page.latest_seq)
+    }
+
+    for (const entry of page.operations) {
+      if (entry.seq <= cursor) continue
+      if (entry.seq > targetSeq) {
+        throw new Error(
+          `Catch-up returned seq ${entry.seq} beyond snapshot ${targetSeq}`
+        )
+      }
+      if (entry.seq !== cursor + 1) {
+        throw new Error(
+          `Catch-up gap after seq ${cursor}: received ${entry.seq}`
+        )
+      }
+      operations.push(entry)
+      cursor = entry.seq
+    }
+
+    if (cursor >= targetSeq) break
+    if (cursor === previousCursor) {
+      throw new Error(
+        `Catch-up made no progress at seq ${cursor} toward ${targetSeq}`
+      )
+    }
+  }
+
+  return { operations, latestSeq: targetSeq ?? afterSeq }
 }

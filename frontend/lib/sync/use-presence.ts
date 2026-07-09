@@ -26,29 +26,46 @@ export function useWorkspacePresence(
   workspaceId: string | null,
   pageId: string | null,
   onOp: (event: AppliedOpEvent) => void,
-  onOpen?: () => void
+  onReady?: () => void,
+  onStatus?: (status: "connecting" | "open" | "closed") => void
 ) {
   const { token, user } = useAuth()
   const [peers, setPeers] = useState<PresencePeer[]>([])
-  const sendRef = useRef<(pageId: string | null, focusedBlockId: string | null) => void>(
-    () => {}
-  )
+  const sendRef = useRef<
+    (pageId: string | null, focusedBlockId: string | null) => void
+  >(() => {})
   const onOpRef = useRef(onOp)
-  onOpRef.current = onOp
-  const onOpenRef = useRef(onOpen)
-  onOpenRef.current = onOpen
+  const onReadyRef = useRef(onReady)
+  const onStatusRef = useRef(onStatus)
+
+  useEffect(() => {
+    onOpRef.current = onOp
+  }, [onOp])
+
+  useEffect(() => {
+    onReadyRef.current = onReady
+  }, [onReady])
+
+  useEffect(() => {
+    onStatusRef.current = onStatus
+  }, [onStatus])
 
   useEffect(() => {
     if (!token || !workspaceId) return
     let active = true
-    setPeers([])
+    queueMicrotask(() => {
+      if (active) setPeers([])
+    })
 
     const socket = connectWorkspaceSocket(workspaceId, token, {
       onOp: (event) => {
         if (active) onOpRef.current(event)
       },
+      onHello: () => {
+        if (active) onReadyRef.current?.()
+      },
       onStatus: (status) => {
-        if (status === "open") onOpenRef.current?.()
+        if (active) onStatusRef.current?.(status)
       },
       onPresenceSnapshot: (next) => {
         if (active) setPeers(next)
@@ -56,13 +73,17 @@ export function useWorkspacePresence(
       onPresenceUpdate: (peer) => {
         if (!active) return
         setPeers((current) => {
-          const without = current.filter((p) => p.connection_id !== peer.connection_id)
+          const without = current.filter(
+            (p) => p.connection_id !== peer.connection_id
+          )
           return [...without, peer]
         })
       },
       onPresenceLeave: (connectionId) => {
         if (!active) return
-        setPeers((current) => current.filter((p) => p.connection_id !== connectionId))
+        setPeers((current) =>
+          current.filter((p) => p.connection_id !== connectionId)
+        )
       },
     })
     sendRef.current = socket.sendPresence

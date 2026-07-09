@@ -14,6 +14,4 @@ pub use logout::LogoutUseCase;
 pub use request_password_reset::RequestPasswordResetUseCase;
 pub use reset_password::ResetPasswordUseCase;
 pub use signup::{AuthResponse, SignupUseCase};
-pub use update_profile::{
-    attach_avatar_url, PresignAvatarUseCase, UpdateProfileUseCase,
-};
+pub use update_profile::{PresignAvatarUseCase, UpdateProfileUseCase, attach_avatar_url};

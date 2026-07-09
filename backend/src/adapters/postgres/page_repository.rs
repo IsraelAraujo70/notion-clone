@@ -9,16 +9,15 @@ use uuid::Uuid;
 use crate::adapters::postgres::tx::map_sqlx_error;
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList, PageRepository,
-    PageSummary, PageTree, PageView, TrashEntry,
+    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList,
+    PageRepository, PageSummary, PageTree, PageView, TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
 };
 use crate::domain::error::DomainError;
 
-const BLOCK_COLUMNS: &str =
-    "id, workspace_id, type, properties, content, parent_id, trashed_at, trashed_index, prop_versions";
+const BLOCK_COLUMNS: &str = "id, workspace_id, type, properties, content, parent_id, trashed_at, trashed_index, prop_versions";
 
 const DEFAULT_OPS_LIMIT: i64 = 500;
 const MAX_OPS_LIMIT: i64 = 1000;
@@ -327,12 +326,21 @@ impl PageRepository for PostgresPageRepository {
         workspace_id: Uuid,
         page_id: Uuid,
     ) -> Result<PageView, RepositoryError> {
+        // Blocos e cursor precisam vir do mesmo snapshot. Sem isso, uma escrita
+        // entre o fetch da árvore e o SELECT de operation_seq pode devolver
+        // conteúdo antigo com cursor novo, tornando a operação irrecuperável.
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+
         // O container do workspace não é uma página navegável.
         let container_id = sqlx::query_as::<_, (Uuid,)>(
             "SELECT root_page_id FROM workspace_page_roots WHERE workspace_id = $1",
         )
         .bind(workspace_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(map_sqlx_error)?
         .ok_or_else(page_not_found)?
@@ -361,7 +369,7 @@ impl PageRepository for PostgresPageRepository {
         let rows = sqlx::query_as::<_, BlockRow>(&query)
             .bind(workspace_id)
             .bind(page_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *tx)
             .await
             .map_err(map_sqlx_error)?;
 
@@ -401,13 +409,13 @@ impl PageRepository for PostgresPageRepository {
         .bind(workspace_id)
         .bind(page_id)
         .bind(container_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
 
         let seq = sqlx::query_as::<_, (i64,)>("SELECT operation_seq FROM workspaces WHERE id = $1")
             .bind(workspace_id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(map_sqlx_error)?
             .ok_or(RepositoryError::NotFound)?
@@ -422,11 +430,11 @@ impl PageRepository for PostgresPageRepository {
              LIMIT 5",
         )
         .bind(page_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
 
-        Ok(PageView {
+        let view = PageView {
             page: PageTree {
                 root_id: page_id,
                 blocks,
@@ -450,7 +458,9 @@ impl PageRepository for PostgresPageRepository {
                     last_edited_at: row.last_edited_at,
                 })
                 .collect(),
-        })
+        };
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(view)
     }
 
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
@@ -598,12 +608,11 @@ impl PageRepository for PostgresPageRepository {
         workspace_id: Uuid,
         after_seq: i64,
         limit: Option<i64>,
+        up_to_seq: Option<i64>,
     ) -> Result<OperationsPage, RepositoryError> {
-        let limit = limit
-            .unwrap_or(DEFAULT_OPS_LIMIT)
-            .clamp(1, MAX_OPS_LIMIT);
+        let limit = limit.unwrap_or(DEFAULT_OPS_LIMIT).clamp(1, MAX_OPS_LIMIT);
 
-        let latest_seq =
+        let workspace_latest_seq =
             sqlx::query_as::<_, (i64,)>("SELECT operation_seq FROM workspaces WHERE id = $1")
                 .bind(workspace_id)
                 .fetch_optional(&self.pool)
@@ -611,16 +620,20 @@ impl PageRepository for PostgresPageRepository {
                 .map_err(map_sqlx_error)?
                 .ok_or(RepositoryError::NotFound)?
                 .0;
+        let latest_seq = up_to_seq
+            .map(|requested| requested.min(workspace_latest_seq))
+            .unwrap_or(workspace_latest_seq);
 
         let rows = sqlx::query_as::<_, OperationRow>(
             "SELECT seq, op_id, actor_id, operation
              FROM operations
-             WHERE workspace_id = $1 AND seq > $2
+             WHERE workspace_id = $1 AND seq > $2 AND seq <= $3
              ORDER BY seq ASC
-             LIMIT $3",
+             LIMIT $4",
         )
         .bind(workspace_id)
         .bind(after_seq)
+        .bind(latest_seq)
         .bind(limit)
         .fetch_all(&self.pool)
         .await

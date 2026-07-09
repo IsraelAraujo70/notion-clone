@@ -65,17 +65,10 @@ impl RealtimeHub {
     }
 
     pub fn publish_op(&self, event: AppliedOpEvent) {
-        self.publish(
-            event.workspace_id,
-            RealtimeEvent::Op { event },
-        );
+        self.publish(event.workspace_id, RealtimeEvent::Op { event });
     }
 
-    pub fn join_presence(
-        &self,
-        workspace_id: Uuid,
-        peer: PresencePeer,
-    ) -> Vec<PresencePeer> {
+    pub fn join_presence(&self, workspace_id: Uuid, peer: PresencePeer) -> Vec<PresencePeer> {
         let connection_id = peer.connection_id;
         let mut presence = self.presence.lock().expect("presence lock");
         let room = presence.entry(workspace_id).or_default();
@@ -83,10 +76,7 @@ impl RealtimeHub {
         let snapshot: Vec<_> = room.values().cloned().collect();
         drop(presence);
 
-        self.publish(
-            workspace_id,
-            RealtimeEvent::PresenceUpdate { peer },
-        );
+        self.publish(workspace_id, RealtimeEvent::PresenceUpdate { peer });
         snapshot
     }
 
@@ -125,10 +115,7 @@ impl RealtimeHub {
             }
         }
         drop(presence);
-        self.publish(
-            workspace_id,
-            RealtimeEvent::PresenceLeave { connection_id },
-        );
+        self.publish(workspace_id, RealtimeEvent::PresenceLeave { connection_id });
     }
 
     pub fn list_presence(&self, workspace_id: Uuid) -> Vec<PresencePeer> {
@@ -218,11 +205,20 @@ mod tests {
         };
         let snapshot = hub.join_presence(workspace_id, peer);
         assert_eq!(snapshot.len(), 1);
-        assert!(matches!(rx.try_recv().unwrap(), RealtimeEvent::PresenceUpdate { .. }));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            RealtimeEvent::PresenceUpdate { .. }
+        ));
 
         let page_id = Uuid::new_v4();
         let block_id = Uuid::new_v4();
-        hub.update_presence(workspace_id, connection_id, Some(page_id), Some(block_id), Utc::now());
+        hub.update_presence(
+            workspace_id,
+            connection_id,
+            Some(page_id),
+            Some(block_id),
+            Utc::now(),
+        );
         match rx.try_recv().unwrap() {
             RealtimeEvent::PresenceUpdate { peer } => {
                 assert_eq!(peer.page_id, Some(page_id));
@@ -232,7 +228,10 @@ mod tests {
         }
 
         hub.leave_presence(workspace_id, connection_id);
-        assert!(matches!(rx.try_recv().unwrap(), RealtimeEvent::PresenceLeave { .. }));
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            RealtimeEvent::PresenceLeave { .. }
+        ));
         assert!(hub.list_presence(workspace_id).is_empty());
     }
 }

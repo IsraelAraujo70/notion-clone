@@ -16,7 +16,8 @@ use crate::application::auth::request_password_reset::{
 use crate::application::auth::reset_password::{ResetPasswordInput, ResetPasswordUseCase};
 use crate::application::auth::signup::{SignupInput, SignupUseCase};
 use crate::application::pages::{
-    ApplyOperationUseCase, GetPageUseCase, ListPagesUseCase, ListTrashUseCase,
+    ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
+    ListTrashUseCase,
 };
 use crate::application::ports::auth::{
     AuthRepository, CreateUserRecord, CreateUserWithDefaultWorkspaceRecord,
@@ -71,11 +72,13 @@ fn user(id: Uuid, email: &str) -> User {
     }
 }
 
+type ResetTokenRecord = (Uuid, DateTime<Utc>, bool);
+
 #[derive(Default)]
 struct FakeAuthRepository {
     users: Mutex<HashMap<Uuid, UserWithPassword>>,
     sessions: Mutex<HashMap<String, (Uuid, DateTime<Utc>)>>,
-    reset_tokens: Mutex<HashMap<String, (Uuid, DateTime<Utc>, bool)>>,
+    reset_tokens: Mutex<HashMap<String, ResetTokenRecord>>,
     default_workspaces: Mutex<HashMap<Uuid, Workspace>>,
 }
 
@@ -1105,9 +1108,12 @@ async fn cannot_remove_or_demote_last_owner() {
     assert!(matches!(remove, AppError::Domain(_)));
 }
 
+type ListedOperationRange = (i64, Option<i64>, Option<i64>);
+
 #[derive(Default)]
 struct FakePageRepository {
     applied: Mutex<Vec<Operation>>,
+    listed_ranges: Mutex<Vec<ListedOperationRange>>,
 }
 
 #[async_trait]
@@ -1157,9 +1163,14 @@ impl PageRepository for FakePageRepository {
     async fn list_operations_after(
         &self,
         _workspace_id: Uuid,
-        _after_seq: i64,
-        _limit: Option<i64>,
+        after_seq: i64,
+        limit: Option<i64>,
+        up_to_seq: Option<i64>,
     ) -> Result<crate::application::ports::page::OperationsPage, RepositoryError> {
+        self.listed_ranges
+            .lock()
+            .unwrap()
+            .push((after_seq, limit, up_to_seq));
         Ok(crate::application::ports::page::OperationsPage {
             operations: Vec::new(),
             latest_seq: self.applied.lock().unwrap().len() as i64,
@@ -1278,6 +1289,24 @@ async fn every_member_reads_pages_and_trash() {
         );
         assert!(trash.execute(user_id, f.workspace_id).await.is_ok());
     }
+}
+
+#[tokio::test]
+async fn operation_catch_up_preserves_the_requested_snapshot_bound() {
+    let f = pages_fixture();
+    let page_repository: Arc<dyn PageRepository> = f.pages.clone();
+    let list = ListOperationsUseCase::new(page_repository, f.workspaces.clone());
+
+    let page = list
+        .execute(f.owner_id, f.workspace_id, 500, Some(200), Some(900))
+        .await
+        .unwrap();
+
+    assert_eq!(page.latest_seq, 0);
+    assert_eq!(
+        f.pages.listed_ranges.lock().unwrap().as_slice(),
+        &[(500, Some(200), Some(900))]
+    );
 }
 
 #[tokio::test]

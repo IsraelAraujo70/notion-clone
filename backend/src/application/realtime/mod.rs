@@ -1,5 +1,3 @@
 pub mod hub;
 
-pub use hub::{
-    presence_color, AppliedOpEvent, PresencePeer, RealtimeEvent, RealtimeHub,
-};
+pub use hub::{AppliedOpEvent, PresencePeer, RealtimeEvent, RealtimeHub, presence_color};

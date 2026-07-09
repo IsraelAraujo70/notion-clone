@@ -89,8 +89,11 @@ pub struct PageList {
 pub trait PageRepository: Send + Sync {
     async fn list_pages(&self, workspace_id: Uuid) -> Result<PageList, RepositoryError>;
 
-    async fn get_page(&self, workspace_id: Uuid, page_id: Uuid)
-    -> Result<PageView, RepositoryError>;
+    async fn get_page(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+    ) -> Result<PageView, RepositoryError>;
 
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError>;
 
@@ -103,11 +106,14 @@ pub trait PageRepository: Send + Sync {
         now: DateTime<Utc>,
     ) -> Result<OperationAck, RepositoryError>;
 
-    /// Catch-up: ops com `seq > after_seq`, ordenadas, com teto de tamanho.
+    /// Catch-up: ops com `after_seq < seq <= up_to_seq`, ordenadas e paginadas.
+    /// Quando `up_to_seq` não é informado, o repositório captura o cursor atual
+    /// do workspace e o devolve em `latest_seq` como limite estável da página.
     async fn list_operations_after(
         &self,
         workspace_id: Uuid,
         after_seq: i64,
         limit: Option<i64>,
+        up_to_seq: Option<i64>,
     ) -> Result<OperationsPage, RepositoryError>;
 }

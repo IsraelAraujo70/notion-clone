@@ -59,18 +59,11 @@ fn s3_from_env() -> Option<S3Config> {
         .or_else(|| env_string("S3_ENDPOINT_URL"))
         .or_else(|| env_string("S3_ENDPOINT"))?;
     let bucket = env_string("S3_BUCKET")?;
-    let access_key =
-        env_string("S3_ACCESS_KEY_ID").or_else(|| env_string("S3_ACCESS_KEY"))?;
-    let secret_key =
-        env_string("S3_SECRET_ACCESS_KEY").or_else(|| env_string("S3_SECRET_KEY"))?;
+    let access_key = env_string("S3_ACCESS_KEY_ID").or_else(|| env_string("S3_ACCESS_KEY"))?;
+    let secret_key = env_string("S3_SECRET_ACCESS_KEY").or_else(|| env_string("S3_SECRET_KEY"))?;
     let region = env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-    let public_base_url = env_string("S3_PUBLIC_BASE_URL").unwrap_or_else(|| {
-        format!(
-            "{}/{}",
-            public_endpoint.trim_end_matches('/'),
-            bucket
-        )
-    });
+    let public_base_url = env_string("S3_PUBLIC_BASE_URL")
+        .unwrap_or_else(|| format!("{}/{}", public_endpoint.trim_end_matches('/'), bucket));
     let force_path_style = env::var("S3_URL_STYLE")
         .map(|v| v.eq_ignore_ascii_case("path"))
         .ok()

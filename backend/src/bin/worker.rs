@@ -18,7 +18,10 @@ async fn main() {
         .unwrap_or(300)
         .max(1);
 
-    tracing::info!(interval_seconds, "notion-clone-worker starting (no jobs until M6)");
+    tracing::info!(
+        interval_seconds,
+        "notion-clone-worker starting (no jobs until M6)"
+    );
 
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_seconds));
     loop {

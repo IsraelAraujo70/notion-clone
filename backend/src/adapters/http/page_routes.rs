@@ -22,6 +22,7 @@ pub struct PresignImageRequest {
 pub struct ListOperationsQuery {
     pub after_seq: Option<i64>,
     pub limit: Option<i64>,
+    pub up_to_seq: Option<i64>,
 }
 
 pub async fn list_pages(
@@ -77,6 +78,7 @@ pub async fn list_operations(
             workspace_id,
             query.after_seq.unwrap_or(0),
             query.limit,
+            query.up_to_seq,
         )
         .await?;
     Ok(Json(page))

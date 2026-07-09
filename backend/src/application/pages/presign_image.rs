@@ -61,9 +61,7 @@ impl PresignPageImageUseCase {
             }
         };
 
-        let key = self
-            .storage
-            .page_image_key_for(input.workspace_id, ext);
+        let key = self.storage.page_image_key_for(input.workspace_id, ext);
         let upload = self
             .storage
             .presign_put(&key, &input.content_type, 10 * 1024 * 1024)

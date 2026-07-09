@@ -53,7 +53,7 @@ Cada write vira uma linha em `operations` (`workspace_id`, `seq`, `op_id`, `acto
 - **Cursor.** `seq` é monotônico por workspace (`workspaces.operation_seq`). Op rejeitada não consome `seq`.
 - **Serialização.** O apply trava a linha do workspace com `SELECT … FOR UPDATE`, aplica no engine e persiste na mesma transação. Ops estruturais nunca se cruzam.
 - **LWW por propriedade.** `propVersions[k] < stored[k]` → chave ignorada; `>=` aplica (empate: ordem de chegada). Sem versão na op → `stored + 1`.
-- **Transporte.** Writes ainda vão por `POST /operations` (fila HTTP). Após o commit o servidor publica no WebSocket do workspace. Catch-up: `GET /operations?after_seq=`.
+- **Transporte.** Writes ainda vão por `POST /operations` (fila HTTP). Após o commit o servidor publica no WebSocket do workspace. Catch-up pagina `GET /operations?after_seq=&up_to_seq=` até um cursor congelado; eventos live ficam em buffer e só aplicam em ordem contígua de `seq`.
 - **Broadcast.** Hub in-process (`RealtimeHub`); multi-instance troca o hub por Redis/NATS sem mudar o protocolo.
 
 Uma página filha renderizada dentro do pai é um link, nunca conteúdo inline: o `GET /pages/{id}` para a descida na página filha e devolve o bloco dela com `content: []`.

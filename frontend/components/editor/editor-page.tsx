@@ -27,12 +27,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  api,
-  type Breadcrumb as Crumb,
-  type OperationAck,
-  type PageEditor,
-} from "@/lib/api"
+import { api, type Breadcrumb as Crumb, type PageEditor } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import {
   applyOperation,
@@ -41,12 +36,17 @@ import {
   treeFromBlocks,
   type BlockTree,
 } from "@/lib/engine/tree"
-import { createOpQueue, type OpQueue, type SaveState } from "@/lib/engine/op-queue"
+import {
+  createOpQueue,
+  type OpQueue,
+  type SaveState,
+} from "@/lib/engine/op-queue"
 import { UndoManager } from "@/lib/engine/undo"
 import { createId } from "@/lib/id"
 import { useWorkspacePresence } from "@/lib/sync/use-presence"
 import {
   catchUpOperations,
+  RemoteOperationBuffer,
   type AppliedOpEvent,
 } from "@/lib/sync/workspace-socket"
 import { PresenceAvatarStack } from "@/components/editor/presence-avatars"
@@ -68,11 +68,6 @@ const SAVE_LABEL: Record<SaveState, string> = {
 
 function rememberLocalOp(localOpIds: Set<string>, op: Operation) {
   localOpIds.add(op.opId)
-  // Evita crescimento ilimitado em sessões longas.
-  if (localOpIds.size > 500) {
-    const first = localOpIds.values().next().value
-    if (first) localOpIds.delete(first)
-  }
 }
 
 function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
@@ -115,42 +110,117 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const treeRef = useRef<BlockTree | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const sidebarDirty = useRef(false)
-  const lastSeqRef = useRef(0)
+  const [remoteBuffer] = useState(() => new RemoteOperationBuffer())
   const localOpIdsRef = useRef(new Set<string>())
   const catchingUpRef = useRef(false)
+  const syncReadyRef = useRef(false)
+  const syncGenerationRef = useRef(0)
+  const socketReadyRef = useRef(false)
+  const socketWorkspaceRef = useRef<string | null>(null)
 
   const commit = useCallback((next: BlockTree | null) => {
     treeRef.current = next
     setTree(next)
   }, [])
 
-  // Ref estável: effects de load/WS não re-disparam quando refreshPages muda.
-  const applyRemoteEventRef = useRef<(event: AppliedOpEvent) => void>(() => {})
-  applyRemoteEventRef.current = (event: AppliedOpEvent) => {
-    if (localOpIdsRef.current.has(event.op_id)) {
-      lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
+  const applyRemoteEvent = useCallback(
+    (event: AppliedOpEvent) => {
+      if (localOpIdsRef.current.delete(event.op_id)) return
+
+      const current = treeRef.current
+      if (!current) return
+      let next = current
+      let applied = false
+      try {
+        next = applyOperation(current, event.operation).tree
+        applied = true
+      } catch {
+        // Op de outra página / bloco fora da subárvore carregada, ou replay de
+        // uma op estrutural que já estava no snapshot inicial.
+      }
+      if (applied) commit(next)
+      if (touchesSidebar(event.operation, current)) {
+        void refreshPages()
+      }
+    },
+    [commit, refreshPages]
+  )
+
+  // Os callbacks do socket não devem recriar a conexão quando refreshPages muda.
+  const applyRemoteEventRef = useRef(applyRemoteEvent)
+  useEffect(() => {
+    applyRemoteEventRef.current = applyRemoteEvent
+  }, [applyRemoteEvent])
+
+  const runCatchUp = useCallback(async () => {
+    if (
+      !token ||
+      !activeWorkspaceId ||
+      !syncReadyRef.current ||
+      !socketReadyRef.current ||
+      catchingUpRef.current
+    )
       return
-    }
-    const current = treeRef.current
-    if (!current) return
-    let next = current
-    let applied = false
+
+    const generation = syncGenerationRef.current
+    catchingUpRef.current = true
     try {
-      next = applyOperation(current, event.operation).tree
-      applied = true
+      for (;;) {
+        const { operations, latestSeq } = await catchUpOperations(
+          token,
+          activeWorkspaceId,
+          remoteBuffer.cursor
+        )
+        if (!syncReadyRef.current || syncGenerationRef.current !== generation)
+          return
+
+        for (const entry of operations) {
+          remoteBuffer.enqueue({
+            workspace_id: activeWorkspaceId,
+            seq: entry.seq,
+            op_id: entry.op_id,
+            actor_id: entry.actor_id,
+            operation: entry.operation,
+          })
+        }
+        remoteBuffer.drain((event) => applyRemoteEventRef.current(event))
+
+        if (remoteBuffer.cursor < latestSeq) {
+          throw new Error(
+            `Catch-up stopped at ${remoteBuffer.cursor} before ${latestSeq}`
+          )
+        }
+        if (!remoteBuffer.hasGap()) break
+      }
     } catch {
-      // Op de outra página / bloco fora da subárvore carregada.
+      // O buffer continua intacto. O próximo hello/reconnect tenta preencher o gap.
+    } finally {
+      catchingUpRef.current = false
     }
-    if (applied) commit(next)
-    lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
-    if (touchesSidebar(event.operation, current)) {
-      void refreshPages()
-    }
-  }
+  }, [activeWorkspaceId, remoteBuffer, token])
+
+  const receiveRemoteEvent = useCallback(
+    (event: AppliedOpEvent) => {
+      if (event.workspace_id !== activeWorkspaceId) return
+      remoteBuffer.enqueue(event)
+      if (!syncReadyRef.current || catchingUpRef.current) return
+
+      remoteBuffer.drain((next) => applyRemoteEventRef.current(next))
+      if (remoteBuffer.hasGap()) void runCatchUp()
+    },
+    [activeWorkspaceId, remoteBuffer, runCatchUp]
+  )
 
   useEffect(() => {
     if (!token || !activeWorkspaceId) return
     let cancelled = false
+    if (socketWorkspaceRef.current !== activeWorkspaceId) {
+      socketWorkspaceRef.current = activeWorkspaceId
+      socketReadyRef.current = false
+    }
+    syncGenerationRef.current += 1
+    syncReadyRef.current = false
+    remoteBuffer.reset(0)
     undoRef.current = new UndoManager()
     localOpIdsRef.current = new Set()
     queueMicrotask(() => {
@@ -160,55 +230,43 @@ export function EditorPage({ pageId }: { pageId: string }) {
       setSaveState("saved")
       api
         .getPage(token, activeWorkspaceId, pageId)
-        .then(async (response) => {
+        .then((response) => {
           if (cancelled) return
-          lastSeqRef.current = response.seq
+          remoteBuffer.setBaseline(response.seq)
           commit(treeFromBlocks(response.page.rootId, response.page.blocks))
           setBreadcrumbs(response.breadcrumbs)
           setRecentEditors(response.recent_editors ?? [])
-          // Ops que chegaram entre o GET e o commit (ou durante o load).
-          try {
-            const { operations } = await catchUpOperations(
-              token,
-              activeWorkspaceId,
-              response.seq
-            )
-            if (cancelled) return
-            for (const entry of operations) {
-              applyRemoteEventRef.current({
-                workspace_id: activeWorkspaceId,
-                seq: entry.seq,
-                op_id: entry.op_id,
-                actor_id: entry.actor_id,
-                operation: entry.operation,
-              })
-            }
-          } catch {
-            // O WS/reconnect tenta de novo.
-          }
+          syncReadyRef.current = true
+          void runCatchUp()
         })
         .catch(() => {
+          syncReadyRef.current = false
           if (!cancelled) setLoadError(true)
         })
     })
 
     return () => {
       cancelled = true
+      syncReadyRef.current = false
     }
-  }, [activeWorkspaceId, commit, pageId, pageRevision, reloadKey, token])
+  }, [
+    activeWorkspaceId,
+    commit,
+    pageId,
+    pageRevision,
+    reloadKey,
+    remoteBuffer,
+    runCatchUp,
+    token,
+  ])
 
   useEffect(() => {
     if (!token || !activeWorkspaceId || !canWrite) return
     queueRef.current = createOpQueue({
-      send: async (operation) => {
-        const ack: OperationAck = await api.applyOperation(
-          token,
-          activeWorkspaceId,
-          operation
-        )
-        lastSeqRef.current = Math.max(lastSeqRef.current, ack.seq)
-        return ack
-      },
+      // O ACK confirma a escrita local, mas não prova que todos os `seq`
+      // anteriores foram entregues. Só WS/catch-up avançam o cursor contíguo.
+      send: (operation) =>
+        api.applyOperation(token, activeWorkspaceId, operation),
       onStateChange: setSaveState,
     })
     return () => {
@@ -216,38 +274,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
     }
   }, [activeWorkspaceId, canWrite, token])
 
-  // Realtime: WS + presence + catch-up no reconnect.
-  const runCatchUp = useCallback(async () => {
-    if (!token || !activeWorkspaceId || catchingUpRef.current) return
-    catchingUpRef.current = true
-    try {
-      const { operations } = await catchUpOperations(
-        token,
-        activeWorkspaceId,
-        lastSeqRef.current
-      )
-      for (const entry of operations) {
-        applyRemoteEventRef.current({
-          workspace_id: activeWorkspaceId,
-          seq: entry.seq,
-          op_id: entry.op_id,
-          actor_id: entry.actor_id,
-          operation: entry.operation,
-        })
-      }
-    } catch {
-      // Falha de catch-up: o próximo reconnect tenta de novo.
-    } finally {
-      catchingUpRef.current = false
-    }
-  }, [activeWorkspaceId, token])
-
   const { pagePeers, blockPresence, sendPresence } = useWorkspacePresence(
     activeWorkspaceId,
     pageId,
-    (event) => applyRemoteEventRef.current(event),
+    receiveRemoteEvent,
     () => {
+      socketReadyRef.current = true
       void runCatchUp()
+    },
+    (status) => {
+      if (status !== "open") socketReadyRef.current = false
     }
   )
 
@@ -407,7 +443,10 @@ export function EditorPage({ pageId }: { pageId: string }) {
       <main className="grid min-h-svh place-items-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
           Não foi possível abrir esta página.
-          <Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+          <Button
+            variant="outline"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
             Tentar de novo
           </Button>
         </div>
@@ -465,8 +504,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
           data-cy="save-error"
           className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm"
         >
-          <span>Uma edição foi rejeitada. Recarregue para ver o estado real.</span>
-          <Button size="sm" variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+          <span>
+            Uma edição foi rejeitada. Recarregue para ver o estado real.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
             Recarregar
           </Button>
         </div>
@@ -485,7 +530,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
               value={pageProperty(tree, "icon")}
               disabled={!canWrite}
               onSelect={setIcon}
-              className="-ml-2 mb-1"
+              className="mb-1 -ml-2"
             />
             <h1
               ref={titleRef}

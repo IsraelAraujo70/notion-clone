@@ -115,10 +115,7 @@ pub async fn logout(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn me(
-    State(state): State<AppState>,
-    auth: AuthenticatedUser,
-) -> Json<User> {
+pub async fn me(State(state): State<AppState>, auth: AuthenticatedUser) -> Json<User> {
     Json(attach_avatar_url(auth.user, &state.storage))
 }
 

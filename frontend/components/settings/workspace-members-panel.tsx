@@ -58,12 +58,8 @@ function roleLabel(role: WorkspaceRole) {
 
 export function WorkspaceMembersPanel() {
   const { token, user } = useAuth()
-  const {
-    activeWorkspace,
-    deleteWorkspace,
-    selectWorkspace,
-    workspaces,
-  } = useWorkspace()
+  const { activeWorkspace, deleteWorkspace, selectWorkspace, workspaces } =
+    useWorkspace()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invites, setInvites] = useState<WorkspaceInvite[]>([])
   const [email, setEmail] = useState("")
@@ -94,13 +90,13 @@ export function WorkspaceMembersPanel() {
   }, [activeWorkspace, token])
 
   useEffect(() => {
-    setDeleteConfirmation("")
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled) {
         return
       }
 
+      setDeleteConfirmation("")
       void load().catch((caught) => {
         setError(
           caught instanceof ApiError
@@ -241,7 +237,8 @@ export function WorkspaceMembersPanel() {
           <div>
             <h3 className="font-medium">Workspace</h3>
             <p className="text-sm text-muted-foreground">
-              Escolha o workspace antes de gerenciar membros, convites e páginas.
+              Escolha o workspace antes de gerenciar membros, convites e
+              páginas.
             </p>
           </div>
           <Field>
@@ -250,7 +247,10 @@ export function WorkspaceMembersPanel() {
               value={activeWorkspace.id}
               onValueChange={(workspaceId) => selectWorkspace(workspaceId)}
             >
-              <SelectTrigger className="w-full" data-cy="settings-workspace-select">
+              <SelectTrigger
+                className="w-full"
+                data-cy="settings-workspace-select"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -469,7 +469,8 @@ export function WorkspaceMembersPanel() {
           <div className="flex flex-col gap-1">
             <h3 className="font-medium text-destructive">Zona de perigo</h3>
             <p className="text-sm text-muted-foreground">
-              Apagar o workspace remove páginas, membros, convites e histórico. Essa ação é permanente.
+              Apagar o workspace remove páginas, membros, convites e histórico.
+              Essa ação é permanente.
             </p>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">

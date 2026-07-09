@@ -6,14 +6,12 @@ use axum::response::IntoResponse;
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 use uuid::Uuid;
 
 use crate::adapters::http::error::HttpError;
 use crate::application::auth::attach_avatar_url;
-use crate::application::realtime::{
-    presence_color, PresencePeer, RealtimeEvent,
-};
+use crate::application::realtime::{PresencePeer, RealtimeEvent, presence_color};
 use crate::bootstrap::state::AppState;
 
 const HEARTBEAT_SECS: u64 = 25;
@@ -26,14 +24,22 @@ pub struct WsQuery {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ServerMessage {
-    Hello { latest_seq: i64 },
+    Hello {
+        latest_seq: i64,
+    },
     Op {
         event: crate::application::realtime::AppliedOpEvent,
     },
     Ping,
-    PresenceSnapshot { peers: Vec<PresencePeer> },
-    PresenceUpdate { peer: PresencePeer },
-    PresenceLeave { connection_id: Uuid },
+    PresenceSnapshot {
+        peers: Vec<PresencePeer>,
+    },
+    PresenceUpdate {
+        peer: PresencePeer,
+    },
+    PresenceLeave {
+        connection_id: Uuid,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,14 +61,12 @@ pub async fn workspace_ws(
     // Membership check + cursor snapshot for o hello.
     let snapshot = state
         .list_operations
-        .execute(current.user.id, workspace_id, i64::MAX, Some(1))
+        .execute(current.user.id, workspace_id, i64::MAX, Some(1), None)
         .await?;
     let latest_seq = snapshot.latest_seq;
 
     let user = attach_avatar_url(current.user, &state.storage);
-    Ok(ws.on_upgrade(move |socket| {
-        handle_socket(socket, state, workspace_id, latest_seq, user)
-    }))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, workspace_id, latest_seq, user)))
 }
 
 async fn handle_socket(
@@ -95,12 +99,9 @@ async fn handle_socket(
         state.hub.leave_presence(workspace_id, connection_id);
         return;
     }
-    if send_json(
-        &mut sender,
-        &ServerMessage::PresenceSnapshot { peers },
-    )
-    .await
-    .is_err()
+    if send_json(&mut sender, &ServerMessage::PresenceSnapshot { peers })
+        .await
+        .is_err()
     {
         state.hub.leave_presence(workspace_id, connection_id);
         return;
@@ -141,7 +142,9 @@ async fn handle_socket(
                             break;
                         }
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    // Um receiver atrasado perdeu eventos. Encerrar força o cliente a
+                    // reconectar e recuperar o gap pelo log durável.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => break,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }

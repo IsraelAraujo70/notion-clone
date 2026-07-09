@@ -331,10 +331,12 @@ export const api = {
     token: string,
     workspaceId: string,
     afterSeq: number,
-    limit?: number
+    limit?: number,
+    upToSeq?: number
   ) => {
     const params = new URLSearchParams({ after_seq: String(afterSeq) })
     if (limit !== undefined) params.set("limit", String(limit))
+    if (upToSeq !== undefined) params.set("up_to_seq", String(upToSeq))
     return request<OperationsPage>(
       `/workspaces/${workspaceId}/operations?${params}`,
       { token }

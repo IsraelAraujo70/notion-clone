@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::application::AppError;
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::storage::ObjectStorage;
-use crate::domain::auth::{validate_display_name, User};
+use crate::domain::auth::{User, validate_display_name};
 
 #[derive(Debug, Clone)]
 pub struct UpdateProfileInput {
@@ -21,10 +21,7 @@ pub struct UpdateProfileUseCase {
 }
 
 impl UpdateProfileUseCase {
-    pub fn new(
-        auth_repository: Arc<dyn AuthRepository>,
-        storage: Arc<dyn ObjectStorage>,
-    ) -> Self {
+    pub fn new(auth_repository: Arc<dyn AuthRepository>, storage: Arc<dyn ObjectStorage>) -> Self {
         Self {
             auth_repository,
             storage,
@@ -96,7 +93,10 @@ impl PresignAvatarUseCase {
         Self { storage }
     }
 
-    pub async fn execute(&self, input: PresignAvatarInput) -> Result<PresignAvatarResponse, AppError> {
+    pub async fn execute(
+        &self,
+        input: PresignAvatarInput,
+    ) -> Result<PresignAvatarResponse, AppError> {
         if !self.storage.is_configured() {
             return Err(AppError::StorageNotConfigured);
         }

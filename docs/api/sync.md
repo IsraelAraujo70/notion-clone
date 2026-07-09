@@ -4,10 +4,13 @@ Auth: `Authorization: Bearer <session>` on REST; WebSocket uses `?token=`
 (browsers cannot set Authorization on the handshake). Membership required on
 every path.
 
-## `GET /workspaces/{workspace_id}/operations?after_seq=&limit=`
+## `GET /workspaces/{workspace_id}/operations?after_seq=&limit=&up_to_seq=`
 
-Catch-up for reconnection. Returns ops with `seq > after_seq`, ascending, capped
-(default 500, max 1000).
+Catch-up for reconnection. Returns ops with `after_seq < seq <= latest_seq`,
+ascending, capped per page (default 500, max 1000). The first request omits
+`up_to_seq`; its `latest_seq` freezes a snapshot bound. Every later page sends
+that bound as `up_to_seq`, so writes that arrive during recovery do not move the
+target forever.
 
 ```json
 {
@@ -23,8 +26,9 @@ Catch-up for reconnection. Returns ops with `seq > after_seq`, ascending, capped
 }
 ```
 
-`latest_seq` is the workspace cursor even when the page is empty (client is
-already caught up).
+`latest_seq` is the stable upper bound for this pagination run, including when
+the page is empty. If the last returned `seq` is still lower, the client requests
+another page. An empty page before the bound is a protocol error, not success.
 
 ## `POST /workspaces/{workspace_id}/operations`
 
@@ -54,8 +58,15 @@ Client → server:
 `PresencePeer`: `{ connection_id, user_id, display_name, avatar_url?, page_id?, focused_block_id?, color, last_seen }`.
 Presence is ephemeral (in-memory hub), not part of the op log.
 
-On reconnect: open WS, then `GET .../operations?after_seq=<lastAcked>` and apply
-in order before trusting the live stream. Clients ignore their own echo by `op_id`.
+On reconnect: wait for WS `hello` (the server subscription already exists), then
+`GET .../operations?after_seq=<lastContiguousSeq>`. Live events received during
+catch-up stay in a sequence buffer. The client applies only `cursor + 1`, ignores
+duplicates at or below the cursor, and fetches the log again if the buffer shows
+a gap. An HTTP write ACK never advances this delivery cursor by itself.
+
+If the server-side broadcast receiver lags, the socket closes. Reconnect plus the
+durable operation log is the recovery path; silently skipping lost broadcasts is
+not allowed.
 
 ## Property-level LWW
 
@@ -72,6 +83,10 @@ workspace `FOR UPDATE` lock; they do not use property versions.
 ## Client flow
 
 1. `GET /pages/{id}` → tree + `seq`
-2. Open WS; on `open` / after load, catch-up from `seq`
+2. Open WS; after `hello`, catch up from `seq`, paginating to a frozen `latest_seq`
 3. Local edits: optimistic apply + HTTP POST (op queue); track `opId`s to ignore echo
-4. Remote `op` events: apply if the block/parent is in the loaded subtree; refresh sidebar when a page title/icon/structure changes
+4. Buffer remote events and drain strictly by contiguous `seq`; operations for other pages advance the cursor without mutating the loaded tree
+5. Refresh the sidebar when a page title/icon/structure operation applies
+
+Verification: `make eval-sync-catch-up` creates 501 missed operations, adds more
+writes after the first page, and proves the frozen snapshot has no gaps or duplicates.

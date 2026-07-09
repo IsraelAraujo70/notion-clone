@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::application::realtime::{AppliedOpEvent, RealtimeHub};
 use crate::application::AppError;
 use crate::application::ports::clock::Clock;
 use crate::application::ports::page::{OperationAck, PageRepository};
 use crate::application::ports::workspace::WorkspaceRepository;
+use crate::application::realtime::{AppliedOpEvent, RealtimeHub};
 use crate::application::workspaces::permissions::require_writer;
 use crate::domain::block::Operation;
 

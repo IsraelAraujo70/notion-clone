@@ -391,11 +391,11 @@ describe("api client", () => {
     )
 
     await expect(
-      api.listOperations("secret-token", "workspace-1", 2, 100)
+      api.listOperations("secret-token", "workspace-1", 2, 100, 900)
     ).resolves.toMatchObject({ latest_seq: 9 })
 
     expect(fetch).toHaveBeenCalledWith(
-      `${API_BASE_URL}/workspaces/workspace-1/operations?after_seq=2&limit=100`,
+      `${API_BASE_URL}/workspaces/workspace-1/operations?after_seq=2&limit=100&up_to_seq=900`,
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer secret-token",

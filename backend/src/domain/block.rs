@@ -101,7 +101,11 @@ impl Block {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum Operation {
     InsertBlock {
         op_id: Uuid,
@@ -229,7 +233,9 @@ pub fn apply_operation(
                 return Err(DomainError::Validation("Duplicate block id"));
             }
             if !block.content.is_empty() {
-                return Err(DomainError::Validation("insert_block requires empty content"));
+                return Err(DomainError::Validation(
+                    "insert_block requires empty content",
+                ));
             }
             let parent = tree.get(*parent_id)?;
             if parent.trashed_at.is_some() {
@@ -560,7 +566,11 @@ mod tests {
                 op_id: Uuid::new_v4(),
                 block_id: f.first,
                 block_type: None,
-                properties: Some([("text".to_string(), Value::from("v1"))].into_iter().collect()),
+                properties: Some(
+                    [("text".to_string(), Value::from("v1"))]
+                        .into_iter()
+                        .collect()
+                ),
                 prop_versions: Some([("text".to_string(), 1)].into_iter().collect()),
             },
         )
@@ -571,7 +581,11 @@ mod tests {
                 op_id: Uuid::new_v4(),
                 block_id: f.first,
                 block_type: None,
-                properties: Some([("text".to_string(), Value::from("v2"))].into_iter().collect()),
+                properties: Some(
+                    [("text".to_string(), Value::from("v2"))]
+                        .into_iter()
+                        .collect()
+                ),
                 prop_versions: Some([("text".to_string(), 2)].into_iter().collect()),
             },
         )
@@ -615,7 +629,11 @@ mod tests {
                 op_id: Uuid::new_v4(),
                 block_id: f.first,
                 block_type: None,
-                properties: Some([("text".to_string(), Value::from("a"))].into_iter().collect()),
+                properties: Some(
+                    [("text".to_string(), Value::from("a"))]
+                        .into_iter()
+                        .collect()
+                ),
                 prop_versions: Some([("text".to_string(), 5)].into_iter().collect()),
             },
         )
@@ -626,15 +644,16 @@ mod tests {
                 op_id: Uuid::new_v4(),
                 block_id: f.first,
                 block_type: None,
-                properties: Some([("text".to_string(), Value::from("b"))].into_iter().collect()),
+                properties: Some(
+                    [("text".to_string(), Value::from("b"))]
+                        .into_iter()
+                        .collect()
+                ),
                 prop_versions: Some([("text".to_string(), 5)].into_iter().collect()),
             },
         )
         .unwrap();
-        assert_eq!(
-            f.tree.blocks[&f.first].properties["text"],
-            Value::from("b")
-        );
+        assert_eq!(f.tree.blocks[&f.first].properties["text"], Value::from("b"));
     }
 
     #[test]

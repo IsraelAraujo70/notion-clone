@@ -55,7 +55,9 @@ impl AcceptInviteUseCase {
             .workspace_repository
             .find_invite_by_token_hash(&hash_token(token))
             .await?
-            .ok_or_else(|| AppError::Domain(DomainError::Validation("Invite link is invalid")))?;
+            .ok_or(AppError::Domain(DomainError::Validation(
+                "Invite link is invalid",
+            )))?;
 
         if let Some(existing) = self
             .workspace_repository

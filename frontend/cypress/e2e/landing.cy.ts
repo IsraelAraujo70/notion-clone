@@ -18,7 +18,7 @@ describe("landing page", () => {
 
     cy.get('[aria-label="Switch to dark mode"]').click()
     cy.get("html").should("have.class", "dark")
-    cy.get("body").should("have.css", "background-color", "rgb(13, 17, 23)")
+    cy.get("body").should("have.css", "background-color", "rgb(25, 25, 25)")
   })
 
   it("keeps the first viewport usable on mobile", () => {
