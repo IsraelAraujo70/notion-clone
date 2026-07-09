@@ -329,11 +329,13 @@ Status: shipped. Pages live at `/dashboard/pages/[pageId]`; `/dashboard` redirec
 
 Two bugs the work surfaced. Editor mutations (undo stack, outgoing queue) used to run inside a `setState` updater, which React StrictMode double-invokes — the M1 Cypress undo assertion was passing *because of* the double undo. State now lives in a ref and the updater is pure. Second: the op queue sent one request per keystroke, so it coalesces pending `update_block`s by the same key while never touching the operation already in flight.
 
-### M3: Sync and real-time
+### M3: Sync and real-time — DONE (2026-07-09)
 
-Deliver: WebSocket transport, cursor catch-up (`GET /sync/operations?cursor=`), ack/echo protocol, property-level LWW (`propVersions` is accepted and ignored today), reconnection recovery, two-client e2e convergence tests. The op log, the `seq` cursor, `op_id` idempotency, and the client-side op queue already landed in M2.
+Deliver: WebSocket transport, cursor catch-up (`GET /workspaces/{id}/operations?after_seq=`), property-level LWW, reconnection recovery. Writes stay on HTTP POST (op queue); after commit the server broadcasts on the workspace socket. The op log, `seq`, `op_id` idempotency, and client queue were already in M2.
 
 Done when: two browsers editing the same page converge, and a disconnected client catches up from its cursor.
+
+Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines; editor opens a socket, ignores its own `op_id` echo, and catch-up runs after page load and on reconnect. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
 
 ### M4: Membership, permissions, search
 
@@ -429,8 +431,10 @@ make backend
 
 ## Current Status
 
-M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five typed operations. `/dashboard` redirects to the workspace root page; nested pages, breadcrumbs, sidebar tree, and trash/restore of whole subtrees all round-trip through Postgres. Writes are serialized per workspace, idempotent by `op_id`, and numbered by a monotonic `seq` — the M3 catch-up cursor exists before the M3 transport does. Cross-workspace reads and viewer writes fail with 403 at the one authorization function every route shares.
+M3 done (2026-07-09): real-time sync. Clients load a page (with `seq`), open a workspace WebSocket, catch up from the cursor, and apply remote ops without refresh. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations` so evals and the op queue stay simple; broadcast is the only new write-side side effect.
 
-M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops — engine covered by deterministic tests including a seeded fuzz. The repo was rebased on `microsaas-starter`, so auth (signup/login/logout/reset) and workspaces are live against the Rust API.
+M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five typed operations. Nested pages, breadcrumbs, sidebar tree, and trash/restore round-trip through Postgres. Writes are serialized per workspace, idempotent by `op_id`, and numbered by a monotonic `seq`.
 
-Next: M3 — WebSocket transport, cursor catch-up, and property-level LWW.
+M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops.
+
+Next: M4 — public page links, full-text search, permission e2e suite.

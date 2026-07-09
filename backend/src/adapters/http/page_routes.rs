@@ -1,12 +1,21 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::adapters::http::auth_extractor::AuthenticatedUser;
 use crate::adapters::http::error::HttpError;
-use crate::application::ports::page::{OperationAck, PageList, PageView, TrashEntry};
+use crate::application::ports::page::{
+    OperationAck, OperationsPage, PageList, PageView, TrashEntry,
+};
 use crate::bootstrap::state::AppState;
 use crate::domain::block::Operation;
+
+#[derive(Debug, Deserialize)]
+pub struct ListOperationsQuery {
+    pub after_seq: Option<i64>,
+    pub limit: Option<i64>,
+}
 
 pub async fn list_pages(
     State(state): State<AppState>,
@@ -40,6 +49,24 @@ pub async fn apply_operation(
         .execute(auth.user.id, workspace_id, operation)
         .await?;
     Ok(Json(ack))
+}
+
+pub async fn list_operations(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path(workspace_id): Path<Uuid>,
+    Query(query): Query<ListOperationsQuery>,
+) -> Result<Json<OperationsPage>, HttpError> {
+    let page = state
+        .list_operations
+        .execute(
+            auth.user.id,
+            workspace_id,
+            query.after_seq.unwrap_or(0),
+            query.limit,
+        )
+        .await?;
+    Ok(Json(page))
 }
 
 pub async fn list_trash(

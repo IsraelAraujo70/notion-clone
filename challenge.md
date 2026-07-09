@@ -191,6 +191,6 @@ The challenge is successful when:
 
 ## Current Implementation Status
 
-Last updated: 2026-07-08.
+Last updated: 2026-07-09.
 
-Overall status: M1 (local block editor) done; auth and workspaces live via the microsaas-starter rebase. This document is the target. The README describes the architecture, current status, and the milestone plan.
+Overall status: M1–M3 done (local editor, persistence/pages, sync + real-time + LWW). M4–M6 remain (search/public links, AI, hardening). This document is the target. The README describes the architecture, current status, and the milestone plan.

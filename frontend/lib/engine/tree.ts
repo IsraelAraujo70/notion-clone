@@ -6,6 +6,7 @@ import type {
   Operation,
   UpdateBlockOp,
 } from "@/lib/contracts"
+import { TYPE_PROP_VERSION_KEY } from "@/lib/contracts"
 import { createId } from "@/lib/id"
 
 // Engine puro: aplica as cinco operações numa árvore em memória e devolve
@@ -32,11 +33,50 @@ export function newBlock(
     workspaceId,
     type,
     properties,
+    propVersions: {},
     content: [],
     parentId: null,
     trashedAt: null,
     trashedIndex: null,
   }
+}
+
+/** LWW: aplica se `opVersion >= stored` (empate vence por ordem de chegada). */
+function lwwAccept(
+  stored: Record<string, number> | undefined,
+  opVersions: Record<string, number> | undefined,
+  key: string
+): number | null {
+  const current = stored?.[key] ?? 0
+  const incoming =
+    opVersions && key in opVersions ? opVersions[key]! : current + 1
+  return incoming < current ? null : incoming
+}
+
+/**
+ * Preenche `propVersions` em updates que ainda não as carregam, a partir do
+ * estado local. Usado pelo editor antes de apply + enqueue.
+ */
+export function stampPropVersions(tree: BlockTree, op: Operation): Operation {
+  if (op.type !== "update_block") return op
+  const block = getBlock(tree, op.blockId)
+  const propVersions = { ...(op.propVersions ?? {}) }
+  if (op.properties) {
+    for (const key of Object.keys(op.properties)) {
+      if (propVersions[key] === undefined) {
+        propVersions[key] = (block.propVersions?.[key] ?? 0) + 1
+      }
+    }
+  }
+  if (op.blockType && op.blockType !== block.type) {
+    if (propVersions[TYPE_PROP_VERSION_KEY] === undefined) {
+      propVersions[TYPE_PROP_VERSION_KEY] =
+        (block.propVersions?.[TYPE_PROP_VERSION_KEY] ?? 0) + 1
+    }
+  }
+  return Object.keys(propVersions).length > 0
+    ? { ...op, propVersions }
+    : op
 }
 
 export function createPageTree(
@@ -140,20 +180,40 @@ export function applyOperation(
         opId: createId(),
         blockId: op.blockId,
       }
-      const updated: Block = { ...block, properties: { ...block.properties } }
+      const updated: Block = {
+        ...block,
+        properties: { ...block.properties },
+        propVersions: { ...(block.propVersions ?? {}) },
+      }
+      // Inversa sem propVersions: no apply vira stored+1 e sempre vence (undo
+      // de uma sequência de updates não pode ser engolido pelo LWW).
       if (op.blockType && op.blockType !== block.type) {
-        inverse.blockType = block.type
-        updated.type = op.blockType
+        const version = lwwAccept(
+          block.propVersions,
+          op.propVersions,
+          TYPE_PROP_VERSION_KEY
+        )
+        if (version !== null) {
+          inverse.blockType = block.type
+          updated.type = op.blockType
+          updated.propVersions![TYPE_PROP_VERSION_KEY] = version
+        }
       }
       if (op.properties) {
         inverse.properties = {}
         for (const [key, value] of Object.entries(op.properties)) {
+          const version = lwwAccept(block.propVersions, op.propVersions, key)
+          if (version === null) continue
           inverse.properties[key] =
             key in block.properties
               ? (block.properties[key] as JsonValue)
               : null
           if (value === null) delete updated.properties[key]
           else updated.properties[key] = value
+          updated.propVersions![key] = version
+        }
+        if (Object.keys(inverse.properties).length === 0) {
+          delete inverse.properties
         }
       }
       return { tree: mutate(tree, updated), inverse: [inverse] }

@@ -345,6 +345,46 @@ describe("api client", () => {
     })
   })
 
+  it("lists operations after a cursor for catch-up", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(200, {
+        operations: [
+          {
+            seq: 3,
+            op_id: "op-3",
+            actor_id: "user-1",
+            operation: {
+              type: "update_block",
+              opId: "op-3",
+              blockId: "b1",
+              properties: { text: "hi" },
+            },
+          },
+        ],
+        latest_seq: 9,
+      })
+    )
+
+    await expect(
+      api.listOperations("secret-token", "workspace-1", 2, 100)
+    ).resolves.toMatchObject({ latest_seq: 9 })
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE_URL}/workspaces/workspace-1/operations?after_seq=2&limit=100`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer secret-token",
+        }),
+      })
+    )
+  })
+
+  it("builds a workspace websocket url from the api base", () => {
+    expect(api.workspaceWsUrl("workspace-1", "tok en")).toBe(
+      `${API_BASE_URL.replace(/^http/, "ws")}/workspaces/workspace-1/ws?token=tok%20en`
+    )
+  })
+
   it("posts an operation and returns the server ack", async () => {
     const operation: Operation = {
       type: "delete_block",

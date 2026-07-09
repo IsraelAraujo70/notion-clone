@@ -209,9 +209,7 @@ function EditorPreview() {
                       <p className="text-sm text-muted-foreground">
                         {block.label}
                       </p>
-                      <p className="break-words font-medium">
-                        {block.content}
-                      </p>
+                      <p className="font-medium break-words">{block.content}</p>
                     </div>
                   </div>
                 ))}
@@ -311,9 +309,7 @@ export function LandingPage() {
             <div className="mb-5 grid size-10 place-items-center rounded-lg bg-secondary text-foreground">
               <item.icon aria-hidden="true" />
             </div>
-            <h2 className="font-heading text-xl font-semibold">
-              {item.label}
-            </h2>
+            <h2 className="font-heading text-xl font-semibold">{item.label}</h2>
             <p className="mt-3 leading-7 text-muted-foreground">{item.text}</p>
           </article>
         ))}

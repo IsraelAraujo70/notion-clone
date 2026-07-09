@@ -27,12 +27,23 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, type Breadcrumb as Crumb } from "@/lib/api"
+import { api, type Breadcrumb as Crumb, type OperationAck } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { applyOperation, getBlock, treeFromBlocks, type BlockTree } from "@/lib/engine/tree"
+import {
+  applyOperation,
+  getBlock,
+  stampPropVersions,
+  treeFromBlocks,
+  type BlockTree,
+} from "@/lib/engine/tree"
 import { createOpQueue, type OpQueue, type SaveState } from "@/lib/engine/op-queue"
 import { UndoManager } from "@/lib/engine/undo"
 import { createId } from "@/lib/id"
+import {
+  catchUpOperations,
+  connectWorkspaceSocket,
+  type AppliedOpEvent,
+} from "@/lib/sync/workspace-socket"
 
 function opId() {
   return createId()
@@ -47,6 +58,35 @@ const SAVE_LABEL: Record<SaveState, string> = {
   saved: "Salvo",
   saving: "Salvando…",
   error: "Não foi possível salvar",
+}
+
+function rememberLocalOp(localOpIds: Set<string>, op: Operation) {
+  localOpIds.add(op.opId)
+  // Evita crescimento ilimitado em sessões longas.
+  if (localOpIds.size > 500) {
+    const first = localOpIds.values().next().value
+    if (first) localOpIds.delete(first)
+  }
+}
+
+function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
+  if (op.type === "insert_block") return op.block.type === "page"
+  if (
+    op.type === "delete_block" ||
+    op.type === "restore_block" ||
+    op.type === "move_block"
+  ) {
+    const block = tree?.blocks.get(op.blockId)
+    return !block || block.type === "page"
+  }
+  if (op.type === "update_block") {
+    const block = tree?.blocks.get(op.blockId)
+    if (block?.type !== "page") return false
+    return (
+      op.properties?.title !== undefined || op.properties?.icon !== undefined
+    )
+  }
+  return false
 }
 
 export function EditorPage({ pageId }: { pageId: string }) {
@@ -68,16 +108,44 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const treeRef = useRef<BlockTree | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const sidebarDirty = useRef(false)
+  const lastSeqRef = useRef(0)
+  const localOpIdsRef = useRef(new Set<string>())
+  const catchingUpRef = useRef(false)
 
   const commit = useCallback((next: BlockTree | null) => {
     treeRef.current = next
     setTree(next)
   }, [])
 
+  // Ref estável: effects de load/WS não re-disparam quando refreshPages muda.
+  const applyRemoteEventRef = useRef<(event: AppliedOpEvent) => void>(() => {})
+  applyRemoteEventRef.current = (event: AppliedOpEvent) => {
+    if (localOpIdsRef.current.has(event.op_id)) {
+      lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
+      return
+    }
+    const current = treeRef.current
+    if (!current) return
+    let next = current
+    let applied = false
+    try {
+      next = applyOperation(current, event.operation).tree
+      applied = true
+    } catch {
+      // Op de outra página / bloco fora da subárvore carregada.
+    }
+    if (applied) commit(next)
+    lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
+    if (touchesSidebar(event.operation, current)) {
+      void refreshPages()
+    }
+  }
+
   useEffect(() => {
     if (!token || !activeWorkspaceId) return
     let cancelled = false
     undoRef.current = new UndoManager()
+    localOpIdsRef.current = new Set()
     queueMicrotask(() => {
       if (cancelled) return
       commit(null)
@@ -85,10 +153,31 @@ export function EditorPage({ pageId }: { pageId: string }) {
       setSaveState("saved")
       api
         .getPage(token, activeWorkspaceId, pageId)
-        .then((response) => {
+        .then(async (response) => {
           if (cancelled) return
+          lastSeqRef.current = response.seq
           commit(treeFromBlocks(response.page.rootId, response.page.blocks))
           setBreadcrumbs(response.breadcrumbs)
+          // Ops que chegaram entre o GET e o commit (ou durante o load).
+          try {
+            const { operations } = await catchUpOperations(
+              token,
+              activeWorkspaceId,
+              response.seq
+            )
+            if (cancelled) return
+            for (const entry of operations) {
+              applyRemoteEventRef.current({
+                workspace_id: activeWorkspaceId,
+                seq: entry.seq,
+                op_id: entry.op_id,
+                actor_id: entry.actor_id,
+                operation: entry.operation,
+              })
+            }
+          } catch {
+            // O WS/reconnect tenta de novo.
+          }
         })
         .catch(() => {
           if (!cancelled) setLoadError(true)
@@ -103,13 +192,68 @@ export function EditorPage({ pageId }: { pageId: string }) {
   useEffect(() => {
     if (!token || !activeWorkspaceId || !canWrite) return
     queueRef.current = createOpQueue({
-      send: (operation) => api.applyOperation(token, activeWorkspaceId, operation),
+      send: async (operation) => {
+        const ack: OperationAck = await api.applyOperation(
+          token,
+          activeWorkspaceId,
+          operation
+        )
+        lastSeqRef.current = Math.max(lastSeqRef.current, ack.seq)
+        return ack
+      },
       onStateChange: setSaveState,
     })
     return () => {
       queueRef.current = null
     }
   }, [activeWorkspaceId, canWrite, token])
+
+  // Realtime: WS + catch-up no reconnect (membros, inclusive viewer).
+  useEffect(() => {
+    if (!token || !activeWorkspaceId) return
+    let active = true
+
+    const runCatchUp = async () => {
+      if (catchingUpRef.current || !active) return
+      catchingUpRef.current = true
+      try {
+        const { operations } = await catchUpOperations(
+          token,
+          activeWorkspaceId,
+          lastSeqRef.current
+        )
+        if (!active) return
+        for (const entry of operations) {
+          applyRemoteEventRef.current({
+            workspace_id: activeWorkspaceId,
+            seq: entry.seq,
+            op_id: entry.op_id,
+            actor_id: entry.actor_id,
+            operation: entry.operation,
+          })
+        }
+      } catch {
+        // Falha de catch-up: o próximo reconnect tenta de novo.
+      } finally {
+        catchingUpRef.current = false
+      }
+    }
+
+    const socket = connectWorkspaceSocket(activeWorkspaceId, token, {
+      onOp: (event) => {
+        if (!active) return
+        applyRemoteEventRef.current(event)
+      },
+      onStatus: (status) => {
+        if (status === "open") void runCatchUp()
+      },
+    })
+
+    return () => {
+      active = false
+      socket.close()
+    }
+  }, [activeWorkspaceId, token])
 
   const dispatchBatch = useCallback(
     (
@@ -121,15 +265,19 @@ export function EditorPage({ pageId }: { pageId: string }) {
       if (ops.length === 0 || !canWrite || !current) return
       let next = current
       const inverse: Operation[] = []
-      for (const op of ops) {
+      const stamped: Operation[] = []
+      for (const raw of ops) {
+        const op = stampPropVersions(next, raw)
+        rememberLocalOp(localOpIdsRef.current, op)
         const result = applyOperation(next, op)
         next = result.tree
         inverse.unshift(...result.inverse)
+        stamped.push(op)
       }
       undoRef.current.record(inverse, options?.coalesceKey)
       commit(next)
       // Aplicação local é otimista; a fila serializa o envio e nunca bloqueia a digitação.
-      queueRef.current?.push(ops, options?.coalesceKey)
+      queueRef.current?.push(stamped, options?.coalesceKey)
     },
     [canWrite, commit]
   )
@@ -187,6 +335,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
     undoRef.current.breakCoalescing()
     if (!treeRef.current) return
     const { tree: next, ops } = undoRef.current.undo(treeRef.current)
+    for (const op of ops) rememberLocalOp(localOpIdsRef.current, op)
     commit(next)
     queueRef.current?.push(ops)
   }, [commit])
@@ -195,6 +344,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
     undoRef.current.breakCoalescing()
     if (!treeRef.current) return
     const { tree: next, ops } = undoRef.current.redo(treeRef.current)
+    for (const op of ops) rememberLocalOp(localOpIdsRef.current, op)
     commit(next)
     queueRef.current?.push(ops)
   }, [commit])

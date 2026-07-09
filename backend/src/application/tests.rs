@@ -1105,6 +1105,18 @@ impl PageRepository for FakePageRepository {
             seq: applied.len() as i64,
         })
     }
+
+    async fn list_operations_after(
+        &self,
+        _workspace_id: Uuid,
+        _after_seq: i64,
+        _limit: Option<i64>,
+    ) -> Result<crate::application::ports::page::OperationsPage, RepositoryError> {
+        Ok(crate::application::ports::page::OperationsPage {
+            operations: Vec::new(),
+            latest_seq: self.applied.lock().unwrap().len() as i64,
+        })
+    }
 }
 
 fn membership(workspace_id: Uuid, role: WorkspaceRole) -> WorkspaceMembership {
@@ -1196,7 +1208,12 @@ async fn non_member_cannot_read_or_write() {
         AppError::Forbidden
     );
 
-    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+    let apply = ApplyOperationUseCase::new(
+        page_repository,
+        f.workspaces.clone(),
+        clock,
+        crate::application::realtime::RealtimeHub::new(),
+    );
     assert_eq!(
         apply
             .execute(f.stranger_id, f.workspace_id, delete_op(Uuid::new_v4()))
@@ -1212,7 +1229,12 @@ async fn owner_and_editor_write_but_viewer_cannot() {
     let f = pages_fixture();
     let page_repository: Arc<dyn PageRepository> = f.pages.clone();
     let clock: Arc<dyn Clock> = Arc::new(FixedClock { now: fixed_now() });
-    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+    let apply = ApplyOperationUseCase::new(
+        page_repository,
+        f.workspaces.clone(),
+        clock,
+        crate::application::realtime::RealtimeHub::new(),
+    );
 
     let owner_ack = apply
         .execute(f.owner_id, f.workspace_id, delete_op(Uuid::new_v4()))

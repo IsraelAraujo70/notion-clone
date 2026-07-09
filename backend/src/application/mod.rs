@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod pages;
 pub mod ports;
+pub mod realtime;
 pub mod workspaces;
 
 use crate::application::ports::EmailError;

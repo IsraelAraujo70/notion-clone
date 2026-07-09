@@ -7,12 +7,14 @@ use crate::adapters::email::resend::ResendEmailSender;
 use crate::adapters::postgres::{
     PostgresAuthRepository, PostgresPageRepository, PostgresWorkspaceRepository,
 };
+use crate::application::realtime::RealtimeHub;
 use crate::application::auth::{
     ChangePasswordUseCase, GetCurrentUserUseCase, LoginUseCase, LogoutUseCase,
     RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
 };
 use crate::application::pages::{
-    ApplyOperationUseCase, GetPageUseCase, ListPagesUseCase, ListTrashUseCase,
+    ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
+    ListTrashUseCase,
 };
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
@@ -28,6 +30,7 @@ use crate::application::workspaces::{
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub hub: RealtimeHub,
     pub signup: SignupUseCase,
     pub login: LoginUseCase,
     pub logout: LogoutUseCase,
@@ -47,6 +50,7 @@ pub struct AppState {
     pub list_pages: ListPagesUseCase,
     pub get_page: GetPageUseCase,
     pub apply_operation: ApplyOperationUseCase,
+    pub list_operations: ListOperationsUseCase,
     pub list_trash: ListTrashUseCase,
 }
 
@@ -64,6 +68,7 @@ impl AppState {
         let page_repository: Arc<dyn PageRepository> =
             Arc::new(PostgresPageRepository::new(pool.clone()));
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        let hub = RealtimeHub::new();
         let email_sender: Arc<dyn EmailSender> = match resend_api_key {
             Some(api_key) => Arc::new(ResendEmailSender::new(api_key, resend_from_email)),
             None => Arc::new(NoopEmailSender),
@@ -71,6 +76,7 @@ impl AppState {
 
         Self {
             pool,
+            hub: hub.clone(),
             signup: SignupUseCase::new(auth_repository.clone(), clock.clone()),
             login: LoginUseCase::new(auth_repository.clone(), clock.clone()),
             logout: LogoutUseCase::new(auth_repository.clone()),
@@ -103,6 +109,11 @@ impl AppState {
                 page_repository.clone(),
                 workspace_repository.clone(),
                 clock.clone(),
+                hub,
+            ),
+            list_operations: ListOperationsUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
             ),
             list_trash: ListTrashUseCase::new(page_repository, workspace_repository),
         }

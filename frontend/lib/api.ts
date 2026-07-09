@@ -87,6 +87,18 @@ export type OperationAck = {
   seq: number
 }
 
+export type LoggedOperation = {
+  seq: number
+  op_id: string
+  actor_id: string
+  operation: Operation
+}
+
+export type OperationsPage = {
+  operations: LoggedOperation[]
+  latest_seq: number
+}
+
 export type AppSummarySection = {
   id: "overview" | "customers" | "settings" | "activity"
   title: string
@@ -251,6 +263,23 @@ export const api = {
       token,
       body: operation,
     }),
+  listOperations: (
+    token: string,
+    workspaceId: string,
+    afterSeq: number,
+    limit?: number
+  ) => {
+    const params = new URLSearchParams({ after_seq: String(afterSeq) })
+    if (limit !== undefined) params.set("limit", String(limit))
+    return request<OperationsPage>(
+      `/workspaces/${workspaceId}/operations?${params}`,
+      { token }
+    )
+  },
   listTrash: (token: string, workspaceId: string) =>
     request<TrashEntry[]>(`/workspaces/${workspaceId}/trash`, { token }),
+  workspaceWsUrl: (workspaceId: string, token: string) => {
+    const base = API_BASE_URL.replace(/^http/, "ws")
+    return `${base}/workspaces/${workspaceId}/ws?token=${encodeURIComponent(token)}`
+  },
 }

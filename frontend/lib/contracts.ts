@@ -26,11 +26,16 @@ export type JsonValue =
 // text (todos os textuais), checked (to_do), language (code), title/icon (page).
 export type BlockProperties = Record<string, JsonValue>
 
+/** Versão LWW sintética para mudança de `type` (não colide com props do produto). */
+export const TYPE_PROP_VERSION_KEY = "_type"
+
 export interface Block {
   id: string
   workspaceId: string
   type: BlockType
   properties: BlockProperties
+  /** Contadores LWW por chave de propriedade (e `_type` para mudança de tipo). */
+  propVersions?: Record<string, number>
   /** Ids dos filhos vivos, na ordem. `content` manda na ordem; `parentId` manda na pertinência. */
   content: string[]
   parentId: string | null

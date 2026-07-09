@@ -6,6 +6,20 @@ use uuid::Uuid;
 use crate::application::ports::RepositoryError;
 use crate::domain::block::{Block, BlockType, Operation};
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LoggedOperation {
+    pub seq: i64,
+    pub op_id: Uuid,
+    pub actor_id: Uuid,
+    pub operation: Operation,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OperationsPage {
+    pub operations: Vec<LoggedOperation>,
+    pub latest_seq: i64,
+}
+
 /// Subárvore de uma página. Páginas filhas entram como bloco (link), sem os filhos delas.
 #[derive(Debug, Clone, Serialize)]
 pub struct PageTree {
@@ -75,4 +89,12 @@ pub trait PageRepository: Send + Sync {
         operation: &Operation,
         now: DateTime<Utc>,
     ) -> Result<OperationAck, RepositoryError>;
+
+    /// Catch-up: ops com `seq > after_seq`, ordenadas, com teto de tamanho.
+    async fn list_operations_after(
+        &self,
+        workspace_id: Uuid,
+        after_seq: i64,
+        limit: Option<i64>,
+    ) -> Result<OperationsPage, RepositoryError>;
 }
