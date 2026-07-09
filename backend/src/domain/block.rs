@@ -26,6 +26,7 @@ pub enum BlockType {
     Code,
     Callout,
     Divider,
+    Image,
 }
 
 impl BlockType {
@@ -44,6 +45,7 @@ impl BlockType {
             Self::Code => "code",
             Self::Callout => "callout",
             Self::Divider => "divider",
+            Self::Image => "image",
         }
     }
 }
@@ -63,9 +65,13 @@ pub fn parse_block_type(value: &str) -> Result<BlockType, DomainError> {
         "code" => Ok(BlockType::Code),
         "callout" => Ok(BlockType::Callout),
         "divider" => Ok(BlockType::Divider),
+        "image" => Ok(BlockType::Image),
         _ => Err(DomainError::Validation("Unknown block type")),
     }
 }
+
+/// Versão sintética para LWW de `block_type` (não colide com props do produto).
+pub const TYPE_PROP_VERSION_KEY: &str = "_type";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +81,9 @@ pub struct Block {
     #[serde(rename = "type")]
     pub block_type: BlockType,
     pub properties: Map<String, Value>,
+    /// Contadores LWW por chave de propriedade (e `_type` para mudança de tipo).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub prop_versions: HashMap<String, i64>,
     pub content: Vec<Uuid>,
     pub parent_id: Option<Uuid>,
     pub trashed_at: Option<DateTime<Utc>>,
@@ -107,6 +116,10 @@ pub enum Operation {
         block_type: Option<BlockType>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         properties: Option<Map<String, Value>>,
+        /// Versão que o cliente está escrevendo por propriedade. Menor que a
+        /// armazenada = patch daquela chave é ignorado (LWW).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prop_versions: Option<HashMap<String, i64>>,
     },
     MoveBlock {
         op_id: Uuid,
@@ -179,6 +192,25 @@ fn clamp_index(index: i64, length: usize) -> usize {
     index.clamp(0, length as i64) as usize
 }
 
+/// LWW: aplica se `op_version >= stored` (empate vence por ordem de chegada).
+/// Sem versão na op, trata como `stored + 1` (compat scripts M2).
+fn lww_accept(
+    stored: &HashMap<String, i64>,
+    op_versions: Option<&HashMap<String, i64>>,
+    key: &str,
+) -> Option<i64> {
+    let current = stored.get(key).copied().unwrap_or(0);
+    let incoming = match op_versions.and_then(|versions| versions.get(key).copied()) {
+        Some(version) => version,
+        None => current + 1,
+    };
+    if incoming < current {
+        None
+    } else {
+        Some(incoming)
+    }
+}
+
 /// Aplica a operação in-place e devolve os ids dos blocos que mudaram (para persistir).
 pub fn apply_operation(
     tree: &mut BlockTree,
@@ -220,23 +252,35 @@ pub fn apply_operation(
             block_id,
             block_type,
             properties,
+            prop_versions,
             ..
         } => {
             let block = tree.get(*block_id)?;
             if block.trashed_at.is_some() {
                 return Err(DomainError::Validation("Cannot update trashed block"));
             }
+            let op_versions = prop_versions.as_ref();
             let block = tree.blocks.get_mut(block_id).expect("block exists");
-            if let Some(next_type) = block_type {
+            if let Some(next_type) = block_type
+                && let Some(version) =
+                    lww_accept(&block.prop_versions, op_versions, TYPE_PROP_VERSION_KEY)
+            {
                 block.block_type = *next_type;
+                block
+                    .prop_versions
+                    .insert(TYPE_PROP_VERSION_KEY.to_string(), version);
             }
             if let Some(patch) = properties {
                 for (key, value) in patch {
+                    let Some(version) = lww_accept(&block.prop_versions, op_versions, key) else {
+                        continue;
+                    };
                     if value.is_null() {
                         block.properties.remove(key);
                     } else {
                         block.properties.insert(key.clone(), value.clone());
                     }
+                    block.prop_versions.insert(key.clone(), version);
                 }
             }
             Ok(vec![*block_id])
@@ -356,6 +400,7 @@ mod tests {
             workspace_id,
             block_type,
             properties: Map::new(),
+            prop_versions: HashMap::new(),
             content: Vec::new(),
             parent_id: None,
             trashed_at: None,
@@ -482,6 +527,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 ),
+                prop_versions: None,
             },
         )
         .unwrap();
@@ -494,6 +540,7 @@ mod tests {
                 block_id: f.first,
                 block_type: Some(BlockType::Paragraph),
                 properties: Some([("checked".to_string(), Value::Null)].into_iter().collect()),
+                prop_versions: None,
             },
         )
         .unwrap();
@@ -502,6 +549,92 @@ mod tests {
         assert_eq!(first.block_type, BlockType::Paragraph);
         assert!(!first.properties.contains_key("checked"));
         assert_eq!(first.properties["text"], Value::from("comprar pão"));
+    }
+
+    #[test]
+    fn lww_drops_stale_property_writes() {
+        let mut f = fixture();
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: None,
+                properties: Some([("text".to_string(), Value::from("v1"))].into_iter().collect()),
+                prop_versions: Some([("text".to_string(), 1)].into_iter().collect()),
+            },
+        )
+        .unwrap();
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: None,
+                properties: Some([("text".to_string(), Value::from("v2"))].into_iter().collect()),
+                prop_versions: Some([("text".to_string(), 2)].into_iter().collect()),
+            },
+        )
+        .unwrap();
+        // Stale write with version 1 must not overwrite version 2.
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: None,
+                properties: Some(
+                    [
+                        ("text".to_string(), Value::from("stale")),
+                        ("checked".to_string(), Value::Bool(true)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                prop_versions: Some(
+                    [("text".to_string(), 1), ("checked".to_string(), 1)]
+                        .into_iter()
+                        .collect(),
+                ),
+            },
+        )
+        .unwrap();
+        let first = &f.tree.blocks[&f.first];
+        assert_eq!(first.properties["text"], Value::from("v2"));
+        assert_eq!(first.properties["checked"], Value::Bool(true));
+        assert_eq!(first.prop_versions.get("text"), Some(&2));
+        assert_eq!(first.prop_versions.get("checked"), Some(&1));
+    }
+
+    #[test]
+    fn lww_equal_version_wins_by_arrival_order() {
+        let mut f = fixture();
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: None,
+                properties: Some([("text".to_string(), Value::from("a"))].into_iter().collect()),
+                prop_versions: Some([("text".to_string(), 5)].into_iter().collect()),
+            },
+        )
+        .unwrap();
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: None,
+                properties: Some([("text".to_string(), Value::from("b"))].into_iter().collect()),
+                prop_versions: Some([("text".to_string(), 5)].into_iter().collect()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            f.tree.blocks[&f.first].properties["text"],
+            Value::from("b")
+        );
     }
 
     #[test]
@@ -706,6 +839,7 @@ mod tests {
                     block_id: Uuid::new_v4(),
                     block_type: None,
                     properties: None,
+                    prop_versions: None,
                 }
             ),
             Err(DomainError::Validation("Block not found"))

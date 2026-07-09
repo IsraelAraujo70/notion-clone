@@ -62,6 +62,11 @@ impl IntoResponse for HttpError {
                 "email_error",
                 "Email delivery could not satisfy the request",
             ),
+            AppError::StorageNotConfigured => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "storage_not_configured",
+                "Object storage is not configured",
+            ),
             AppError::Repository | AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",

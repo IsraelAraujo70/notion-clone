@@ -72,4 +72,13 @@ pub trait AuthRepository: Send + Sync {
         password_hash: &str,
         current_token_hash: &str,
     ) -> Result<(), RepositoryError>;
+
+    async fn update_profile(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        avatar_key: Option<Option<String>>,
+    ) -> Result<User, RepositoryError>;
+
+    async fn find_user_by_id(&self, user_id: Uuid) -> Result<Option<User>, RepositoryError>;
 }

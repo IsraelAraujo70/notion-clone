@@ -37,6 +37,7 @@ pub async fn run() {
         config.public_web_url.clone(),
         config.resend_api_key.clone(),
         config.resend_from_email.clone(),
+        config.s3.clone(),
     );
 
     tracing::info!("notion-clone-api listening on {address}");

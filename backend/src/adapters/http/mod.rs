@@ -5,3 +5,4 @@ pub mod dto;
 pub mod error;
 pub mod page_routes;
 pub mod workspace_routes;
+pub mod ws_routes;

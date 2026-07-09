@@ -39,6 +39,22 @@ page arrives as a block with `content: []`, and the editor renders it as a link.
 
 `seq` is the workspace's operation cursor at read time (the catch-up cursor in M3).
 
+`recent_editors` (optional array, max 5) lists users who recently applied ops
+that touched this page:
+
+```json
+{
+  "recent_editors": [
+    {
+      "user_id": "…",
+      "display_name": "Israel",
+      "avatar_url": "…",
+      "last_edited_at": "2026-07-09T12:00:00Z"
+    }
+  ]
+}
+```
+
 ```json
 {
   "page": {
@@ -135,8 +151,9 @@ A page block carries `title` and, optionally, `icon` (a single emoji). Renaming 
 page, setting its icon, and moving it to the trash are just `update_block` /
 `delete_block` on the page block — there is no page-specific endpoint.
 
-`properties` is a patch: `null` removes the key. `propVersions` is accepted and
-ignored until M3 (property-level LWW).
+`properties` is a patch: `null` removes the key. `propVersions` drives
+property-level LWW (see [`sync.md`](./sync.md)): lower versions for a key are
+skipped; equal or higher apply; missing versions bump `stored + 1`.
 
 ## `GET /workspaces/{workspace_id}/trash`
 

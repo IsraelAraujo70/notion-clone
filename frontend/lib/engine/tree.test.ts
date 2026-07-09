@@ -118,6 +118,34 @@ describe("update_block", () => {
     expect(visibleTree(undone)).toEqual(visibleTree(before))
     expect(getBlock(undone, "b").properties).not.toHaveProperty("fresh")
   })
+
+  it("LWW drops stale property writes and applies higher versions", () => {
+    let tree = fixture()
+    tree = applyOperation(tree, {
+      type: "update_block",
+      opId: oid(),
+      blockId: "a",
+      properties: { text: "v1" },
+      propVersions: { text: 1 },
+    }).tree
+    tree = applyOperation(tree, {
+      type: "update_block",
+      opId: oid(),
+      blockId: "a",
+      properties: { text: "v2" },
+      propVersions: { text: 2 },
+    }).tree
+    tree = applyOperation(tree, {
+      type: "update_block",
+      opId: oid(),
+      blockId: "a",
+      properties: { text: "stale", checked: true },
+      propVersions: { text: 1, checked: 1 },
+    }).tree
+    const a = getBlock(tree, "a")
+    expect(a.properties).toEqual({ text: "v2", checked: true })
+    expect(a.propVersions).toMatchObject({ text: 2, checked: 1 })
+  })
 })
 
 describe("move_block", () => {

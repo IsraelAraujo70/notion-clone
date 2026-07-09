@@ -2,7 +2,7 @@ use axum::Router;
 use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
-use crate::adapters::http::{app_routes, auth_routes, page_routes, workspace_routes};
+use crate::adapters::http::{app_routes, auth_routes, page_routes, workspace_routes, ws_routes};
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
 use crate::bootstrap::state::AppState;
@@ -20,7 +20,14 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route("/auth/password/reset", post(auth_routes::reset_password))
         .route("/auth/password/change", post(auth_routes::change_password))
         .route("/auth/logout", post(auth_routes::logout))
-        .route("/auth/me", get(auth_routes::me))
+        .route(
+            "/auth/me",
+            get(auth_routes::me).patch(auth_routes::update_profile),
+        )
+        .route(
+            "/auth/me/avatar/presign",
+            post(auth_routes::presign_avatar),
+        )
         .route(
             "/workspaces",
             get(workspace_routes::list).post(workspace_routes::create),
@@ -51,11 +58,19 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         )
         .route(
             "/workspaces/{workspace_id}/operations",
-            post(page_routes::apply_operation),
+            get(page_routes::list_operations).post(page_routes::apply_operation),
+        )
+        .route(
+            "/workspaces/{workspace_id}/ws",
+            get(ws_routes::workspace_ws),
         )
         .route(
             "/workspaces/{workspace_id}/trash",
             get(page_routes::list_trash),
+        )
+        .route(
+            "/workspaces/{workspace_id}/uploads/presign",
+            post(page_routes::presign_image),
         )
         .route(
             "/workspace-invites/{token}",

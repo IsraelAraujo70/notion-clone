@@ -1,15 +1,16 @@
 COMPOSE ?= docker compose
-BACKEND_SERVICES ?= postgres api
+BACKEND_SERVICES ?= postgres minio minio-create-bucket api
 WEB_DIR ?= frontend
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
+DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help dev backend watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-frontend-components clean kill-web
+.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-frontend-components clean kill-web
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make dev                       Start Postgres+API in Docker, Next via npm run dev' \
-		'  make backend                   Start only Postgres+API containers' \
+		'  make dev                       Start Postgres+MinIO+API in Docker, Next via npm run dev' \
+		'  make backend                   Start Postgres+MinIO+API containers' \
 		'  make watch                     Backend with Docker Compose Watch' \
 		'  make up                        Same as backend (background)' \
 		'  make down                      Stop containers and free local :3000' \
@@ -23,14 +24,41 @@ help:
 		'  make eval-frontend-components  Check frontend boundary rules' \
 		'  make clean                     Stop containers, free :3000, remove volumes'
 
-# Frontend is local Next (`npm run dev`). Only Postgres + API stay in Docker.
-backend:
+# If the daemon is down, open Docker Desktop (macOS) and wait until it answers.
+docker-ready:
+	@if docker info >/dev/null 2>&1; then \
+		exit 0; \
+	fi; \
+	echo "Docker daemon is not running."; \
+	if [ "$$(uname -s)" = "Darwin" ] && [ -d /Applications/Docker.app ]; then \
+		echo "Opening Docker Desktop..."; \
+		open -a Docker; \
+	else \
+		echo "Start Docker and re-run this command."; \
+		exit 1; \
+	fi; \
+	echo "Waiting up to $(DOCKER_WAIT_SECONDS)s for Docker..."; \
+	i=0; \
+	while [ $$i -lt $(DOCKER_WAIT_SECONDS) ]; do \
+		if docker info >/dev/null 2>&1; then \
+			echo "Docker is ready."; \
+			exit 0; \
+		fi; \
+		i=$$((i + 2)); \
+		sleep 2; \
+	done; \
+	echo "Docker did not become ready in $(DOCKER_WAIT_SECONDS)s."; \
+	echo "Open Docker Desktop, wait until it says Running, then re-run make."; \
+	exit 1
+
+# Frontend is local Next (`npm run dev`). Postgres + MinIO + API stay in Docker.
+backend: docker-ready
 	$(COMPOSE) up -d --build $(BACKEND_SERVICES)
 
 dev: backend
 	cd $(WEB_DIR) && NEXT_PUBLIC_API_BASE_URL=$(NEXT_PUBLIC_API_BASE_URL) npm run dev
 
-watch:
+watch: docker-ready
 	$(COMPOSE) up --watch --build $(BACKEND_SERVICES)
 
 up: backend
@@ -45,14 +73,18 @@ kill-web:
 	fi
 
 down: kill-web
-	-$(COMPOSE) --profile e2e --profile docker-web down --remove-orphans
+	@if docker info >/dev/null 2>&1; then \
+		$(COMPOSE) --profile e2e --profile docker-web down --remove-orphans; \
+	else \
+		echo "Docker daemon not running; skipped compose down."; \
+	fi
 
 restart: down up
 
-logs:
+logs: docker-ready
 	$(COMPOSE) logs -f $(BACKEND_SERVICES)
 
-ps:
+ps: docker-ready
 	$(COMPOSE) ps
 
 test: test-api test-web
@@ -63,7 +95,7 @@ test-api:
 test-web:
 	cd $(WEB_DIR) && npm test
 
-test-e2e:
+test-e2e: docker-ready
 	$(COMPOSE) --profile e2e up -d --build api-e2e web-e2e
 	$(COMPOSE) --profile e2e run --rm cypress
 
@@ -77,4 +109,8 @@ eval-frontend-components:
 	bash docs/evals/frontend-component-boundaries.sh
 
 clean: kill-web
-	-$(COMPOSE) --profile e2e --profile docker-web down --volumes --remove-orphans
+	@if docker info >/dev/null 2>&1; then \
+		$(COMPOSE) --profile e2e --profile docker-web down --volumes --remove-orphans; \
+	else \
+		echo "Docker daemon not running; skipped compose clean."; \
+	fi

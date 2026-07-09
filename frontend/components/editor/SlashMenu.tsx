@@ -62,6 +62,12 @@ export const SLASH_ITEMS: SlashItem[] = [
     label: "Divisor",
     keywords: "divider divisor linha",
   },
+  {
+    type: "image",
+    icon: "🖼",
+    label: "Imagem",
+    keywords: "image imagem foto picture upload",
+  },
 ]
 
 interface SlashMenuProps {

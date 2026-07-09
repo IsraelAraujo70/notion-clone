@@ -64,6 +64,8 @@ fn user(id: Uuid, email: &str) -> User {
         id,
         email: email.to_string(),
         display_name: "Israel".to_string(),
+        avatar_key: None,
+        avatar_url: None,
         created_at: fixed_now(),
     }
 }
@@ -90,6 +92,8 @@ impl AuthRepository for FakeAuthRepository {
             id: Uuid::new_v4(),
             email: input.email,
             display_name: input.display_name,
+            avatar_key: None,
+            avatar_url: None,
             created_at: fixed_now(),
         };
         users.insert(
@@ -246,6 +250,32 @@ impl AuthRepository for FakeAuthRepository {
                 *session_user_id != user_id || token_hash == current_token_hash
             });
         Ok(())
+    }
+
+    async fn update_profile(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        avatar_key: Option<Option<String>>,
+    ) -> Result<User, RepositoryError> {
+        let mut users = self.users.lock().unwrap();
+        let record = users.get_mut(&user_id).ok_or(RepositoryError::NotFound)?;
+        if let Some(name) = display_name {
+            record.user.display_name = name;
+        }
+        if let Some(key) = avatar_key {
+            record.user.avatar_key = key;
+        }
+        Ok(record.user.clone())
+    }
+
+    async fn find_user_by_id(&self, user_id: Uuid) -> Result<Option<User>, RepositoryError> {
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .get(&user_id)
+            .map(|record| record.user.clone()))
     }
 }
 
@@ -1084,6 +1114,7 @@ impl PageRepository for FakePageRepository {
             },
             breadcrumbs: Vec::new(),
             seq: 0,
+            recent_editors: Vec::new(),
         })
     }
 
@@ -1103,6 +1134,18 @@ impl PageRepository for FakePageRepository {
         Ok(OperationAck {
             op_id: operation.op_id(),
             seq: applied.len() as i64,
+        })
+    }
+
+    async fn list_operations_after(
+        &self,
+        _workspace_id: Uuid,
+        _after_seq: i64,
+        _limit: Option<i64>,
+    ) -> Result<crate::application::ports::page::OperationsPage, RepositoryError> {
+        Ok(crate::application::ports::page::OperationsPage {
+            operations: Vec::new(),
+            latest_seq: self.applied.lock().unwrap().len() as i64,
         })
     }
 }
@@ -1196,7 +1239,12 @@ async fn non_member_cannot_read_or_write() {
         AppError::Forbidden
     );
 
-    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+    let apply = ApplyOperationUseCase::new(
+        page_repository,
+        f.workspaces.clone(),
+        clock,
+        crate::application::realtime::RealtimeHub::new(),
+    );
     assert_eq!(
         apply
             .execute(f.stranger_id, f.workspace_id, delete_op(Uuid::new_v4()))
@@ -1212,7 +1260,12 @@ async fn owner_and_editor_write_but_viewer_cannot() {
     let f = pages_fixture();
     let page_repository: Arc<dyn PageRepository> = f.pages.clone();
     let clock: Arc<dyn Clock> = Arc::new(FixedClock { now: fixed_now() });
-    let apply = ApplyOperationUseCase::new(page_repository, f.workspaces.clone(), clock);
+    let apply = ApplyOperationUseCase::new(
+        page_repository,
+        f.workspaces.clone(),
+        clock,
+        crate::application::realtime::RealtimeHub::new(),
+    );
 
     let owner_ack = apply
         .execute(f.owner_id, f.workspace_id, delete_op(Uuid::new_v4()))

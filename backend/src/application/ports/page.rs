@@ -6,6 +6,20 @@ use uuid::Uuid;
 use crate::application::ports::RepositoryError;
 use crate::domain::block::{Block, BlockType, Operation};
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LoggedOperation {
+    pub seq: i64,
+    pub op_id: Uuid,
+    pub actor_id: Uuid,
+    pub operation: Operation,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OperationsPage {
+    pub operations: Vec<LoggedOperation>,
+    pub latest_seq: i64,
+}
+
 /// Subárvore de uma página. Páginas filhas entram como bloco (link), sem os filhos delas.
 #[derive(Debug, Clone, Serialize)]
 pub struct PageTree {
@@ -46,10 +60,23 @@ pub struct OperationAck {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PageEditor {
+    pub user_id: Uuid,
+    pub display_name: String,
+    #[serde(skip_serializing)]
+    pub avatar_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    pub last_edited_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PageView {
     pub page: PageTree,
     pub breadcrumbs: Vec<Breadcrumb>,
     pub seq: i64,
+    #[serde(default)]
+    pub recent_editors: Vec<PageEditor>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,4 +102,12 @@ pub trait PageRepository: Send + Sync {
         operation: &Operation,
         now: DateTime<Utc>,
     ) -> Result<OperationAck, RepositoryError>;
+
+    /// Catch-up: ops com `seq > after_seq`, ordenadas, com teto de tamanho.
+    async fn list_operations_after(
+        &self,
+        workspace_id: Uuid,
+        after_seq: i64,
+        limit: Option<i64>,
+    ) -> Result<OperationsPage, RepositoryError>;
 }

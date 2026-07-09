@@ -2,6 +2,8 @@ use std::env;
 
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
+use crate::adapters::storage::S3Config;
+
 pub const DEFAULT_PUBLIC_WEB_URL: &str = "http://localhost:3000";
 pub const DEFAULT_RESEND_FROM_EMAIL: &str = "MicroSaaS Starter <onboarding@resend.dev>";
 
@@ -13,6 +15,7 @@ pub struct Config {
     pub public_web_url: String,
     pub resend_api_key: Option<String>,
     pub resend_from_email: String,
+    pub s3: Option<S3Config>,
 }
 
 impl Config {
@@ -26,6 +29,7 @@ impl Config {
             resend_api_key: env_string("RESEND_API_KEY"),
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
+            s3: s3_from_env(),
         }
     }
 
@@ -39,12 +43,52 @@ impl Config {
             resend_api_key: env_string("RESEND_API_KEY"),
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
+            s3: s3_from_env(),
         }
     }
 
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+}
+
+fn s3_from_env() -> Option<S3Config> {
+    // Aceita nomes do drive-clone (S3_ENDPOINT_URL / S3_ACCESS_KEY_ID) e os curtos.
+    let public_endpoint = env_string("S3_PUBLIC_ENDPOINT_URL")
+        .or_else(|| env_string("S3_PUBLIC_ENDPOINT"))
+        .or_else(|| env_string("S3_ENDPOINT_URL"))
+        .or_else(|| env_string("S3_ENDPOINT"))?;
+    let bucket = env_string("S3_BUCKET")?;
+    let access_key =
+        env_string("S3_ACCESS_KEY_ID").or_else(|| env_string("S3_ACCESS_KEY"))?;
+    let secret_key =
+        env_string("S3_SECRET_ACCESS_KEY").or_else(|| env_string("S3_SECRET_KEY"))?;
+    let region = env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+    let public_base_url = env_string("S3_PUBLIC_BASE_URL").unwrap_or_else(|| {
+        format!(
+            "{}/{}",
+            public_endpoint.trim_end_matches('/'),
+            bucket
+        )
+    });
+    let force_path_style = env::var("S3_URL_STYLE")
+        .map(|v| v.eq_ignore_ascii_case("path"))
+        .ok()
+        .or_else(|| {
+            env::var("S3_FORCE_PATH_STYLE")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        })
+        .unwrap_or(true);
+    Some(S3Config {
+        public_endpoint,
+        region,
+        bucket,
+        access_key,
+        secret_key,
+        public_base_url,
+        force_path_style,
+    })
 }
 
 #[derive(Debug, Clone)]

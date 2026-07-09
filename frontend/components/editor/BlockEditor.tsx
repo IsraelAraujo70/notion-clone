@@ -26,8 +26,10 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@/lib/id"
+import type { PresencePeer } from "@/lib/api"
 import { CopyIcon, ScissorsIcon, Trash2Icon } from "lucide-react"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
+import { BlockPresenceAvatar } from "./presence-avatars"
 
 type DropPosition = "above" | "below"
 
@@ -69,6 +71,9 @@ interface BlockEditorProps {
   /** Abre uma página filha. Sem handler, o bloco `page` vira uma linha inerte. */
   onOpenPage?: (pageId: string) => void
   readOnly?: boolean
+  blockPresence?: Map<string, PresencePeer[]>
+  /** Upload de imagem (presign + PUT). Devolve URL pública e key. */
+  onUploadImage?: (file: File) => Promise<{ url: string; key: string }>
 }
 
 const LIST_TYPES = new Set<BlockType>([
@@ -187,7 +192,12 @@ export function BlockEditor({
   redo,
   onOpenPage,
   readOnly = false,
+  blockPresence,
+  onUploadImage,
 }: BlockEditorProps) {
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const imageTargetBlockRef = useRef<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const workspaceId = getBlock(tree, tree.rootId).workspaceId
   const editableRefs = useRef(new Map<string, HTMLElement>())
   const containerRef = useRef<HTMLDivElement>(null)
@@ -536,6 +546,23 @@ export function BlockEditor({
         return
       }
 
+      if (type === "image") {
+        dispatchBatch(
+          [
+            {
+              type: "update_block",
+              opId: opId(),
+              blockId: block.id,
+              properties: { text: nextText },
+            },
+          ],
+          { breakCoalescing: true }
+        )
+        imageTargetBlockRef.current = block.id
+        imageInputRef.current?.click()
+        return
+      }
+
       requestFocus({
         blockId: block.id,
         offset: removal?.slashIndex ?? nextText.length,
@@ -563,6 +590,44 @@ export function BlockEditor({
       onSelectedBlockChange,
       requestFocus,
       slash,
+      tree,
+    ]
+  )
+
+  const insertImageAfter = useCallback(
+    async (afterBlockId: string, file: File) => {
+      if (!onUploadImage || readOnly) return
+      const after = getBlock(tree, afterBlockId)
+      setUploadingImage(true)
+      try {
+        const { url, key } = await onUploadImage(file)
+        const sibling = insertSibling(after, "image", "")
+        if (!sibling) return
+        dispatchBatch(
+          [
+            {
+              ...sibling.op,
+              block: {
+                ...sibling.op.block,
+                properties: { url, key, caption: "" },
+              },
+            },
+          ],
+          { breakCoalescing: true }
+        )
+        onSelectedBlockChange(sibling.blockId)
+      } catch {
+        // Caller / UI pode mostrar erro depois; evita quebrar o editor.
+      } finally {
+        setUploadingImage(false)
+      }
+    },
+    [
+      dispatchBatch,
+      insertSibling,
+      onSelectedBlockChange,
+      onUploadImage,
+      readOnly,
       tree,
     ]
   )
@@ -977,6 +1042,7 @@ export function BlockEditor({
                 : "hover:bg-muted/40"
           }`}
         >
+          <BlockPresenceAvatar peers={blockPresence?.get(block.id) ?? []} />
           <button
             type="button"
             draggable={!readOnly}
@@ -1047,6 +1113,74 @@ export function BlockEditor({
               }}
             >
               <hr className="border-border" />
+            </div>
+          ) : block.type === "image" ? (
+            <div
+              tabIndex={0}
+              data-cy={`image-block-${block.id}`}
+              className="flex flex-col gap-2 py-1"
+              onClick={() => onSelectedBlockChange(block.id)}
+              onKeyDown={(event) => {
+                if (readOnly) return
+                if (event.key === "Backspace" || event.key === "Delete") {
+                  event.preventDefault()
+                  dispatchBatch(
+                    [{ type: "delete_block", opId: opId(), blockId: block.id }],
+                    { breakCoalescing: true }
+                  )
+                }
+              }}
+            >
+              {typeof block.properties.url === "string" &&
+              block.properties.url.length > 0 ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={block.properties.url}
+                  alt={
+                    typeof block.properties.caption === "string"
+                      ? block.properties.caption
+                      : "Imagem"
+                  }
+                  className="max-h-[min(70vh,720px)] w-full rounded-md border object-contain bg-muted/30"
+                  draggable={false}
+                />
+              ) : (
+                <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                  Imagem sem URL
+                </div>
+              )}
+              {!readOnly ? (
+                <input
+                  type="text"
+                  data-cy={`image-caption-${block.id}`}
+                  placeholder="Legenda (opcional)"
+                  value={
+                    typeof block.properties.caption === "string"
+                      ? block.properties.caption
+                      : ""
+                  }
+                  className="w-full border-0 bg-transparent px-1 text-center text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+                  onChange={(event) =>
+                    dispatchBatch(
+                      [
+                        {
+                          type: "update_block",
+                          opId: opId(),
+                          blockId: block.id,
+                          properties: { caption: event.currentTarget.value },
+                        },
+                      ],
+                      { coalesceKey: `caption-${block.id}` }
+                    )
+                  }
+                  onBlur={() => dispatchBatch([], { breakCoalescing: true })}
+                />
+              ) : typeof block.properties.caption === "string" &&
+                block.properties.caption.length > 0 ? (
+                <p className="text-center text-sm text-muted-foreground">
+                  {block.properties.caption}
+                </p>
+              ) : null}
             </div>
           ) : (
             <div
@@ -1168,7 +1302,63 @@ export function BlockEditor({
       ref={containerRef}
       className="space-y-0.5"
       onMouseDown={handleContainerMouseDown}
+      onPaste={(event) => {
+        if (readOnly || !onUploadImage) return
+        const file = [...(event.clipboardData?.files ?? [])].find((item) =>
+          item.type.startsWith("image/")
+        )
+        if (!file) return
+        event.preventDefault()
+        const target =
+          selectedBlockId ??
+          focusedBlockId ??
+          getBlock(tree, tree.rootId).content.at(-1) ??
+          null
+        if (target) void insertImageAfter(target, file)
+      }}
+      onDragOver={(event) => {
+        if (
+          !readOnly &&
+          onUploadImage &&
+          [...event.dataTransfer.types].includes("Files")
+        ) {
+          event.preventDefault()
+        }
+      }}
+      onDrop={(event) => {
+        if (readOnly || !onUploadImage) return
+        const file = [...event.dataTransfer.files].find((item) =>
+          item.type.startsWith("image/")
+        )
+        if (!file) return
+        event.preventDefault()
+        const target =
+          selectedBlockId ??
+          focusedBlockId ??
+          getBlock(tree, tree.rootId).content.at(-1) ??
+          null
+        if (target) void insertImageAfter(target, file)
+      }}
     >
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        data-cy="image-file-input"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          const target = imageTargetBlockRef.current
+          event.target.value = ""
+          imageTargetBlockRef.current = null
+          if (file && target) void insertImageAfter(target, file)
+        }}
+      />
+      {uploadingImage ? (
+        <p className="px-8 py-2 text-xs text-muted-foreground" data-cy="image-uploading">
+          Enviando imagem…
+        </p>
+      ) : null}
       {getBlock(tree, tree.rootId).content.map((childId) =>
         renderBlock(getBlock(tree, childId), 0)
       )}

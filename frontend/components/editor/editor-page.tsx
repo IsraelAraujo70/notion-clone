@@ -27,12 +27,29 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, type Breadcrumb as Crumb } from "@/lib/api"
+import {
+  api,
+  type Breadcrumb as Crumb,
+  type OperationAck,
+  type PageEditor,
+} from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { applyOperation, getBlock, treeFromBlocks, type BlockTree } from "@/lib/engine/tree"
+import {
+  applyOperation,
+  getBlock,
+  stampPropVersions,
+  treeFromBlocks,
+  type BlockTree,
+} from "@/lib/engine/tree"
 import { createOpQueue, type OpQueue, type SaveState } from "@/lib/engine/op-queue"
 import { UndoManager } from "@/lib/engine/undo"
 import { createId } from "@/lib/id"
+import { useWorkspacePresence } from "@/lib/sync/use-presence"
+import {
+  catchUpOperations,
+  type AppliedOpEvent,
+} from "@/lib/sync/workspace-socket"
+import { PresenceAvatarStack } from "@/components/editor/presence-avatars"
 
 function opId() {
   return createId()
@@ -49,6 +66,35 @@ const SAVE_LABEL: Record<SaveState, string> = {
   error: "Não foi possível salvar",
 }
 
+function rememberLocalOp(localOpIds: Set<string>, op: Operation) {
+  localOpIds.add(op.opId)
+  // Evita crescimento ilimitado em sessões longas.
+  if (localOpIds.size > 500) {
+    const first = localOpIds.values().next().value
+    if (first) localOpIds.delete(first)
+  }
+}
+
+function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
+  if (op.type === "insert_block") return op.block.type === "page"
+  if (
+    op.type === "delete_block" ||
+    op.type === "restore_block" ||
+    op.type === "move_block"
+  ) {
+    const block = tree?.blocks.get(op.blockId)
+    return !block || block.type === "page"
+  }
+  if (op.type === "update_block") {
+    const block = tree?.blocks.get(op.blockId)
+    if (block?.type !== "page") return false
+    return (
+      op.properties?.title !== undefined || op.properties?.icon !== undefined
+    )
+  }
+  return false
+}
+
 export function EditorPage({ pageId }: { pageId: string }) {
   const router = useRouter()
   const { token } = useAuth()
@@ -61,6 +107,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const [loadError, setLoadError] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [recentEditors, setRecentEditors] = useState<PageEditor[]>([])
   const undoRef = useRef(new UndoManager())
   const queueRef = useRef<OpQueue | null>(null)
   // Espelho do estado: as mutações do editor têm efeitos colaterais (undo stack,
@@ -68,16 +115,44 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const treeRef = useRef<BlockTree | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const sidebarDirty = useRef(false)
+  const lastSeqRef = useRef(0)
+  const localOpIdsRef = useRef(new Set<string>())
+  const catchingUpRef = useRef(false)
 
   const commit = useCallback((next: BlockTree | null) => {
     treeRef.current = next
     setTree(next)
   }, [])
 
+  // Ref estável: effects de load/WS não re-disparam quando refreshPages muda.
+  const applyRemoteEventRef = useRef<(event: AppliedOpEvent) => void>(() => {})
+  applyRemoteEventRef.current = (event: AppliedOpEvent) => {
+    if (localOpIdsRef.current.has(event.op_id)) {
+      lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
+      return
+    }
+    const current = treeRef.current
+    if (!current) return
+    let next = current
+    let applied = false
+    try {
+      next = applyOperation(current, event.operation).tree
+      applied = true
+    } catch {
+      // Op de outra página / bloco fora da subárvore carregada.
+    }
+    if (applied) commit(next)
+    lastSeqRef.current = Math.max(lastSeqRef.current, event.seq)
+    if (touchesSidebar(event.operation, current)) {
+      void refreshPages()
+    }
+  }
+
   useEffect(() => {
     if (!token || !activeWorkspaceId) return
     let cancelled = false
     undoRef.current = new UndoManager()
+    localOpIdsRef.current = new Set()
     queueMicrotask(() => {
       if (cancelled) return
       commit(null)
@@ -85,10 +160,32 @@ export function EditorPage({ pageId }: { pageId: string }) {
       setSaveState("saved")
       api
         .getPage(token, activeWorkspaceId, pageId)
-        .then((response) => {
+        .then(async (response) => {
           if (cancelled) return
+          lastSeqRef.current = response.seq
           commit(treeFromBlocks(response.page.rootId, response.page.blocks))
           setBreadcrumbs(response.breadcrumbs)
+          setRecentEditors(response.recent_editors ?? [])
+          // Ops que chegaram entre o GET e o commit (ou durante o load).
+          try {
+            const { operations } = await catchUpOperations(
+              token,
+              activeWorkspaceId,
+              response.seq
+            )
+            if (cancelled) return
+            for (const entry of operations) {
+              applyRemoteEventRef.current({
+                workspace_id: activeWorkspaceId,
+                seq: entry.seq,
+                op_id: entry.op_id,
+                actor_id: entry.actor_id,
+                operation: entry.operation,
+              })
+            }
+          } catch {
+            // O WS/reconnect tenta de novo.
+          }
         })
         .catch(() => {
           if (!cancelled) setLoadError(true)
@@ -103,13 +200,60 @@ export function EditorPage({ pageId }: { pageId: string }) {
   useEffect(() => {
     if (!token || !activeWorkspaceId || !canWrite) return
     queueRef.current = createOpQueue({
-      send: (operation) => api.applyOperation(token, activeWorkspaceId, operation),
+      send: async (operation) => {
+        const ack: OperationAck = await api.applyOperation(
+          token,
+          activeWorkspaceId,
+          operation
+        )
+        lastSeqRef.current = Math.max(lastSeqRef.current, ack.seq)
+        return ack
+      },
       onStateChange: setSaveState,
     })
     return () => {
       queueRef.current = null
     }
   }, [activeWorkspaceId, canWrite, token])
+
+  // Realtime: WS + presence + catch-up no reconnect.
+  const runCatchUp = useCallback(async () => {
+    if (!token || !activeWorkspaceId || catchingUpRef.current) return
+    catchingUpRef.current = true
+    try {
+      const { operations } = await catchUpOperations(
+        token,
+        activeWorkspaceId,
+        lastSeqRef.current
+      )
+      for (const entry of operations) {
+        applyRemoteEventRef.current({
+          workspace_id: activeWorkspaceId,
+          seq: entry.seq,
+          op_id: entry.op_id,
+          actor_id: entry.actor_id,
+          operation: entry.operation,
+        })
+      }
+    } catch {
+      // Falha de catch-up: o próximo reconnect tenta de novo.
+    } finally {
+      catchingUpRef.current = false
+    }
+  }, [activeWorkspaceId, token])
+
+  const { pagePeers, blockPresence, sendPresence } = useWorkspacePresence(
+    activeWorkspaceId,
+    pageId,
+    (event) => applyRemoteEventRef.current(event),
+    () => {
+      void runCatchUp()
+    }
+  )
+
+  useEffect(() => {
+    sendPresence(pageId, selectedBlockId)
+  }, [pageId, selectedBlockId, sendPresence])
 
   const dispatchBatch = useCallback(
     (
@@ -121,15 +265,19 @@ export function EditorPage({ pageId }: { pageId: string }) {
       if (ops.length === 0 || !canWrite || !current) return
       let next = current
       const inverse: Operation[] = []
-      for (const op of ops) {
+      const stamped: Operation[] = []
+      for (const raw of ops) {
+        const op = stampPropVersions(next, raw)
+        rememberLocalOp(localOpIdsRef.current, op)
         const result = applyOperation(next, op)
         next = result.tree
         inverse.unshift(...result.inverse)
+        stamped.push(op)
       }
       undoRef.current.record(inverse, options?.coalesceKey)
       commit(next)
       // Aplicação local é otimista; a fila serializa o envio e nunca bloqueia a digitação.
-      queueRef.current?.push(ops, options?.coalesceKey)
+      queueRef.current?.push(stamped, options?.coalesceKey)
     },
     [canWrite, commit]
   )
@@ -187,6 +335,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
     undoRef.current.breakCoalescing()
     if (!treeRef.current) return
     const { tree: next, ops } = undoRef.current.undo(treeRef.current)
+    for (const op of ops) rememberLocalOp(localOpIdsRef.current, op)
     commit(next)
     queueRef.current?.push(ops)
   }, [commit])
@@ -195,6 +344,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
     undoRef.current.breakCoalescing()
     if (!treeRef.current) return
     const { tree: next, ops } = undoRef.current.redo(treeRef.current)
+    for (const op of ops) rememberLocalOp(localOpIdsRef.current, op)
     commit(next)
     queueRef.current?.push(ops)
   }, [commit])
@@ -297,13 +447,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <span
-          data-cy="save-state"
-          data-state={canWrite ? saveState : "read-only"}
-          className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
-        >
-          {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
-        </span>
+        <div className="flex items-center gap-3">
+          <PresenceAvatarStack live={pagePeers} recent={recentEditors} />
+          <span
+            data-cy="save-state"
+            data-state={canWrite ? saveState : "read-only"}
+            className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
+          </span>
+        </div>
       </header>
 
       {saveState === "error" ? (
@@ -361,6 +514,31 @@ export function EditorPage({ pageId }: { pageId: string }) {
               redo={redo}
               onOpenPage={(childId) => router.push(pagePath(childId))}
               readOnly={!canWrite}
+              blockPresence={blockPresence}
+              onUploadImage={
+                token && activeWorkspaceId && canWrite
+                  ? async (file) => {
+                      const presign = await api.presignPageImage(
+                        token,
+                        activeWorkspaceId,
+                        file.type
+                      )
+                      const headers = new Headers()
+                      for (const header of presign.headers) {
+                        headers.set(header.name, header.value)
+                      }
+                      const put = await fetch(presign.upload_url, {
+                        method: "PUT",
+                        headers,
+                        body: file,
+                      })
+                      if (!put.ok) {
+                        throw new Error("Upload falhou")
+                      }
+                      return { url: presign.public_url, key: presign.key }
+                    }
+                  : undefined
+              }
             />
           </>
         )}

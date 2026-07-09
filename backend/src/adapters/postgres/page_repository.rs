@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
@@ -7,7 +9,8 @@ use uuid::Uuid;
 use crate::adapters::postgres::tx::map_sqlx_error;
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    Breadcrumb, OperationAck, PageList, PageRepository, PageSummary, PageTree, PageView, TrashEntry,
+    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList, PageRepository,
+    PageSummary, PageTree, PageView, TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
@@ -15,7 +18,10 @@ use crate::domain::block::{
 use crate::domain::error::DomainError;
 
 const BLOCK_COLUMNS: &str =
-    "id, workspace_id, type, properties, content, parent_id, trashed_at, trashed_index";
+    "id, workspace_id, type, properties, content, parent_id, trashed_at, trashed_index, prop_versions";
+
+const DEFAULT_OPS_LIMIT: i64 = 500;
+const MAX_OPS_LIMIT: i64 = 1000;
 
 #[derive(Debug, Clone)]
 pub struct PostgresPageRepository {
@@ -39,6 +45,17 @@ struct BlockRow {
     parent_id: Option<Uuid>,
     trashed_at: Option<DateTime<Utc>>,
     trashed_index: Option<i32>,
+    prop_versions: Value,
+}
+
+fn parse_prop_versions(value: Value) -> HashMap<String, i64> {
+    match value {
+        Value::Object(map) => map
+            .into_iter()
+            .filter_map(|(key, version)| version.as_i64().map(|n| (key, n)))
+            .collect(),
+        _ => HashMap::new(),
+    }
 }
 
 impl TryFrom<BlockRow> for Block {
@@ -53,12 +70,21 @@ impl TryFrom<BlockRow> for Block {
                 Value::Object(map) => map,
                 _ => Map::new(),
             },
+            prop_versions: parse_prop_versions(row.prop_versions),
             content: row.content,
             parent_id: row.parent_id,
             trashed_at: row.trashed_at,
             trashed_index: row.trashed_index,
         })
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct OperationRow {
+    seq: i64,
+    op_id: Uuid,
+    actor_id: Uuid,
+    operation: Value,
 }
 
 #[derive(sqlx::FromRow)]
@@ -85,8 +111,28 @@ struct TrashRow {
     trashed_at: DateTime<Utc>,
 }
 
+#[derive(sqlx::FromRow)]
+struct RecentEditorRow {
+    user_id: Uuid,
+    display_name: String,
+    avatar_key: Option<String>,
+    last_edited_at: DateTime<Utc>,
+}
+
 fn page_not_found() -> RepositoryError {
     RepositoryError::Domain(DomainError::PageNotFound)
+}
+
+/// Sobe a árvore até a página que contém o bloco (ignora o container se for o pai).
+fn resolve_containing_page(tree: &BlockTree, block_id: Uuid) -> Option<Uuid> {
+    let mut current = block_id;
+    loop {
+        let block = tree.blocks.get(&current)?;
+        if block.block_type == BlockType::Page {
+            return Some(block.id);
+        }
+        current = block.parent_id?;
+    }
 }
 
 /// Cria o container do workspace e a primeira página de topo (com um parágrafo
@@ -144,14 +190,24 @@ pub async fn create_workspace_root_page(
     Ok(container_id)
 }
 
+fn prop_versions_value(block: &Block) -> Value {
+    Value::Object(
+        block
+            .prop_versions
+            .iter()
+            .map(|(key, version)| (key.clone(), Value::from(*version)))
+            .collect(),
+    )
+}
+
 async fn insert_block_row(
     tx: &mut Transaction<'_, Postgres>,
     block: &Block,
     created_by: Uuid,
 ) -> Result<(), RepositoryError> {
     sqlx::query(
-        "INSERT INTO blocks (id, workspace_id, type, properties, content, parent_id, created_by, trashed_at, trashed_index)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO blocks (id, workspace_id, type, properties, content, parent_id, created_by, trashed_at, trashed_index, prop_versions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(block.id)
     .bind(block.workspace_id)
@@ -162,6 +218,7 @@ async fn insert_block_row(
     .bind(created_by)
     .bind(block.trashed_at)
     .bind(block.trashed_index)
+    .bind(prop_versions_value(block))
     .execute(&mut **tx)
     .await
     .map(|_| ())
@@ -180,6 +237,7 @@ async fn update_block_row(
              parent_id = $6,
              trashed_at = $7,
              trashed_index = $8,
+             prop_versions = $9,
              updated_at = now()
          WHERE id = $1 AND workspace_id = $2",
     )
@@ -191,6 +249,7 @@ async fn update_block_row(
     .bind(block.parent_id)
     .bind(block.trashed_at)
     .bind(block.trashed_index)
+    .bind(prop_versions_value(block))
     .execute(&mut **tx)
     .await
     .map_err(map_sqlx_error)?
@@ -290,7 +349,7 @@ impl PageRepository for PostgresPageRepository {
                  WHERE workspace_id = $1 AND id = $2 AND type = 'page' AND trashed_at IS NULL
                  UNION ALL
                  SELECT c.id, c.workspace_id, c.type, c.properties, c.content, c.parent_id,
-                        c.trashed_at, c.trashed_index, s.depth + 1
+                        c.trashed_at, c.trashed_index, c.prop_versions, s.depth + 1
                  FROM subtree s
                  JOIN blocks c ON c.parent_id = s.id
                  WHERE c.workspace_id = $1
@@ -354,6 +413,19 @@ impl PageRepository for PostgresPageRepository {
             .ok_or(RepositoryError::NotFound)?
             .0;
 
+        let editor_rows = sqlx::query_as::<_, RecentEditorRow>(
+            "SELECT e.user_id, u.display_name, u.avatar_key, e.last_edited_at
+             FROM page_recent_editors e
+             JOIN users u ON u.id = e.user_id
+             WHERE e.page_id = $1
+             ORDER BY e.last_edited_at DESC
+             LIMIT 5",
+        )
+        .bind(page_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
         Ok(PageView {
             page: PageTree {
                 root_id: page_id,
@@ -368,6 +440,16 @@ impl PageRepository for PostgresPageRepository {
                 })
                 .collect(),
             seq,
+            recent_editors: editor_rows
+                .into_iter()
+                .map(|row| PageEditor {
+                    user_id: row.user_id,
+                    display_name: row.display_name,
+                    avatar_key: row.avatar_key,
+                    avatar_url: None,
+                    last_edited_at: row.last_edited_at,
+                })
+                .collect(),
         })
     }
 
@@ -455,13 +537,34 @@ impl PageRepository for PostgresPageRepository {
             _ => None,
         };
 
-        for id in touched {
-            let block = tree.blocks.get(&id).expect("touched block exists");
-            if Some(id) == inserted_id {
+        for id in &touched {
+            let block = tree.blocks.get(id).expect("touched block exists");
+            if Some(*id) == inserted_id {
                 insert_block_row(&mut tx, block, actor_id).await?;
             } else {
                 update_block_row(&mut tx, block).await?;
             }
+        }
+
+        let mut page_ids = std::collections::HashSet::new();
+        for id in &touched {
+            if let Some(page_id) = resolve_containing_page(&tree, *id) {
+                page_ids.insert(page_id);
+            }
+        }
+        for page_id in page_ids {
+            sqlx::query(
+                "INSERT INTO page_recent_editors (page_id, user_id, last_edited_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (page_id, user_id)
+                 DO UPDATE SET last_edited_at = EXCLUDED.last_edited_at",
+            )
+            .bind(page_id)
+            .bind(actor_id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
         }
 
         let seq = sqlx::query_as::<_, (i64,)>(
@@ -488,5 +591,58 @@ impl PageRepository for PostgresPageRepository {
 
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(OperationAck { op_id, seq })
+    }
+
+    async fn list_operations_after(
+        &self,
+        workspace_id: Uuid,
+        after_seq: i64,
+        limit: Option<i64>,
+    ) -> Result<OperationsPage, RepositoryError> {
+        let limit = limit
+            .unwrap_or(DEFAULT_OPS_LIMIT)
+            .clamp(1, MAX_OPS_LIMIT);
+
+        let latest_seq =
+            sqlx::query_as::<_, (i64,)>("SELECT operation_seq FROM workspaces WHERE id = $1")
+                .bind(workspace_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_sqlx_error)?
+                .ok_or(RepositoryError::NotFound)?
+                .0;
+
+        let rows = sqlx::query_as::<_, OperationRow>(
+            "SELECT seq, op_id, actor_id, operation
+             FROM operations
+             WHERE workspace_id = $1 AND seq > $2
+             ORDER BY seq ASC
+             LIMIT $3",
+        )
+        .bind(workspace_id)
+        .bind(after_seq)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        let operations = rows
+            .into_iter()
+            .map(|row| {
+                let operation: Operation = serde_json::from_value(row.operation)
+                    .map_err(|_| RepositoryError::Unexpected)?;
+                Ok(LoggedOperation {
+                    seq: row.seq,
+                    op_id: row.op_id,
+                    actor_id: row.actor_id,
+                    operation,
+                })
+            })
+            .collect::<Result<Vec<_>, RepositoryError>>()?;
+
+        Ok(OperationsPage {
+            operations,
+            latest_seq,
+        })
     }
 }
