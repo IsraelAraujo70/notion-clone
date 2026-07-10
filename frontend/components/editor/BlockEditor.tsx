@@ -204,6 +204,10 @@ export function BlockEditor({
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [slash, setSlash] = useState<SlashState | null>(null)
+  // HTML5 DnD lê o estado no mesmo tick do evento; setState ainda não re-renderizou.
+  // Refs são a fonte de verdade durante o arrasto; o state só pinta o indicador.
+  const draggingIdRef = useRef<string | null>(null)
+  const dropRef = useRef<DropState | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [drop, setDrop] = useState<DropState | null>(null)
   // Seleção de vários blocos (arrasto no gutter) + menu de contexto do bloco.
@@ -777,43 +781,76 @@ export function BlockEditor({
     ]
   )
 
+  const clearDrag = useCallback(() => {
+    draggingIdRef.current = null
+    dropRef.current = null
+    setDraggingId(null)
+    setDrop(null)
+  }, [])
+
+  const dropPositionFor = useCallback((event: DragEvent): DropPosition => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY < rect.top + rect.height / 2 ? "above" : "below"
+  }, [])
+
   const handleDragOver = useCallback(
     (event: DragEvent, block: Block) => {
+      const activeId = draggingIdRef.current
       if (
-        !draggingId ||
-        draggingId === block.id ||
-        isDescendantOf(tree, block.id, draggingId)
+        !activeId ||
+        activeId === block.id ||
+        isDescendantOf(tree, block.id, activeId)
       )
         return
       event.preventDefault()
-      const rect = event.currentTarget.getBoundingClientRect()
-      setDrop({
+      event.dataTransfer.dropEffect = "move"
+      const next: DropState = {
         blockId: block.id,
-        position:
-          event.clientY < rect.top + rect.height / 2 ? "above" : "below",
-      })
+        position: dropPositionFor(event),
+      }
+      dropRef.current = next
+      setDrop((current) =>
+        current?.blockId === next.blockId && current.position === next.position
+          ? current
+          : next
+      )
     },
-    [draggingId, tree]
+    [dropPositionFor, tree]
   )
 
   const handleDrop = useCallback(
     (event: DragEvent, target: Block) => {
       event.preventDefault()
-      if (!draggingId || !drop || draggingId === target.id || !target.parentId)
+      event.stopPropagation()
+      const activeId = draggingIdRef.current
+      const dragged = activeId ? tree.blocks.get(activeId) : undefined
+      const targetParent = target.parentId
+        ? tree.blocks.get(target.parentId)
+        : undefined
+      if (
+        !activeId ||
+        !dragged ||
+        !targetParent ||
+        activeId === target.id ||
+        !target.parentId ||
+        isDescendantOf(tree, target.id, activeId)
+      ) {
+        clearDrag()
         return
-      if (isDescendantOf(tree, target.id, draggingId)) return
-      const dragged = getBlock(tree, draggingId)
-      const targetParent = getBlock(tree, target.parentId)
+      }
+      const position =
+        dropRef.current?.blockId === target.id
+          ? dropRef.current.position
+          : dropPositionFor(event)
       const rawIndex =
         targetParent.content.indexOf(target.id) +
-        (drop.position === "below" ? 1 : 0)
+        (position === "below" ? 1 : 0)
       const oldIndex = siblingIndex(tree, dragged)
       const adjustedIndex =
         dragged.parentId === targetParent.id && oldIndex < rawIndex
           ? rawIndex - 1
           : rawIndex
-      setDraggingId(null)
-      setDrop(null)
+      clearDrag()
       if (dragged.parentId === targetParent.id && oldIndex === adjustedIndex)
         return
       dispatchBatch(
@@ -821,7 +858,7 @@ export function BlockEditor({
           {
             type: "move_block",
             opId: opId(),
-            blockId: draggingId,
+            blockId: activeId,
             newParentId: targetParent.id,
             index: adjustedIndex,
           },
@@ -829,11 +866,11 @@ export function BlockEditor({
         { breakCoalescing: true }
       )
       focusVisible(
-        draggingId,
+        activeId,
         isTextBlock(dragged) ? blockText(dragged).length : 0
       )
     },
-    [dispatchBatch, draggingId, drop, focusVisible, tree]
+    [clearDrag, dispatchBatch, dropPositionFor, focusVisible, tree]
   )
 
   const setSelectionBoth = useCallback((next: ReadonlySet<string>) => {
@@ -949,12 +986,13 @@ export function BlockEditor({
     (event: React.MouseEvent) => {
       if (readOnly || event.button !== 0) return
       const target = event.target as HTMLElement
-      // Clique no texto/controles é edição normal; só o fundo inicia a seleção.
+      // Clique no texto/controles/handle é edição ou drag; só o fundo inicia a seleção.
       if (
         target.closest('[contenteditable="true"]') ||
         target.closest("button") ||
         target.closest("input") ||
-        target.closest("a")
+        target.closest("a") ||
+        target.closest('[data-block-handle="true"]')
       ) {
         clearSelection()
         return
@@ -1034,30 +1072,57 @@ export function BlockEditor({
             if (selectionRef.current.has(block.id))
               openBlockMenu(event, block.id)
           }}
-          className={`group relative rounded px-8 py-0.5 transition-colors ${
-            selection.has(block.id)
-              ? "bg-primary/15"
-              : selectedBlockId === block.id
-                ? "bg-muted/40"
-                : "hover:bg-muted/40"
+          className={`group relative rounded py-1.5 pr-3 pl-9 transition-colors ${
+            draggingId === block.id
+              ? "opacity-40"
+              : selection.has(block.id)
+                ? "bg-primary/15"
+                : selectedBlockId === block.id
+                  ? "bg-muted/40"
+                  : "hover:bg-muted/40"
           }`}
         >
           <BlockPresenceAvatar peers={blockPresence?.get(block.id) ?? []} />
-          <button
-            type="button"
+          <span
+            role="button"
+            tabIndex={readOnly ? -1 : 0}
             draggable={!readOnly}
             aria-label="Arrastar bloco"
+            data-block-handle="true"
             data-cy={`block-handle-${block.id}`}
             onContextMenu={(event) => openBlockMenu(event, block.id)}
-            className="pointer-events-none absolute top-1/2 -left-7 flex h-7 w-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-md text-muted-foreground/35 opacity-0 transition-[background,color,opacity] group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring active:cursor-grabbing"
+            onMouseDown={(event) => {
+              // Impede marquee/seleção de roubar o gesto de drag do handle.
+              event.stopPropagation()
+            }}
+            className={`pointer-events-none absolute top-1/2 left-0.5 z-10 flex h-8 w-7 -translate-y-1/2 select-none items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-[background,color,opacity] group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ${
+              readOnly ? "" : "cursor-grab active:cursor-grabbing"
+            } ${draggingId === block.id ? "opacity-100" : ""}`}
             onDragStart={(event) => {
+              if (readOnly) {
+                event.preventDefault()
+                return
+              }
+              marqueeRef.current.active = false
+              // setData é obrigatório no Firefox; sem ele o drag some no primeiro frame.
               event.dataTransfer.effectAllowed = "move"
               event.dataTransfer.setData("text/plain", block.id)
-              setDraggingId(block.id)
+              event.dataTransfer.setData(
+                "application/x-notion-block",
+                block.id
+              )
+              // Refs síncronos já bastam para drop; setState no mesmo tick do
+              // dragStart re-renderiza a origem e o Chrome cancela o drag nativo.
+              draggingIdRef.current = block.id
+              dropRef.current = null
+              requestAnimationFrame(() => {
+                if (draggingIdRef.current !== block.id) return
+                setDraggingId(block.id)
+                setDrop(null)
+              })
             }}
             onDragEnd={() => {
-              setDraggingId(null)
-              setDrop(null)
+              clearDrag()
             }}
           >
             <span
@@ -1072,7 +1137,7 @@ export function BlockEditor({
                 />
               ))}
             </span>
-          </button>
+          </span>
 
           {block.type === "page" ? (
             // Uma página dentro de outra é um link, nunca conteúdo expandido:
@@ -1317,6 +1382,8 @@ export function BlockEditor({
         if (target) void insertImageAfter(target, file)
       }}
       onDragOver={(event) => {
+        // Reordenação de bloco é tratada por linha; aqui só aceita arquivo de imagem.
+        if (draggingIdRef.current) return
         if (
           !readOnly &&
           onUploadImage &&
@@ -1326,7 +1393,7 @@ export function BlockEditor({
         }
       }}
       onDrop={(event) => {
-        if (readOnly || !onUploadImage) return
+        if (draggingIdRef.current || readOnly || !onUploadImage) return
         const file = [...event.dataTransfer.files].find((item) =>
           item.type.startsWith("image/")
         )
