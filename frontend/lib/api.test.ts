@@ -437,6 +437,64 @@ describe("api client", () => {
     )
   })
 
+  it("calls M4 search, public-link, public-page, and purge endpoints", async () => {
+    const publicLink = {
+      token: "public-token",
+      url: "http://localhost:3000/share/public-token",
+      created_at: "2026-07-10T12:00:00Z",
+    }
+    const publicPage = { page: { rootId: "page-1", blocks: [] } }
+    const controller = new AbortController()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, []))
+      .mockResolvedValueOnce(jsonResponse(200, publicLink))
+      .mockResolvedValueOnce(jsonResponse(201, publicLink))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(200, publicPage))
+      .mockResolvedValueOnce(
+        jsonResponse(202, { deleted_blocks: 3, media_cleanup_queued: 1 })
+      )
+
+    await api.search("secret-token", "product plan", 20, controller.signal)
+    await api.getPublicLink("secret-token", "ws-1", "page-1")
+    await api.createPublicLink("secret-token", "ws-1", "page-1")
+    await api.revokePublicLink("secret-token", "ws-1", "page-1")
+    await expect(api.getPublicPage("public/token")).resolves.toEqual(publicPage)
+    await expect(
+      api.permanentlyDelete("secret-token", "ws-1", "page-1")
+    ).resolves.toEqual({ deleted_blocks: 3, media_cleanup_queued: 1 })
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE_URL}/search?q=product+plan&limit=20`,
+      expect.objectContaining({
+        method: "GET",
+        headers: { Authorization: "Bearer secret-token" },
+        signal: controller.signal,
+      })
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE_URL}/workspaces/ws-1/pages/page-1/public-link`,
+      expect.objectContaining({ method: "POST" })
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      `${API_BASE_URL}/workspaces/ws-1/pages/page-1/public-link`,
+      expect.objectContaining({ method: "DELETE" })
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      `${API_BASE_URL}/public/pages/public%2Ftoken`,
+      expect.objectContaining({ headers: {} })
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      6,
+      `${API_BASE_URL}/workspaces/ws-1/trash/page-1`,
+      expect.objectContaining({ method: "DELETE" })
+    )
+  })
+
   it("surfaces api errors", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse(401, {
