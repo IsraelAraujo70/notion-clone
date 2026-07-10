@@ -2,7 +2,9 @@
 
 Auth: `Authorization: Bearer <session>` on REST; WebSocket uses `?token=`
 (browsers cannot set Authorization on the handshake). Membership required on
-every path.
+every path. HTTP tracing records only Axum route templates, never raw URIs, so
+WebSocket session tokens and invite tokens cannot enter request logs. Verify the
+runtime boundary with `make eval-request-log-redaction`.
 
 ## `GET /workspaces/{workspace_id}/operations?after_seq=&limit=&up_to_seq=`
 

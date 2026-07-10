@@ -1,4 +1,6 @@
 use axum::Router;
+use axum::extract::MatchedPath;
+use axum::http::Request;
 use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
@@ -8,6 +10,25 @@ use crate::adapters::http::{
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
 use crate::bootstrap::state::AppState;
+
+fn make_http_span<B>(request: &Request<B>) -> tracing::Span {
+    // Never log the raw URI. WebSocket session tokens live in the query string,
+    // and invite tokens live in path segments. MatchedPath keeps useful route
+    // cardinality without recording either secret or attacker-controlled input.
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str)
+        .unwrap_or("<unmatched>");
+
+    tracing::debug_span!(
+        target: "tower_http::trace::make_span",
+        "request",
+        method = %request.method(),
+        route,
+        version = ?request.version(),
+    )
+}
 
 pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
     Router::new()
@@ -85,7 +106,99 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             post(workspace_routes::accept_invite),
         )
         .route("/app/summary", get(app_routes::summary))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(make_http_span))
         .layer(cors.layer())
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn request_trace_logs_route_template_without_query_or_path_tokens() {
+        let output = SharedWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(output.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let app = Router::new()
+            .route(
+                "/workspaces/{workspace_id}/ws",
+                get(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/workspace-invites/{token}",
+                get(|| async { StatusCode::OK }),
+            )
+            .layer(TraceLayer::new_for_http().make_span_with(make_http_span));
+
+        for (uri, expected_status) in [
+            (
+                "/workspaces/11111111-1111-1111-1111-111111111111/ws?token=raw-session-secret",
+                StatusCode::OK,
+            ),
+            ("/workspace-invites/raw-invite-secret", StatusCode::OK),
+            (
+                "/missing/raw-path-secret?token=unmatched-secret",
+                StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+        }
+
+        let logs = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            logs.contains("route=\"/workspaces/{workspace_id}/ws\""),
+            "unexpected trace output: {logs}"
+        );
+        assert!(
+            logs.contains("route=\"/workspace-invites/{token}\""),
+            "unexpected trace output: {logs}"
+        );
+        assert!(!logs.contains("raw-session-secret"), "{logs}");
+        assert!(!logs.contains("raw-invite-secret"), "{logs}");
+        assert!(!logs.contains("raw-path-secret"), "{logs}");
+        assert!(!logs.contains("unmatched-secret"), "{logs}");
+        assert!(!logs.contains("token="), "{logs}");
+    }
 }

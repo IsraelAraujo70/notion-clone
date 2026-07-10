@@ -4,7 +4,7 @@ WEB_DIR ?= frontend
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
 DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-sync-catch-up eval-frontend-components clean kill-web
+.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-sync-catch-up eval-request-log-redaction eval-frontend-components clean kill-web
 
 help:
 	@printf '%s\n' \
@@ -22,6 +22,7 @@ help:
 		'  make eval-password-reset       Run password-reset smoke eval against local API' \
 		'  make eval-page-persistence     Run block persistence smoke eval against local API' \
 		'  make eval-sync-catch-up         Prove paginated recovery beyond 500 operations' \
+		'  make eval-request-log-redaction Prove request logs never contain auth tokens' \
 		'  make eval-frontend-components  Check frontend boundary rules' \
 		'  make clean                     Stop containers, free :3000, remove volumes'
 
@@ -108,6 +109,9 @@ eval-page-persistence:
 
 eval-sync-catch-up:
 	node docs/evals/sync-catch-up-smoke.mjs
+
+eval-request-log-redaction:
+	node docs/evals/request-log-redaction-smoke.mjs
 
 eval-frontend-components:
 	bash docs/evals/frontend-component-boundaries.sh
