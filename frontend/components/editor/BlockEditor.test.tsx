@@ -27,6 +27,28 @@ function createTree(): BlockTree {
   }).tree
 }
 
+function treeWithTwoParagraphs(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const first = newBlock("paragraph", { text: "primeiro" }, "block-a")
+  const second = newBlock("paragraph", { text: "segundo" }, "block-b")
+  return applyOperation(
+    applyOperation(page, {
+      type: "insert_block",
+      opId: "insert-a",
+      block: first,
+      parentId: page.rootId,
+      index: 0,
+    }).tree,
+    {
+      type: "insert_block",
+      opId: "insert-b",
+      block: second,
+      parentId: page.rootId,
+      index: 1,
+    }
+  ).tree
+}
+
 describe("BlockEditor drag handle", () => {
   it("renders a centered six-dot handle in the block gutter", () => {
     const dispatchBatch = vi.fn()
@@ -45,9 +67,72 @@ describe("BlockEditor drag handle", () => {
 
     const handle = screen.getByRole("button", { name: "Arrastar bloco" })
 
-    expect(handle).toHaveClass("top-1/2", "-left-7", "-translate-y-1/2")
+    expect(handle).toHaveClass("top-1/2", "left-0.5", "-translate-y-1/2", "h-8", "w-7")
     expect(container.querySelectorAll("[data-drag-handle-dot]")).toHaveLength(6)
     expect(handle).not.toHaveTextContent("⋮⋮")
+  })
+
+  it("drops a block below another via the drag handle", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithTwoParagraphs(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    const handle = container.querySelector(
+      '[data-cy="block-handle-block-a"]'
+    ) as HTMLElement
+    const target = container.querySelector(
+      '[data-block-id="block-b"]'
+    ) as HTMLElement
+
+    const dataTransfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: vi.fn(),
+      getData: vi.fn(() => "block-a"),
+      types: ["text/plain", "application/x-notion-block"],
+      files: [] as unknown as FileList,
+    }
+
+    fireEvent.dragStart(handle, { dataTransfer })
+    // Alvo na metade de baixo → posição "below" (vira índice 2, ajustado para 1 = no-op se já for o fim; aqui A sobe depois de B)
+    const rect = {
+      top: 100,
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    }
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(rect as DOMRect)
+
+    fireEvent.dragOver(target, {
+      dataTransfer,
+      clientY: 130,
+    })
+    fireEvent.drop(target, {
+      dataTransfer,
+      clientY: 130,
+    })
+    fireEvent.dragEnd(handle, { dataTransfer })
+
+    expect(dispatchBatch).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          type: "move_block",
+          blockId: "block-a",
+          newParentId: "page-root",
+          index: 1,
+        }),
+      ],
+      { breakCoalescing: true }
+    )
   })
 })
 

@@ -17,7 +17,7 @@ use crate::application::auth::reset_password::{ResetPasswordInput, ResetPassword
 use crate::application::auth::signup::{SignupInput, SignupUseCase};
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
-    ListTrashUseCase,
+    ListTrashUseCase, PermanentlyDeleteUseCase, PublicLinksUseCase, SearchPagesUseCase,
 };
 use crate::application::ports::auth::{
     AuthRepository, CreateUserRecord, CreateUserWithDefaultWorkspaceRecord,
@@ -25,7 +25,8 @@ use crate::application::ports::auth::{
 use crate::application::ports::clock::Clock;
 use crate::application::ports::email::{EmailSender, PasswordResetEmail, WorkspaceInviteEmail};
 use crate::application::ports::page::{
-    OperationAck, PageList, PageRepository, PageTree, PageView, TrashEntry,
+    OperationAck, PageList, PageRepository, PageTree, PageView, PermanentDeleteResult, PublicLink,
+    SearchResult, TrashEntry,
 };
 use crate::application::ports::workspace::{CreateWorkspaceInviteRecord, WorkspaceRepository};
 use crate::application::ports::{EmailError, RepositoryError};
@@ -1114,6 +1115,12 @@ type ListedOperationRange = (i64, Option<i64>, Option<i64>);
 struct FakePageRepository {
     applied: Mutex<Vec<Operation>>,
     listed_ranges: Mutex<Vec<ListedOperationRange>>,
+    search_calls: Mutex<Vec<(Uuid, String, i64)>>,
+    public_link: Mutex<Option<PublicLink>>,
+    public_page: Mutex<Option<PageTree>>,
+    public_link_creates: Mutex<Vec<(Uuid, Uuid, Uuid)>>,
+    public_link_revokes: Mutex<Vec<(Uuid, Uuid)>>,
+    purge_calls: Mutex<Vec<(Uuid, Uuid)>>,
 }
 
 #[async_trait]
@@ -1174,6 +1181,85 @@ impl PageRepository for FakePageRepository {
         Ok(crate::application::ports::page::OperationsPage {
             operations: Vec::new(),
             latest_seq: self.applied.lock().unwrap().len() as i64,
+        })
+    }
+
+    async fn search(
+        &self,
+        user_id: Uuid,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<SearchResult>, RepositoryError> {
+        self.search_calls
+            .lock()
+            .unwrap()
+            .push((user_id, query.to_string(), limit));
+        Ok(vec![])
+    }
+
+    async fn get_public_link(
+        &self,
+        _workspace_id: Uuid,
+        _page_id: Uuid,
+    ) -> Result<Option<PublicLink>, RepositoryError> {
+        Ok(self.public_link.lock().unwrap().clone())
+    }
+
+    async fn create_public_link(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+        created_by: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<PublicLink, RepositoryError> {
+        self.public_link_creates
+            .lock()
+            .unwrap()
+            .push((workspace_id, page_id, created_by));
+        let link = PublicLink {
+            token: Uuid::new_v4(),
+            created_at: now,
+        };
+        *self.public_link.lock().unwrap() = Some(link.clone());
+        Ok(link)
+    }
+
+    async fn revoke_public_link(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError> {
+        self.public_link_revokes
+            .lock()
+            .unwrap()
+            .push((workspace_id, page_id));
+        Ok(self.public_link.lock().unwrap().take().is_some())
+    }
+
+    async fn get_public_page(&self, _token: Uuid) -> Result<PageTree, RepositoryError> {
+        self.public_page
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(RepositoryError::Domain(
+                crate::domain::error::DomainError::PageNotFound,
+            ))
+    }
+
+    async fn permanently_delete(
+        &self,
+        workspace_id: Uuid,
+        block_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<PermanentDeleteResult, RepositoryError> {
+        self.purge_calls
+            .lock()
+            .unwrap()
+            .push((workspace_id, block_id));
+        Ok(PermanentDeleteResult {
+            deleted_blocks: 3,
+            media_cleanup_queued: 1,
         })
     }
 }
@@ -1379,4 +1465,133 @@ async fn owner_and_editor_write_but_viewer_cannot() {
         AppError::Forbidden
     );
     assert_eq!(f.pages.applied.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn m4_search_validates_bounds_and_forwards_normalized_input() {
+    let f = pages_fixture();
+    let pages: Arc<dyn PageRepository> = f.pages.clone();
+    let search = SearchPagesUseCase::new(pages);
+
+    assert!(matches!(
+        search.execute(f.owner_id, "x".to_string(), None).await,
+        Err(AppError::Domain(_))
+    ));
+    assert!(matches!(
+        search
+            .execute(f.owner_id, "valid".to_string(), Some(51))
+            .await,
+        Err(AppError::Domain(_))
+    ));
+    assert!(f.pages.search_calls.lock().unwrap().is_empty());
+
+    search
+        .execute(f.owner_id, "  design docs  ".to_string(), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        f.pages.search_calls.lock().unwrap().as_slice(),
+        &[(f.owner_id, "design docs".to_string(), 20)]
+    );
+}
+
+#[tokio::test]
+async fn m4_public_link_management_requires_writer_and_is_idempotent_at_repository_boundary() {
+    let f = pages_fixture();
+    let pages: Arc<dyn PageRepository> = f.pages.clone();
+    let links = PublicLinksUseCase::new(
+        pages,
+        f.workspaces.clone(),
+        clock(),
+        "https://reason.test/".to_string(),
+    );
+    let page_id = Uuid::new_v4();
+
+    for writer in [f.owner_id, f.editor_id] {
+        let link = links.create(writer, f.workspace_id, page_id).await.unwrap();
+        assert_eq!(
+            link.url,
+            format!("https://reason.test/share/{}", link.token)
+        );
+        assert!(
+            links
+                .get(writer, f.workspace_id, page_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    assert_eq!(
+        links
+            .create(f.viewer_id, f.workspace_id, page_id)
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert_eq!(
+        links
+            .get(f.viewer_id, f.workspace_id, page_id)
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert_eq!(
+        links
+            .revoke(f.viewer_id, f.workspace_id, page_id)
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+
+    links
+        .revoke(f.editor_id, f.workspace_id, page_id)
+        .await
+        .unwrap();
+    assert!(f.pages.public_link.lock().unwrap().is_none());
+}
+
+#[tokio::test]
+async fn m4_public_page_is_anonymous_and_contains_only_repository_sanitized_tree() {
+    let f = pages_fixture();
+    let pages: Arc<dyn PageRepository> = f.pages.clone();
+    let root_id = Uuid::new_v4();
+    *f.pages.public_page.lock().unwrap() = Some(PageTree {
+        root_id,
+        blocks: vec![],
+    });
+    let links = PublicLinksUseCase::new(
+        pages,
+        f.workspaces,
+        clock(),
+        "https://reason.test".to_string(),
+    );
+
+    let response = links.public_page(Uuid::new_v4()).await.unwrap();
+    assert_eq!(response.page.root_id, root_id);
+    assert!(response.page.blocks.is_empty());
+}
+
+#[tokio::test]
+async fn m4_permanent_delete_allows_owner_and_editor_but_not_viewer() {
+    let f = pages_fixture();
+    let pages: Arc<dyn PageRepository> = f.pages.clone();
+    let purge = PermanentlyDeleteUseCase::new(pages, f.workspaces.clone(), clock());
+
+    for writer in [f.owner_id, f.editor_id] {
+        let result = purge
+            .execute(writer, f.workspace_id, Uuid::new_v4())
+            .await
+            .unwrap();
+        assert_eq!(result.deleted_blocks, 3);
+        assert_eq!(result.media_cleanup_queued, 1);
+    }
+    assert_eq!(
+        purge
+            .execute(f.viewer_id, f.workspace_id, Uuid::new_v4())
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert_eq!(f.pages.purge_calls.lock().unwrap().len(), 2);
 }

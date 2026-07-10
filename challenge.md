@@ -191,6 +191,6 @@ The challenge is successful when:
 
 ## Current Implementation Status
 
-Last updated: 2026-07-09.
+Last updated: 2026-07-10.
 
-Overall status: M1–M3 done (local editor, persistence/pages, sync + real-time + LWW). M4–M6 remain (search/public links, AI, hardening). This document is the target. The README describes the architecture, current status, and the milestone plan.
+Overall status: M1–M4 implemented (editor, persistence/pages, sync/real-time/LWW, permissions, full-text search, public links, and permanent deletion). M5–M6 remain (AI and final hardening). M4 is proven by 49 Rust tests, 136 frontend tests, 15 Cypress scenarios, and a Postgres/MinIO eval covering roles, isolation, link lifecycle, purge, and media cleanup. The README records the architecture and remaining proof debt, including a dedicated two-browser convergence scenario for M3.

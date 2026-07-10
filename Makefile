@@ -1,10 +1,10 @@
 COMPOSE ?= docker compose
-BACKEND_SERVICES ?= postgres minio minio-create-bucket api
+BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker
 WEB_DIR ?= frontend
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
 DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-sync-catch-up eval-request-log-redaction eval-frontend-components clean kill-web
+.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-sync-catch-up eval-request-log-redaction eval-frontend-components eval-m4 clean kill-web
 
 help:
 	@printf '%s\n' \
@@ -24,6 +24,7 @@ help:
 		'  make eval-sync-catch-up         Prove paginated recovery beyond 500 operations' \
 		'  make eval-request-log-redaction Prove request logs never contain auth tokens' \
 		'  make eval-frontend-components  Check frontend boundary rules' \
+		'  make eval-m4                   Prove M4 search, sharing, permissions and purge' \
 		'  make clean                     Stop containers, free :3000, remove volumes'
 
 # If the daemon is down, open Docker Desktop (macOS) and wait until it answers.
@@ -98,7 +99,7 @@ test-web:
 	cd $(WEB_DIR) && npm test
 
 test-e2e: docker-ready
-	$(COMPOSE) --profile e2e up -d --build api-e2e web-e2e
+	$(COMPOSE) --profile e2e up -d --build api-e2e worker-e2e web-e2e
 	$(COMPOSE) --profile e2e run --rm cypress
 
 eval-password-reset:
@@ -115,6 +116,9 @@ eval-request-log-redaction:
 
 eval-frontend-components:
 	bash docs/evals/frontend-component-boundaries.sh
+
+eval-m4:
+	node docs/evals/m4-smoke.mjs
 
 clean: kill-web
 	@if docker info >/dev/null 2>&1; then \

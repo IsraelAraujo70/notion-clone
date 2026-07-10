@@ -34,4 +34,8 @@ pub trait ObjectStorage: Send + Sync {
     ) -> Result<PresignedUpload, StorageError>;
 
     async fn presign_get(&self, key: &str) -> Result<String, StorageError>;
+
+    /// Permanently removes an object. Implementations must treat a missing object as success so
+    /// retrying an outbox job remains idempotent.
+    async fn delete_object(&self, key: &str) -> Result<(), StorageError>;
 }

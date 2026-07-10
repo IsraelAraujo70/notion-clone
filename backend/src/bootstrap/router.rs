@@ -35,6 +35,8 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route("/", get(root))
         .route("/health", get(health))
         .route("/media/{*key}", get(media_routes::get_media))
+        .route("/search", get(page_routes::search))
+        .route("/public/pages/{token}", get(page_routes::get_public_page))
         .route("/auth/signup", post(auth_routes::signup))
         .route("/auth/login", post(auth_routes::login))
         .route(
@@ -82,6 +84,12 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             get(page_routes::get_page),
         )
         .route(
+            "/workspaces/{workspace_id}/pages/{page_id}/public-link",
+            get(page_routes::get_public_link)
+                .post(page_routes::create_public_link)
+                .delete(page_routes::revoke_public_link),
+        )
+        .route(
             "/workspaces/{workspace_id}/operations",
             get(page_routes::list_operations).post(page_routes::apply_operation),
         )
@@ -92,6 +100,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/workspaces/{workspace_id}/trash",
             get(page_routes::list_trash),
+        )
+        .route(
+            "/workspaces/{workspace_id}/trash/{block_id}",
+            delete(page_routes::permanently_delete),
         )
         .route(
             "/workspaces/{workspace_id}/uploads/presign",

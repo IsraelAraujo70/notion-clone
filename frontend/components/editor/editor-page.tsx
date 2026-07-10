@@ -11,7 +11,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
@@ -50,6 +50,8 @@ import {
   type AppliedOpEvent,
 } from "@/lib/sync/workspace-socket"
 import { PresenceAvatarStack } from "@/components/editor/presence-avatars"
+import { ShareDialog } from "@/components/pages/share-dialog"
+import { useSearchResultHighlight } from "@/components/editor/use-search-result-highlight"
 
 function opId() {
   return createId()
@@ -92,6 +94,7 @@ function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
 
 export function EditorPage({ pageId }: { pageId: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { token } = useAuth()
   const { activeWorkspaceId } = useWorkspace()
   const { canWrite, refreshPages, pageRevision } = usePages()
@@ -438,6 +441,8 @@ export function EditorPage({ pageId }: { pageId: string }) {
     }
   }, [pageTitle])
 
+  useSearchResultHighlight(searchParams.get("block"), tree !== null)
+
   if (loadError) {
     return (
       <main className="grid min-h-svh place-items-center bg-background text-foreground">
@@ -487,6 +492,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
           </BreadcrumbList>
         </Breadcrumb>
         <div className="flex items-center gap-3">
+          <ShareDialog pageId={pageId} canWrite={canWrite} />
           <PresenceAvatarStack live={pagePeers} recent={recentEditors} />
           <span
             data-cy="save-state"
@@ -535,6 +541,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
             <h1
               ref={titleRef}
               data-cy="page-title"
+              data-block-id={tree.rootId}
               contentEditable={canWrite}
               suppressContentEditableWarning
               spellCheck

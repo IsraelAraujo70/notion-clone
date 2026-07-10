@@ -12,7 +12,12 @@ import {
 import { useRouter } from "next/navigation"
 
 import { useWorkspace } from "@/components/workspace/workspace-provider"
-import { api, type PageSummary, type TrashEntry } from "@/lib/api"
+import {
+  api,
+  type PageSummary,
+  type PermanentDeleteResponse,
+  type TrashEntry,
+} from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import type { Operation } from "@/lib/contracts"
 import { newBlock } from "@/lib/engine/tree"
@@ -36,6 +41,7 @@ type PageContextValue = {
   trash: TrashEntry[]
   refreshTrash: () => Promise<void>
   restore: (blockId: string) => Promise<void>
+  permanentDelete: (blockId: string) => Promise<PermanentDeleteResponse>
   /** Muda quando a página aberta pode ter mudado fora do editor (ex.: restore). */
   pageRevision: number
 }
@@ -67,7 +73,10 @@ export function PageProvider({
   const [pageRevision, setPageRevision] = useState(0)
 
   const canWrite = Boolean(
-    token && !authLoading && activeWorkspace && activeWorkspace.role !== "viewer"
+    token &&
+    !authLoading &&
+    activeWorkspace &&
+    activeWorkspace.role !== "viewer"
   )
 
   const loadPages = useCallback(async () => {
@@ -219,6 +228,21 @@ export function PageProvider({
     [activeWorkspaceId, loadPages, refreshTrash, token]
   )
 
+  const permanentDelete = useCallback(
+    async (blockId: string) => {
+      if (!token || !activeWorkspaceId) throw new Error("No active workspace")
+      const result = await api.permanentlyDelete(
+        token,
+        activeWorkspaceId,
+        blockId
+      )
+      await Promise.all([loadPages(), refreshTrash()])
+      setPageRevision((revision) => revision + 1)
+      return result
+    },
+    [activeWorkspaceId, loadPages, refreshTrash, token]
+  )
+
   const value = useMemo<PageContextValue>(
     () => ({
       pages,
@@ -240,6 +264,7 @@ export function PageProvider({
       trash,
       refreshTrash,
       restore,
+      permanentDelete,
       pageRevision,
     }),
     [
@@ -256,6 +281,7 @@ export function PageProvider({
       refreshTrash,
       renamePage,
       restore,
+      permanentDelete,
       setPageIcon,
       trash,
       authLoading,

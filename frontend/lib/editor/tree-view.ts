@@ -51,7 +51,9 @@ export function isTextBlock(block: Block): boolean {
 
 export function siblingIndex(tree: BlockTree, block: Block): number {
   if (!block.parentId) return -1
-  return getBlock(tree, block.parentId).content.indexOf(block.id)
+  const parent = tree.blocks.get(block.parentId)
+  if (!parent) return -1
+  return parent.content.indexOf(block.id)
 }
 
 export function isDescendantOf(
@@ -59,12 +61,13 @@ export function isDescendantOf(
   possibleDescendantId: string,
   ancestorId: string
 ): boolean {
-  let current = getBlock(tree, possibleDescendantId)
+  // Lookup tolerante: árvore assíncrona/sync pode ter parentId órfão no meio do drag.
+  let current = tree.blocks.get(possibleDescendantId)
   const seen = new Set<string>()
-  while (current.parentId && !seen.has(current.id)) {
+  while (current?.parentId && !seen.has(current.id)) {
     if (current.parentId === ancestorId) return true
     seen.add(current.id)
-    current = getBlock(tree, current.parentId)
+    current = tree.blocks.get(current.parentId)
   }
   return false
 }

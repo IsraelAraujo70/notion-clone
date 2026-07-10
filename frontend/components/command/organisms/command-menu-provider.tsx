@@ -4,6 +4,8 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -26,7 +28,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { pagePath } from "@/components/pages/page-provider"
-import type { PageSummary } from "@/lib/api"
+import { useWorkspace } from "@/components/workspace/workspace-provider"
+import { api, type PageSummary, type SearchResult } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 
 type CommandMenuContextValue = {
@@ -54,8 +57,25 @@ export function CommandMenuProvider({
   pages?: PageSummary[]
 }) {
   const router = useRouter()
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
+  const { selectWorkspace } = useWorkspace()
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState(false)
+  const searchSequence = useRef(0)
+  const normalizedQuery = query.trim()
+  const remoteSearch = normalizedQuery.length >= 2
+
+  const groupedResults = useMemo(() => {
+    const groups = new Map<string, SearchResult[]>()
+    for (const result of results) {
+      const key = `${result.workspace_id}:${result.workspace_name}`
+      groups.set(key, [...(groups.get(key) ?? []), result])
+    }
+    return [...groups.entries()].map(([key, items]) => ({ key, items }))
+  }, [results])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -67,6 +87,48 @@ export function CommandMenuProvider({
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
+
+  useEffect(() => {
+    if (!open || !remoteSearch || !token) {
+      const sequence = ++searchSequence.current
+      queueMicrotask(() => {
+        if (searchSequence.current !== sequence) return
+        setResults([])
+        setSearching(false)
+        setSearchError(false)
+      })
+      return
+    }
+
+    const sequence = ++searchSequence.current
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      setSearching(true)
+      setSearchError(false)
+      void api
+        .search(token, normalizedQuery, 50, controller.signal)
+        .then((nextResults) => {
+          if (searchSequence.current === sequence) setResults(nextResults)
+        })
+        .catch((error: unknown) => {
+          if (
+            searchSequence.current === sequence &&
+            !(error instanceof DOMException && error.name === "AbortError")
+          ) {
+            setResults([])
+            setSearchError(true)
+          }
+        })
+        .finally(() => {
+          if (searchSequence.current === sequence) setSearching(false)
+        })
+    }, 200)
+
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [normalizedQuery, open, remoteSearch, token])
 
   const runCommand = (action: () => void | Promise<void>) => {
     setOpen(false)
@@ -87,34 +149,99 @@ export function CommandMenuProvider({
           showCloseButton={false}
           className="top-1/4 translate-y-0 overflow-hidden p-0 sm:max-w-lg"
         >
-          <Command>
+          <Command shouldFilter={false}>
             <CommandInput
               data-cy="command-input"
-              placeholder="Buscar comandos..."
+              placeholder="Buscar páginas e conteúdo..."
+              value={query}
+              onValueChange={setQuery}
             />
             <CommandList>
-              <CommandGroup heading="Ir para">
-                {pages.map((page, index) => (
-                  <CommandItem
-                    key={page.id}
-                    data-cy={`command-go-page-${page.id}`}
-                    value={`${page.title || "Sem título"} ${page.id}`}
-                    onSelect={() =>
-                      runCommand(() => router.push(pagePath(page.id)))
-                    }
-                  >
-                    {page.icon ? (
-                      <span aria-hidden="true" className="text-base leading-none">
-                        {page.icon}
-                      </span>
-                    ) : (
-                      <FileTextIcon />
-                    )}
-                    {page.title || "Sem título"}
-                    {index === 0 ? <CommandShortcut>G P</CommandShortcut> : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              {!remoteSearch ? (
+                <CommandGroup heading="Ir para">
+                  {pages.map((page, index) => (
+                    <CommandItem
+                      key={page.id}
+                      data-cy={`command-go-page-${page.id}`}
+                      value={`${page.title || "Sem título"} ${page.id}`}
+                      onSelect={() =>
+                        runCommand(() => router.push(pagePath(page.id)))
+                      }
+                    >
+                      {page.icon ? (
+                        <span
+                          aria-hidden="true"
+                          className="text-base leading-none"
+                        >
+                          {page.icon}
+                        </span>
+                      ) : (
+                        <FileTextIcon />
+                      )}
+                      {page.title || "Sem título"}
+                      {index === 0 ? (
+                        <CommandShortcut>G P</CommandShortcut>
+                      ) : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : searching ? (
+                <p
+                  className="py-6 text-center text-sm text-muted-foreground"
+                  data-cy="command-search-loading"
+                >
+                  Buscando…
+                </p>
+              ) : searchError ? (
+                <p
+                  role="alert"
+                  className="py-6 text-center text-sm text-destructive"
+                  data-cy="command-search-error"
+                >
+                  Não foi possível buscar. Tente novamente.
+                </p>
+              ) : groupedResults.length === 0 ? (
+                <p
+                  className="py-6 text-center text-sm text-muted-foreground"
+                  data-cy="command-search-empty"
+                >
+                  Nenhum resultado encontrado.
+                </p>
+              ) : (
+                groupedResults.map(({ key, items }) => (
+                  <CommandGroup key={key} heading={items[0].workspace_name}>
+                    {items.map((result) => (
+                      <CommandItem
+                        key={`${result.page_id}:${result.block_id}`}
+                        data-cy={`command-search-result-${result.block_id}`}
+                        value={`${result.page_title} ${result.snippet} ${result.block_id}`}
+                        onSelect={() =>
+                          runCommand(() => {
+                            selectWorkspace(result.workspace_id)
+                            router.push(
+                              `/dashboard/pages/${result.page_id}?block=${result.block_id}`
+                            )
+                          })
+                        }
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex items-center gap-2 font-medium">
+                            <span aria-hidden="true">
+                              {result.page_icon || "📄"}
+                            </span>
+                            <span className="truncate">
+                              {result.page_title || "Sem título"}
+                            </span>
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {result.snippet}
+                          </span>
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))
+              )}
               <CommandSeparator />
               <CommandGroup heading="Conta">
                 <CommandItem

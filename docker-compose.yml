@@ -7,7 +7,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
-      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://web-e2e:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://web-e2e:3000
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Notion Clone <noreply@israeldeveloper.com.br>}
@@ -43,6 +43,30 @@ services:
           path: ./backend/Cargo.toml
         - action: rebuild
           path: ./backend/Cargo.lock
+
+  worker:
+    build:
+      context: ./backend
+      target: dev
+    command: cargo run --bin notion-clone-worker
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
+      WORKER_INTERVAL_SECONDS: 1
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+      S3_BUCKET: media
+      S3_REGION: us-east-1
+      S3_URL_STYLE: path
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_PUBLIC_BASE_URL: http://localhost:9000/media
+    depends_on:
+      postgres:
+        condition: service_started
+      minio-create-bucket:
+        condition: service_completed_successfully
+    volumes:
+      - worker_target:/app/target
 
   # Local dev uses `make dev` → `npm run dev` on the host.
   # Keep this service only for optional containerized Next (profile docker-web).
@@ -85,11 +109,46 @@ services:
       CORS_ALLOWED_ORIGINS: http://web-e2e:3000
       PUBLIC_WEB_URL: http://web-e2e:3000
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Notion Clone <noreply@israeldeveloper.com.br>}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://minio:9000
+      S3_BUCKET: media
+      S3_REGION: us-east-1
+      S3_URL_STYLE: path
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_PUBLIC_BASE_URL: http://minio:9000/media
     depends_on:
       postgres:
         condition: service_started
+      minio-create-bucket:
+        condition: service_completed_successfully
     volumes:
       - api_e2e_target:/app/target
+
+  worker-e2e:
+    profiles: ["e2e"]
+    build:
+      context: ./backend
+      target: dev
+    command: cargo run --bin notion-clone-worker
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
+      WORKER_INTERVAL_SECONDS: 1
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://minio:9000
+      S3_BUCKET: media
+      S3_REGION: us-east-1
+      S3_URL_STYLE: path
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_PUBLIC_BASE_URL: http://minio:9000/media
+    depends_on:
+      postgres:
+        condition: service_started
+      minio-create-bucket:
+        condition: service_completed_successfully
+    volumes:
+      - worker_e2e_target:/app/target
 
   web-e2e:
     profiles: ["e2e"]
@@ -157,7 +216,9 @@ services:
 
 volumes:
   api_target:
+  worker_target:
   api_e2e_target:
+  worker_e2e_target:
   cypress_node_modules:
   postgres_data:
   minio_data:

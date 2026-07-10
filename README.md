@@ -144,10 +144,10 @@ Frontend:
 - shadcn/ui.
 - Custom block editor. No ProseMirror/TipTap/Slate: those frameworks model one rich document, and the whole point here is that a page is a tree of small blocks. One contenteditable per block keeps each editing surface trivial and makes the block model the real editor state. Tradeoff documented: rich inline formatting (bold/italic/links inside a block) starts minimal.
 
-AI:
+AI (M5 target):
 
-- Anthropic API behind the `contracts/` AI service contract; the provider is swappable because nothing outside the service knows which model answered.
-- Embeddings model behind the same contract.
+- Local Claude Code behind one self-contained `services/llm/` contract; no application service calls a hosted LLM provider directly.
+- Embeddings behind the same internal contract.
 - pgvector for storage and retrieval. No separate vector database.
 
 Infrastructure:
@@ -166,7 +166,8 @@ Core tables (all workspace-scoped tables carry `workspace_id`):
 - `workspace_members`: membership and role.
 - `blocks`: `id`, `workspace_id`, `type`, `properties` (jsonb), `content` (ordered array of child block ids), `parent_id`, `created_by`, timestamps, `trashed_at`. Pages are rows in this table.
 - `operations`: the log. `workspace_id`, monotonic `seq` per workspace, `actor_id` (user or AI), `op` (jsonb), `applied_at`. This is the sync feed, the audit trail, and the AI's paper trail.
-- `page_links`: revocable public read-only tokens (stored hashed).
+- `public_page_links`: one revocable public read-only UUID token per published page.
+- `object_deletion_jobs`: transactional outbox for retryable S3 cleanup after permanent deletion.
 - `block_embeddings`: `block_id`, `workspace_id`, `embedding` (vector), `content_hash`, `updated_at`. HNSW index. `content_hash` makes the refresh job idempotent.
 - `sessions`: opaque bearer tokens, stored hashed.
 
@@ -229,8 +230,8 @@ Measurable outcomes:
 
 ## Permissions Design
 
-- Workspace membership gates everything in v1: members read and write, non-members see nothing.
-- Public page links grant read-only access to one page subtree via a hashed token, revocable, uniform 404 on invalid/revoked/trashed.
+- Workspace membership gates everything in v1: owner/editor write, viewer reads, and non-members see nothing.
+- Public page links grant read-only access to one page and its non-page descendants via a UUID token. They are revocable and return the same 404 for invalid, revoked, trashed, or deleted content.
 - Every read path passes through the same authorization check: page fetch, search, sync feed, embeddings query, AI context assembly. One function, used everywhere, tested everywhere.
 
 Measurable outcomes:
@@ -241,15 +242,15 @@ Measurable outcomes:
 
 Two lanes, one database:
 
-- Lexical: PostgreSQL full-text search (`tsvector` over block text properties, GIN index), for "find the page called X".
+- Lexical (shipped in M4): PostgreSQL full-text search (`tsvector` over title/text/caption, concurrent partial GIN index), for "find the page called X".
 - Semantic: pgvector similarity over `block_embeddings`, for "where did we discuss Y", and as the retrieval layer for AI Q&A.
 
 Both queries filter by workspace membership inside the SQL, not in application code after the fact.
 
 Measurable outcomes:
 
-- Search returns nothing from workspaces the user does not belong to (gate + e2e tests).
-- Trashed content is excluded by default.
+- Search returns nothing from workspaces the user does not belong to (gate + e2e + `make eval-m4`).
+- A block is excluded when it or any ancestor is trashed.
 - Embedding refresh lag is observable (metric: blocks pending embedding).
 
 ## AI Integration Design
@@ -283,13 +284,13 @@ Recommended Railway resources:
 - Backend service: Rust API + WebSocket.
 - Frontend service: Next.js app.
 - PostgreSQL service with `CREATE EXTENSION vector` run by the first migration.
-- Worker service: embeddings, purge, compaction, reconciliation.
+- Worker service: S3 deletion outbox now; embeddings, compaction, and reconciliation in later milestones.
 
 Required deployment behavior:
 
 - `/health` returns healthy only when Postgres is reachable and the pgvector extension is present.
 - Frontend reads the deployed API base URL from configuration.
-- Backend reads all configuration from environment variables, including the LLM API key.
+- Backend reads all configuration from environment variables; M5 will configure the local Claude Code service command, not a hosted LLM API key.
 - Database migrations run through a controlled command.
 - Every release gets a smoke test: sign in, create a page, type a block, see it from a second session, run one AI action.
 
@@ -302,9 +303,9 @@ Initial deployment status:
 - Web URL: `https://web-production-ec9b1.up.railway.app`.
 - API service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, Dockerfile build, healthcheck `/health`.
 - Web service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/frontend`, Dockerfile build (`output: "standalone"`), serving on port 8080.
-- Worker service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, start command `notion-clone-worker` (keep-alive tick, no jobs until M6).
+- Worker service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, start command `notion-clone-worker` (processes permanent-delete S3 cleanup with retry).
 - Postgres: `ghcr.io/railwayapp-templates/postgres-ssl:18` (ships pgvector 0.8.4); `DATABASE_URL` is referenced into api and worker.
-- Migrations `0001`–`0005` run on boot, including `CREATE EXTENSION vector`.
+- Migrations `0001`–`0011` run on boot, including pgvector, M4 public links/search, and the concurrent GIN index.
 - Deploy smoke: `/health` 200, web `/` 200, API signup creates the user, workspace, and root page.
 
 The api healthcheck lives on the service instance, not in `backend/railway.json`, because that file is shared with the worker (same `/backend` root) and the worker serves no HTTP.
@@ -337,11 +338,13 @@ Done when: two browsers editing the same page converge, and a disconnected clien
 
 Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines. Catch-up starts only after `hello`, paginates to a stable snapshot, buffers out-of-order live events, and never advances its delivery cursor from a write ACK. The 501-operation regression is covered by a gate test and `make eval-sync-catch-up`. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
 
-### M4: Membership, permissions, search
+### M4: Membership, permissions, search — DONE (2026-07-10)
 
 Deliver: invite by email, workspace scoping on every read path, public read-only page links, full-text search, permission e2e suite.
 
 Done when: cross-workspace access fails everywhere and search finds only what it should.
+
+Status: shipped. Owner/editor/viewer enforcement covers pages, writes, search, sharing, and permanent deletion. `GET /search` runs permission filtering and trashed-ancestor filtering inside PostgreSQL. Owner and editor can publish one page through a revocable read-only link; child pages are omitted, and trash revokes links transactionally. Permanent deletion removes the DB subtree and queues image keys for retryable worker cleanup. Protocol: [`docs/api/m4.md`](./docs/api/m4.md). Proof: 49 Rust tests, 136 frontend tests, 15 Cypress scenarios, and `make eval-m4` against Postgres + MinIO.
 
 ### M5: AI
 
@@ -427,9 +430,11 @@ make backend
 ```
 
 
-`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit against Postgres. AI evals arrive with M5.
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit; `make eval-m4` proves role enforcement, search isolation, public-link lifecycle, purge, and MinIO cleanup. AI evals arrive with M5.
 
 ## Current Status
+
+M4 done (2026-07-10): global full-text search is scoped by membership and excludes trashed ancestry; public pages are single-page, read-only, revocable, and private by default; owner/editor can permanently delete a trash root while the worker reliably cleans up S3 objects. The local full-stack proof is 15/15 Cypress scenarios plus the M4 Postgres/MinIO eval.
 
 M3 done (2026-07-09): real-time sync. Clients load a page and cursor from one repeatable-read snapshot, wait for the workspace WebSocket `hello`, catch up every page to a stable cursor, then drain buffered live ops in contiguous order. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations`; broadcast is the only write-side side effect.
 
@@ -437,4 +442,4 @@ M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five t
 
 M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops.
 
-Next: M4 — public page links, full-text search, permission e2e suite.
+Next: M5 — the local Claude Code service contract, deterministic context builder, embeddings worker, four AI features, and thresholded evals.

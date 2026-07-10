@@ -11,7 +11,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// Espelha o drive-clone: endpoint interno (opcional) + public endpoint pro browser.
 #[derive(Debug, Clone)]
 pub struct S3Config {
-    /// Base usada nas URLs assinadas (browser). Ex: http://localhost:9000
+    /// Endpoint reachable by backend services. Ex: http://minio:9000
+    pub endpoint: String,
+    /// Base usada nas URLs assinadas pelo browser. Ex: http://localhost:9000
     pub public_endpoint: String,
     pub region: String,
     pub bucket: String,
@@ -32,13 +34,29 @@ impl S3ObjectStorage {
         Self { config }
     }
 
-    fn host(&self) -> String {
-        self.config
-            .public_endpoint
+    fn endpoint_host(endpoint: &str) -> String {
+        endpoint
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_end_matches('/')
             .to_string()
+    }
+
+    fn public_host(&self) -> String {
+        Self::endpoint_host(&self.config.public_endpoint)
+    }
+
+    fn internal_host(&self) -> String {
+        Self::endpoint_host(&self.config.endpoint)
+    }
+
+    fn object_uri(&self, key: &str) -> String {
+        let encoded_key = key.split('/').map(uri_encode).collect::<Vec<_>>().join("/");
+        if self.config.force_path_style {
+            format!("/{}/{encoded_key}", uri_encode(&self.config.bucket))
+        } else {
+            format!("/{encoded_key}")
+        }
     }
 }
 
@@ -65,9 +83,9 @@ impl ObjectStorage for S3ObjectStorage {
         let credential = format!("{}/{}", self.config.access_key, credential_scope);
 
         let host = if self.config.force_path_style {
-            self.host()
+            self.public_host()
         } else {
-            format!("{}.{}", self.config.bucket, self.host())
+            format!("{}.{}", self.config.bucket, self.public_host())
         };
 
         let canonical_uri = if self.config.force_path_style {
@@ -132,9 +150,9 @@ impl ObjectStorage for S3ObjectStorage {
         let credential = format!("{}/{}", self.config.access_key, credential_scope);
 
         let host = if self.config.force_path_style {
-            self.host()
+            self.public_host()
         } else {
-            format!("{}.{}", self.config.bucket, self.host())
+            format!("{}.{}", self.config.bucket, self.public_host())
         };
         let canonical_uri = if self.config.force_path_style {
             format!("/{}/{}", self.config.bucket, key)
@@ -177,6 +195,62 @@ impl ObjectStorage for S3ObjectStorage {
             "{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
         ))
     }
+
+    async fn delete_object(&self, key: &str) -> Result<(), StorageError> {
+        let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = &amz_date[..8];
+        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, self.config.region);
+        let credential = format!("{}/{}", self.config.access_key, credential_scope);
+        let host = if self.config.force_path_style {
+            self.internal_host()
+        } else {
+            format!("{}.{}", self.config.bucket, self.internal_host())
+        };
+        let canonical_uri = self.object_uri(key);
+        let payload_hash = hex_sha256("");
+        let signed_headers = "host;x-amz-content-sha256;x-amz-date";
+        let canonical_headers =
+            format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
+        let canonical_request = format!(
+            "DELETE\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+        );
+        let algorithm = "AWS4-HMAC-SHA256";
+        let string_to_sign = format!(
+            "{algorithm}\n{amz_date}\n{credential_scope}\n{}",
+            hex_sha256(&canonical_request)
+        );
+        let signing_key = derive_signing_key(
+            &self.config.secret_key,
+            date_stamp,
+            &self.config.region,
+            "s3",
+        );
+        let signature = hex_hmac(&signing_key, string_to_sign.as_bytes());
+        let authorization = format!(
+            "{algorithm} Credential={credential}, SignedHeaders={signed_headers}, Signature={signature}"
+        );
+        let scheme = if self.config.endpoint.starts_with("https") {
+            "https"
+        } else {
+            "http"
+        };
+        let url = format!("{scheme}://{host}{canonical_uri}");
+
+        let response = reqwest::Client::new()
+            .delete(url)
+            .header("x-amz-content-sha256", payload_hash)
+            .header("x-amz-date", amz_date)
+            .header("authorization", authorization)
+            .send()
+            .await
+            .map_err(|_| StorageError::Unexpected)?;
+
+        if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            Err(StorageError::Unexpected)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -203,6 +277,10 @@ impl ObjectStorage for NoopObjectStorage {
 
     async fn presign_get(&self, _key: &str) -> Result<String, StorageError> {
         Err(StorageError::NotConfigured)
+    }
+
+    async fn delete_object(&self, _key: &str) -> Result<(), StorageError> {
+        Ok(())
     }
 }
 
@@ -248,6 +326,9 @@ fn uri_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{Router, extract::Request, http::StatusCode, routing::delete};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
     use uuid::Uuid;
 
     #[test]
@@ -257,5 +338,90 @@ mod tests {
         let key = storage.avatar_key_for(user_id, "jpg");
         assert!(key.starts_with(&format!("{user_id}/")));
         assert!(key.ends_with(".jpg"));
+    }
+
+    #[tokio::test]
+    async fn noop_delete_is_idempotent() {
+        let storage = NoopObjectStorage;
+        storage.delete_object("missing/object.png").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn s3_delete_signs_and_sends_the_expected_request() {
+        let request = Arc::new(Mutex::new(None));
+        let captured = Arc::clone(&request);
+        let app = Router::new().route(
+            "/{*path}",
+            delete(move |request: Request| {
+                let captured = Arc::clone(&captured);
+                async move {
+                    let authorization = request
+                        .headers()
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    *captured.lock().await =
+                        Some((request.uri().path().to_string(), authorization));
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let storage = S3ObjectStorage::new(S3Config {
+            endpoint: format!("http://{address}"),
+            public_endpoint: format!("http://{address}"),
+            region: "us-east-1".to_string(),
+            bucket: "media".to_string(),
+            access_key: "access".to_string(),
+            secret_key: "secret".to_string(),
+            public_base_url: format!("http://{address}/media"),
+            force_path_style: true,
+        });
+
+        storage
+            .delete_object("images/workspace/image one.png")
+            .await
+            .unwrap();
+
+        let (path, authorization) = request.lock().await.clone().unwrap();
+        assert_eq!(path, "/media/images/workspace/image%20one.png");
+        assert!(authorization.starts_with("AWS4-HMAC-SHA256 Credential=access/"));
+        assert!(authorization.contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date"));
+    }
+
+    #[tokio::test]
+    async fn s3_delete_accepts_missing_objects_but_rejects_server_errors() {
+        let app = Router::new().route(
+            "/{*path}",
+            delete(|request: Request| async move {
+                if request.uri().path().ends_with("missing.png") {
+                    StatusCode::NOT_FOUND
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let storage = S3ObjectStorage::new(S3Config {
+            endpoint: format!("http://{address}"),
+            public_endpoint: "http://browser.invalid".to_string(),
+            region: "us-east-1".to_string(),
+            bucket: "media".to_string(),
+            access_key: "access".to_string(),
+            secret_key: "secret".to_string(),
+            public_base_url: "http://browser.invalid/media".to_string(),
+            force_path_style: true,
+        });
+
+        storage.delete_object("missing.png").await.unwrap();
+        assert_eq!(
+            storage.delete_object("failure.png").await,
+            Err(StorageError::Unexpected)
+        );
     }
 }
