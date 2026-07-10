@@ -5,7 +5,7 @@ Spec canônica do modelo de dados e das cinco operações. As implementações e
 - TypeScript (cliente): `frontend/lib/contracts.ts` — tipos usados pelo editor e pelo engine local (`frontend/lib/engine/tree.ts`).
 - Rust (servidor): `backend/src/domain/block.rs` — o apply do servidor reimplementa a mesma semântica, coberta pelos mesmos casos de teste.
 
-A API HTTP está em [`docs/api/pages.md`](../docs/api/pages.md); o protocolo de sync em [`docs/api/sync.md`](../docs/api/sync.md).
+A API HTTP está em [`docs/api/pages.md`](../docs/api/pages.md); o protocolo de sync em [`docs/api/sync.md`](../docs/api/sync.md); busca, publicação e purge em [`docs/api/m4.md`](../docs/api/m4.md).
 
 Quando um segundo consumidor TypeScript existir (ex.: desktop client), promova `frontend/lib/contracts.ts` de volta a pacote compartilhado.
 
@@ -57,3 +57,11 @@ Cada write vira uma linha em `operations` (`workspace_id`, `seq`, `op_id`, `acto
 - **Broadcast.** Hub in-process (`RealtimeHub`); multi-instance troca o hub por Redis/NATS sem mudar o protocolo.
 
 Uma página filha renderizada dentro do pai é um link, nunca conteúdo inline: o `GET /pages/{id}` para a descida na página filha e devolve o bloco dela com `content: []`.
+
+## Busca, publicação e purge (M4)
+
+- `blocks.search_document` é derivado de `title`, `text` e `caption`; o índice GIN é parcial para blocos vivos.
+- A busca cruza apenas `workspace_members` do solicitante e rejeita qualquer candidato com ancestral no lixo.
+- Um link público expõe a página e seus descendentes que não são páginas. Blocos `page` filhos e suas referências são removidos da resposta.
+- `delete_block` revoga links públicos das páginas na subárvore na mesma transação; `restore_block` não republica.
+- Purge aceita somente uma raiz listada na lixeira. A subárvore sai do banco e as chaves de imagem entram em `object_deletion_jobs`; o operation log permanece para auditoria.
