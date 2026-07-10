@@ -15,7 +15,8 @@ use crate::application::auth::{
 };
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
-    ListTrashUseCase, PresignPageImageUseCase,
+    ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase, PublicLinksUseCase,
+    SearchPagesUseCase,
 };
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
@@ -60,6 +61,9 @@ pub struct AppState {
     pub list_operations: ListOperationsUseCase,
     pub list_trash: ListTrashUseCase,
     pub presign_page_image: PresignPageImageUseCase,
+    pub search_pages: SearchPagesUseCase,
+    pub public_links: PublicLinksUseCase,
+    pub permanently_delete: PermanentlyDeleteUseCase,
 }
 
 impl AppState {
@@ -114,7 +118,7 @@ impl AppState {
                 workspace_repository.clone(),
                 email_sender.clone(),
                 clock.clone(),
-                public_web_url,
+                public_web_url.clone(),
             ),
             revoke_invite: RevokeInviteUseCase::new(workspace_repository.clone(), clock.clone()),
             update_member_role: UpdateMemberRoleUseCase::new(workspace_repository.clone()),
@@ -135,8 +139,23 @@ impl AppState {
                 page_repository.clone(),
                 workspace_repository.clone(),
             ),
-            list_trash: ListTrashUseCase::new(page_repository, workspace_repository.clone()),
-            presign_page_image: PresignPageImageUseCase::new(workspace_repository, storage),
+            list_trash: ListTrashUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+            ),
+            presign_page_image: PresignPageImageUseCase::new(workspace_repository.clone(), storage),
+            search_pages: SearchPagesUseCase::new(page_repository.clone()),
+            public_links: PublicLinksUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+                clock.clone(),
+                public_web_url,
+            ),
+            permanently_delete: PermanentlyDeleteUseCase::new(
+                page_repository,
+                workspace_repository,
+                clock,
+            ),
         }
     }
 }

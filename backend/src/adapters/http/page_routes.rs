@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -8,7 +9,8 @@ use crate::adapters::http::error::HttpError;
 use crate::application::auth::update_profile::PresignAvatarResponse;
 use crate::application::pages::presign_image::PresignPageImageInput;
 use crate::application::ports::page::{
-    OperationAck, OperationsPage, PageList, PageView, TrashEntry,
+    OperationAck, OperationsPage, PageList, PageView, PermanentDeleteResult, SearchResult,
+    TrashEntry,
 };
 use crate::bootstrap::state::AppState;
 use crate::domain::block::Operation;
@@ -23,6 +25,87 @@ pub struct ListOperationsQuery {
     pub after_seq: Option<i64>,
     pub limit: Option<i64>,
     pub up_to_seq: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    pub limit: Option<i64>,
+}
+
+pub async fn search(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<SearchResult>>, HttpError> {
+    Ok(Json(
+        state
+            .search_pages
+            .execute(auth.user.id, query.q, query.limit)
+            .await?,
+    ))
+}
+
+pub async fn get_public_link(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((workspace_id, page_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::application::pages::m4::PublicLinkResponse>, HttpError> {
+    let link = state
+        .public_links
+        .get(auth.user.id, workspace_id, page_id)
+        .await?
+        .ok_or(crate::application::AppError::from(
+            crate::domain::error::DomainError::PageNotFound,
+        ))?;
+    Ok(Json(link))
+}
+
+pub async fn create_public_link(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((workspace_id, page_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<crate::application::pages::m4::PublicLinkResponse>, HttpError> {
+    Ok(Json(
+        state
+            .public_links
+            .create(auth.user.id, workspace_id, page_id)
+            .await?,
+    ))
+}
+
+pub async fn revoke_public_link(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((workspace_id, page_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, HttpError> {
+    state
+        .public_links
+        .revoke(auth.user.id, workspace_id, page_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn get_public_page(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+) -> Result<Json<crate::application::pages::m4::PublicPageResponse>, HttpError> {
+    let token = Uuid::parse_str(&token).map_err(|_| {
+        crate::application::AppError::from(crate::domain::error::DomainError::PageNotFound)
+    })?;
+    Ok(Json(state.public_links.public_page(token).await?))
+}
+
+pub async fn permanently_delete(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((workspace_id, block_id)): Path<(Uuid, Uuid)>,
+) -> Result<(StatusCode, Json<PermanentDeleteResult>), HttpError> {
+    let result = state
+        .permanently_delete
+        .execute(auth.user.id, workspace_id, block_id)
+        .await?;
+    Ok((StatusCode::ACCEPTED, Json(result)))
 }
 
 pub async fn list_pages(
