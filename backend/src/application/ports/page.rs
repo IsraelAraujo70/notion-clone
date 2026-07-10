@@ -85,6 +85,31 @@ pub struct PageList {
     pub pages: Vec<PageSummary>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SearchResult {
+    pub workspace_id: Uuid,
+    pub workspace_name: String,
+    pub page_id: Uuid,
+    pub page_title: String,
+    pub page_icon: String,
+    pub block_id: Uuid,
+    pub block_type: BlockType,
+    pub snippet: String,
+    pub rank: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicLink {
+    pub token: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PermanentDeleteResult {
+    pub deleted_blocks: u64,
+    pub media_cleanup_queued: u64,
+}
+
 #[async_trait]
 pub trait PageRepository: Send + Sync {
     async fn list_pages(&self, workspace_id: Uuid) -> Result<PageList, RepositoryError>;
@@ -116,4 +141,53 @@ pub trait PageRepository: Send + Sync {
         limit: Option<i64>,
         up_to_seq: Option<i64>,
     ) -> Result<OperationsPage, RepositoryError>;
+
+    async fn search(
+        &self,
+        _user_id: Uuid,
+        _query: &str,
+        _limit: i64,
+    ) -> Result<Vec<SearchResult>, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn get_public_link(
+        &self,
+        _workspace_id: Uuid,
+        _page_id: Uuid,
+    ) -> Result<Option<PublicLink>, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn create_public_link(
+        &self,
+        _workspace_id: Uuid,
+        _page_id: Uuid,
+        _created_by: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<PublicLink, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn revoke_public_link(
+        &self,
+        _workspace_id: Uuid,
+        _page_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn get_public_page(&self, _token: Uuid) -> Result<PageTree, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn permanently_delete(
+        &self,
+        _workspace_id: Uuid,
+        _block_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<PermanentDeleteResult, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
 }

@@ -54,10 +54,13 @@ impl Config {
 
 fn s3_from_env() -> Option<S3Config> {
     // Aceita nomes do drive-clone (S3_ENDPOINT_URL / S3_ACCESS_KEY_ID) e os curtos.
+    let endpoint = env_string("S3_ENDPOINT_URL")
+        .or_else(|| env_string("S3_ENDPOINT"))
+        .or_else(|| env_string("S3_PUBLIC_ENDPOINT_URL"))
+        .or_else(|| env_string("S3_PUBLIC_ENDPOINT"))?;
     let public_endpoint = env_string("S3_PUBLIC_ENDPOINT_URL")
         .or_else(|| env_string("S3_PUBLIC_ENDPOINT"))
-        .or_else(|| env_string("S3_ENDPOINT_URL"))
-        .or_else(|| env_string("S3_ENDPOINT"))?;
+        .unwrap_or_else(|| endpoint.clone());
     let bucket = env_string("S3_BUCKET")?;
     let access_key = env_string("S3_ACCESS_KEY_ID").or_else(|| env_string("S3_ACCESS_KEY"))?;
     let secret_key = env_string("S3_SECRET_ACCESS_KEY").or_else(|| env_string("S3_SECRET_KEY"))?;
@@ -74,6 +77,7 @@ fn s3_from_env() -> Option<S3Config> {
         })
         .unwrap_or(true);
     Some(S3Config {
+        endpoint,
         public_endpoint,
         region,
         bucket,

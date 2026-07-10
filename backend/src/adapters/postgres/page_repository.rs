@@ -10,7 +10,8 @@ use crate::adapters::postgres::tx::map_sqlx_error;
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
     Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList,
-    PageRepository, PageSummary, PageTree, PageView, TrashEntry,
+    PageRepository, PageSummary, PageTree, PageView, PermanentDeleteResult, PublicLink,
+    SearchResult, TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
@@ -116,6 +117,25 @@ struct RecentEditorRow {
     display_name: String,
     avatar_key: Option<String>,
     last_edited_at: DateTime<Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct SearchResultRow {
+    workspace_id: Uuid,
+    workspace_name: String,
+    page_id: Uuid,
+    page_title: String,
+    page_icon: String,
+    block_id: Uuid,
+    block_type: String,
+    snippet: String,
+    rank: f32,
+}
+
+#[derive(sqlx::FromRow)]
+struct PublicLinkRow {
+    token: Uuid,
+    created_at: DateTime<Utc>,
 }
 
 fn page_not_found() -> RepositoryError {
@@ -556,6 +576,30 @@ impl PageRepository for PostgresPageRepository {
             }
         }
 
+        // Publicação nunca sobrevive ao envio da página (ou de um ancestral) ao lixo.
+        // O restore é deliberadamente assimétrico: não republica conteúdo.
+        if let Operation::DeleteBlock { block_id, .. } = operation {
+            sqlx::query(
+                "WITH RECURSIVE subtree AS (
+                     SELECT id, type FROM blocks WHERE id = $1 AND workspace_id = $2
+                     UNION ALL
+                     SELECT b.id, b.type FROM subtree s
+                     JOIN blocks b ON b.parent_id = s.id
+                     WHERE b.workspace_id = $2
+                 )
+                 UPDATE public_page_links l
+                 SET revoked_at = $3
+                 FROM subtree s
+                 WHERE l.page_id = s.id AND s.type = 'page' AND l.revoked_at IS NULL",
+            )
+            .bind(block_id)
+            .bind(workspace_id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+
         let mut page_ids = std::collections::HashSet::new();
         for id in &touched {
             if let Some(page_id) = resolve_containing_page(&tree, *id) {
@@ -656,6 +700,307 @@ impl PageRepository for PostgresPageRepository {
         Ok(OperationsPage {
             operations,
             latest_seq,
+        })
+    }
+
+    async fn search(
+        &self,
+        user_id: Uuid,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<SearchResult>, RepositoryError> {
+        let rows = sqlx::query_as::<_, SearchResultRow>(
+            "WITH RECURSIVE search_query AS (
+                 SELECT websearch_to_tsquery('simple', $2) AS value
+             ), candidates AS (
+                 SELECT b.id, b.workspace_id, b.type, b.properties, b.parent_id,
+                        ts_rank_cd(b.search_document, q.value)::real AS rank
+                 FROM blocks b
+                 JOIN workspace_members wm
+                   ON wm.workspace_id = b.workspace_id AND wm.user_id = $1
+                 CROSS JOIN search_query q
+                 WHERE b.search_document @@ q.value
+                   AND b.trashed_at IS NULL
+             ), ancestors AS (
+                 SELECT c.id AS candidate_id, c.id, c.workspace_id, c.type,
+                        c.properties, c.parent_id, 0 AS depth, false AS trashed
+                 FROM candidates c
+                 UNION ALL
+                 SELECT a.candidate_id, p.id, p.workspace_id, p.type,
+                        p.properties, p.parent_id, a.depth + 1,
+                        p.trashed_at IS NOT NULL
+                 FROM ancestors a
+                 JOIN blocks p ON p.id = a.parent_id AND p.workspace_id = a.workspace_id
+             ), containing_pages AS (
+                 SELECT DISTINCT ON (candidate_id)
+                        candidate_id, id AS page_id, properties AS page_properties
+                 FROM ancestors
+                 WHERE type = 'page'
+                 ORDER BY candidate_id, depth
+             )
+             SELECT c.workspace_id,
+                    w.name AS workspace_name,
+                    cp.page_id,
+                    COALESCE(cp.page_properties->>'title', '') AS page_title,
+                    COALESCE(cp.page_properties->>'icon', '') AS page_icon,
+                    c.id AS block_id,
+                    c.type AS block_type,
+                    left(COALESCE(NULLIF(c.properties->>'title', ''),
+                                  NULLIF(c.properties->>'text', ''),
+                                  NULLIF(c.properties->>'caption', ''), ''), 240) AS snippet,
+                    c.rank
+             FROM candidates c
+             JOIN containing_pages cp ON cp.candidate_id = c.id
+             JOIN workspaces w ON w.id = c.workspace_id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ancestors a
+                 WHERE a.candidate_id = c.id AND a.trashed
+             )
+               AND NOT EXISTS (
+                 SELECT 1 FROM workspace_page_roots r WHERE r.root_page_id = cp.page_id
+             )
+             ORDER BY c.rank DESC, c.workspace_id, cp.page_id, c.id
+             LIMIT $3",
+        )
+        .bind(user_id)
+        .bind(query)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(SearchResult {
+                    workspace_id: row.workspace_id,
+                    workspace_name: row.workspace_name,
+                    page_id: row.page_id,
+                    page_title: row.page_title,
+                    page_icon: row.page_icon,
+                    block_id: row.block_id,
+                    block_type: parse_block_type(&row.block_type)?,
+                    snippet: row.snippet,
+                    rank: row.rank,
+                })
+            })
+            .collect()
+    }
+
+    async fn get_public_link(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+    ) -> Result<Option<PublicLink>, RepositoryError> {
+        let row = sqlx::query_as::<_, PublicLinkRow>(
+            "SELECT token, created_at
+             FROM public_page_links
+             WHERE workspace_id = $1 AND page_id = $2 AND revoked_at IS NULL",
+        )
+        .bind(workspace_id)
+        .bind(page_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(row.map(|row| PublicLink {
+            token: row.token,
+            created_at: row.created_at,
+        }))
+    }
+
+    async fn create_public_link(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+        created_by: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<PublicLink, RepositoryError> {
+        let token = Uuid::new_v4();
+        let row = sqlx::query_as::<_, PublicLinkRow>(
+            "WITH RECURSIVE ancestors AS (
+                 SELECT id, workspace_id, type, parent_id, trashed_at
+                 FROM blocks WHERE id = $2 AND workspace_id = $1 AND type = 'page'
+                 UNION ALL
+                 SELECT p.id, p.workspace_id, p.type, p.parent_id, p.trashed_at
+                 FROM ancestors a JOIN blocks p ON p.id = a.parent_id
+                 WHERE p.workspace_id = $1
+             ), eligible AS (
+                 SELECT $2::uuid AS page_id
+                 WHERE EXISTS (SELECT 1 FROM ancestors)
+                   AND NOT EXISTS (SELECT 1 FROM ancestors WHERE trashed_at IS NOT NULL)
+                   AND NOT EXISTS (SELECT 1 FROM workspace_page_roots WHERE root_page_id = $2)
+             )
+             INSERT INTO public_page_links (workspace_id, page_id, token, created_by, created_at)
+             SELECT $1, page_id, $3, $4, $5 FROM eligible
+             ON CONFLICT (page_id) WHERE revoked_at IS NULL
+             DO UPDATE SET page_id = EXCLUDED.page_id
+             RETURNING token, created_at",
+        )
+        .bind(workspace_id)
+        .bind(page_id)
+        .bind(token)
+        .bind(created_by)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(page_not_found)?;
+        Ok(PublicLink {
+            token: row.token,
+            created_at: row.created_at,
+        })
+    }
+
+    async fn revoke_public_link(
+        &self,
+        workspace_id: Uuid,
+        page_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError> {
+        let affected = sqlx::query(
+            "UPDATE public_page_links SET revoked_at = $3
+             WHERE workspace_id = $1 AND page_id = $2 AND revoked_at IS NULL",
+        )
+        .bind(workspace_id)
+        .bind(page_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .rows_affected();
+        Ok(affected > 0)
+    }
+
+    async fn get_public_page(&self, token: Uuid) -> Result<PageTree, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+
+        let identity = sqlx::query_as::<_, (Uuid, Uuid)>(
+            "WITH RECURSIVE ancestors AS (
+                 SELECT b.id, b.workspace_id, b.parent_id, b.trashed_at
+                 FROM public_page_links l
+                 JOIN blocks b ON b.id = l.page_id AND b.workspace_id = l.workspace_id
+                 WHERE l.token = $1 AND l.revoked_at IS NULL AND b.type = 'page'
+                 UNION ALL
+                 SELECT p.id, p.workspace_id, p.parent_id, p.trashed_at
+                 FROM ancestors a JOIN blocks p ON p.id = a.parent_id
+                 WHERE p.workspace_id = a.workspace_id
+             )
+             SELECT l.workspace_id, l.page_id
+             FROM public_page_links l
+             WHERE l.token = $1 AND l.revoked_at IS NULL
+               AND EXISTS (SELECT 1 FROM ancestors)
+               AND NOT EXISTS (SELECT 1 FROM ancestors WHERE trashed_at IS NOT NULL)",
+        )
+        .bind(token)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(page_not_found)?;
+
+        let query = format!(
+            "WITH RECURSIVE subtree AS (
+                 SELECT {BLOCK_COLUMNS}, 0 AS depth
+                 FROM blocks
+                 WHERE workspace_id = $1 AND id = $2 AND type = 'page' AND trashed_at IS NULL
+                 UNION ALL
+                 SELECT c.id, c.workspace_id, c.type, c.properties, c.content, c.parent_id,
+                        c.trashed_at, c.trashed_index, c.prop_versions, s.depth + 1
+                 FROM subtree s
+                 JOIN blocks c ON c.parent_id = s.id
+                 WHERE c.workspace_id = $1 AND c.trashed_at IS NULL
+                   AND (s.depth = 0 OR s.type <> 'page')
+             ) SELECT {BLOCK_COLUMNS} FROM subtree"
+        );
+        let rows = sqlx::query_as::<_, BlockRow>(&query)
+            .bind(identity.0)
+            .bind(identity.1)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        if rows.is_empty() {
+            return Err(page_not_found());
+        }
+        let mut blocks = rows
+            .into_iter()
+            .map(Block::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let child_page_ids: std::collections::HashSet<Uuid> = blocks
+            .iter()
+            .filter(|block| block.id != identity.1 && block.block_type == BlockType::Page)
+            .map(|block| block.id)
+            .collect();
+        blocks.retain(|block| !child_page_ids.contains(&block.id));
+        for block in &mut blocks {
+            block.content.retain(|id| !child_page_ids.contains(id));
+        }
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(PageTree {
+            root_id: identity.1,
+            blocks,
+        })
+    }
+
+    async fn permanently_delete(
+        &self,
+        workspace_id: Uuid,
+        block_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<PermanentDeleteResult, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        let eligible = sqlx::query_as::<_, (Uuid,)>(
+            "SELECT b.id FROM blocks b
+             LEFT JOIN blocks p ON p.id = b.parent_id
+             WHERE b.id = $2 AND b.workspace_id = $1 AND b.trashed_at IS NOT NULL
+               AND (p.id IS NULL OR p.trashed_at IS NULL)
+             FOR UPDATE OF b",
+        )
+        .bind(workspace_id)
+        .bind(block_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+        if eligible.is_none() {
+            return Err(DomainError::Validation("Block must be a trash root").into());
+        }
+
+        let counts = sqlx::query_as::<_, (i64, i64)>(
+            "WITH RECURSIVE subtree AS (
+                 SELECT id, type, properties FROM blocks WHERE id = $2 AND workspace_id = $1
+                 UNION ALL
+                 SELECT b.id, b.type, b.properties
+                 FROM subtree s JOIN blocks b ON b.parent_id = s.id
+                 WHERE b.workspace_id = $1
+             ), queued AS (
+                 INSERT INTO object_deletion_jobs (object_key, available_at, created_at)
+                 SELECT DISTINCT properties->>'key', $3, $3 FROM subtree
+                 WHERE type = 'image' AND NULLIF(properties->>'key', '') IS NOT NULL
+                 ON CONFLICT (object_key) DO UPDATE
+                 SET attempts = 0, available_at = EXCLUDED.available_at,
+                     last_error = NULL, completed_at = NULL
+                 RETURNING 1
+             )
+             SELECT (SELECT count(*) FROM subtree), (SELECT count(*) FROM queued)",
+        )
+        .bind(workspace_id)
+        .bind(block_id)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        sqlx::query("DELETE FROM blocks WHERE id = $1 AND workspace_id = $2")
+            .bind(block_id)
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(PermanentDeleteResult {
+            deleted_blocks: counts.0 as u64,
+            media_cleanup_queued: counts.1 as u64,
         })
     }
 }
