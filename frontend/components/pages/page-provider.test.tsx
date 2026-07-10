@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listPages: vi.fn(),
   applyOperation: vi.fn(),
   listTrash: vi.fn(),
+  permanentlyDelete: vi.fn(),
   workspace: {
     activeWorkspace: { id: "ws-1", role: "owner" },
     activeWorkspaceId: "ws-1",
@@ -33,6 +34,7 @@ vi.mock("@/lib/api", () => ({
     listPages: (...args: unknown[]) => mocks.listPages(...args),
     applyOperation: (...args: unknown[]) => mocks.applyOperation(...args),
     listTrash: (...args: unknown[]) => mocks.listTrash(...args),
+    permanentlyDelete: (...args: unknown[]) => mocks.permanentlyDelete(...args),
   },
 }))
 
@@ -61,6 +63,7 @@ function Probe() {
     renamePage,
     setPageIcon,
     deletePage,
+    permanentDelete,
   } = usePages()
   return (
     <div>
@@ -74,6 +77,7 @@ function Probe() {
       <button onClick={() => setPageIcon("page-child", "🚀")}>icone</button>
       <button onClick={() => setPageIcon("page-child", null)}>sem-icone</button>
       <button onClick={() => deletePage("page-child")}>apagar</button>
+      <button onClick={() => permanentDelete("page-child")}>purgar</button>
     </div>
   )
 }
@@ -91,6 +95,10 @@ describe("PageProvider", () => {
     mocks.replace.mockReset()
     mocks.applyOperation.mockReset().mockResolvedValue({ op_id: "x", seq: 1 })
     mocks.listTrash.mockReset().mockResolvedValue([])
+    mocks.permanentlyDelete.mockReset().mockResolvedValue({
+      deleted_blocks: 2,
+      media_cleanup_queued: 1,
+    })
     mocks.listPages.mockReset().mockResolvedValue(PAGES)
     mocks.workspace.activeWorkspace = { id: "ws-1", role: "owner" }
   })
@@ -223,5 +231,26 @@ describe("PageProvider", () => {
       blockId: "page-child",
     })
     expect(mocks.listPages).toHaveBeenCalled()
+  })
+
+  it("permanently deletes a trashed subtree and refreshes pages and trash", async () => {
+    renderProvider("page-root")
+    await waitFor(() =>
+      expect(screen.getByTestId("root")).toHaveTextContent("container")
+    )
+    mocks.listPages.mockClear()
+    mocks.listTrash.mockClear()
+
+    await userEvent.click(screen.getByText("purgar"))
+
+    await waitFor(() =>
+      expect(mocks.permanentlyDelete).toHaveBeenCalledWith(
+        "secret-token",
+        "ws-1",
+        "page-child"
+      )
+    )
+    expect(mocks.listPages).toHaveBeenCalled()
+    expect(mocks.listTrash).toHaveBeenCalled()
   })
 })

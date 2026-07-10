@@ -110,6 +110,33 @@ export type TrashEntry = {
   trashed_at: string
 }
 
+export type SearchResult = {
+  workspace_id: string
+  workspace_name: string
+  page_id: string
+  page_title: string
+  page_icon: string
+  block_id: string
+  block_type: BlockType
+  snippet: string
+  rank: number
+}
+
+export type PublicLinkResponse = {
+  token: string
+  url: string
+  created_at: string
+}
+
+export type PublicPageResponse = {
+  page: { rootId: string; blocks: Block[] }
+}
+
+export type PermanentDeleteResponse = {
+  deleted_blocks: number
+  media_cleanup_queued: number
+}
+
 export type OperationAck = {
   op_id: string
   seq: number
@@ -163,6 +190,7 @@ type RequestOptions = {
   method?: string
   token?: string | null
   body?: unknown
+  signal?: AbortSignal
 }
 
 async function request<T>(
@@ -177,11 +205,13 @@ async function request<T>(
     headers.Authorization = `Bearer ${options.token}`
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const init: RequestInit = {
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  })
+  }
+  if (options.signal) init.signal = options.signal
+  const response = await fetch(`${API_BASE_URL}${path}`, init)
 
   if (response.status === 204) {
     return undefined as T
@@ -344,6 +374,35 @@ export const api = {
   },
   listTrash: (token: string, workspaceId: string) =>
     request<TrashEntry[]>(`/workspaces/${workspaceId}/trash`, { token }),
+  search: (token: string, query: string, limit = 50, signal?: AbortSignal) => {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+    })
+    return request<SearchResult[]>(`/search?${params}`, { token, signal })
+  },
+  getPublicLink: (token: string, workspaceId: string, pageId: string) =>
+    request<PublicLinkResponse>(
+      `/workspaces/${workspaceId}/pages/${pageId}/public-link`,
+      { token }
+    ),
+  createPublicLink: (token: string, workspaceId: string, pageId: string) =>
+    request<PublicLinkResponse>(
+      `/workspaces/${workspaceId}/pages/${pageId}/public-link`,
+      { method: "POST", token }
+    ),
+  revokePublicLink: (token: string, workspaceId: string, pageId: string) =>
+    request<void>(`/workspaces/${workspaceId}/pages/${pageId}/public-link`, {
+      method: "DELETE",
+      token,
+    }),
+  getPublicPage: (token: string) =>
+    request<PublicPageResponse>(`/public/pages/${encodeURIComponent(token)}`),
+  permanentlyDelete: (token: string, workspaceId: string, blockId: string) =>
+    request<PermanentDeleteResponse>(
+      `/workspaces/${workspaceId}/trash/${blockId}`,
+      { method: "DELETE", token }
+    ),
   presignPageImage: (token: string, workspaceId: string, contentType: string) =>
     request<PresignAvatarResponse>(
       `/workspaces/${workspaceId}/uploads/presign`,
