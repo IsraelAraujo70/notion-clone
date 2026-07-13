@@ -83,8 +83,6 @@ function DashboardContent() {
       <SidebarProvider
         style={
           {
-            // 240px, a medida do sidebar do Notion.
-            "--sidebar-width": "15rem",
             "--header-height": "calc(var(--spacing) * 12)",
           } as CSSProperties
         }

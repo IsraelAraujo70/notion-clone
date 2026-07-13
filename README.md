@@ -344,7 +344,7 @@ Deliver: invite by email, workspace scoping on every read path, public read-only
 
 Done when: cross-workspace access fails everywhere and search finds only what it should.
 
-Status: shipped. Owner/editor/viewer enforcement covers pages, writes, search, sharing, and permanent deletion. `GET /search` runs permission filtering and trashed-ancestor filtering inside PostgreSQL. Owner and editor can publish one page through a revocable read-only link; child pages are omitted, and trash revokes links transactionally. Permanent deletion removes the DB subtree and queues image keys for retryable worker cleanup. Protocol: [`docs/api/m4.md`](./docs/api/m4.md). Proof: 49 Rust tests, 136 frontend tests, 15 Cypress scenarios, and `make eval-m4` against Postgres + MinIO.
+Status: shipped. Owner/editor/viewer enforcement covers pages, writes, search, sharing, and permanent deletion. `GET /search` runs permission filtering and trashed-ancestor filtering inside PostgreSQL. Owner and editor can publish one page through a revocable read-only link; child pages are omitted, and trash revokes links transactionally. Permanent deletion removes the DB subtree and queues image keys for retryable worker cleanup. Protocol: [`docs/api/m4.md`](./docs/api/m4.md). Proof: 49 Rust tests, 149 frontend tests, 16 Cypress scenarios, `make eval-m4` against Postgres + MinIO, and `make eval-editor-sidebar-ux` for the editor/sidebar UX.
 
 ### M5: AI
 
@@ -430,11 +430,11 @@ make backend
 ```
 
 
-`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit; `make eval-m4` proves role enforcement, search isolation, public-link lifecycle, purge, and MinIO cleanup. AI evals arrive with M5.
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit; `make eval-m4` proves role enforcement, search isolation, public-link lifecycle, purge, and MinIO cleanup. `make eval-editor-sidebar-ux` proves the multiline highlighted code editor, persisted sidebar width, and legible deep page trees in a real browser. AI evals arrive with M5.
 
 ## Current Status
 
-M4 done (2026-07-10): global full-text search is scoped by membership and excludes trashed ancestry; public pages are single-page, read-only, revocable, and private by default; owner/editor can permanently delete a trash root while the worker reliably cleans up S3 objects. The local full-stack proof is 15/15 Cypress scenarios plus the M4 Postgres/MinIO eval.
+M4 done (2026-07-10): global full-text search is scoped by membership and excludes trashed ancestry; public pages are single-page, read-only, revocable, and private by default; owner/editor can permanently delete a trash root while the worker reliably cleans up S3 objects. The local full-stack proof is 16/16 Cypress scenarios plus the M4 Postgres/MinIO eval and the editor/sidebar UX eval.
 
 M3 done (2026-07-09): real-time sync. Clients load a page and cursor from one repeatable-read snapshot, wait for the workspace WebSocket `hello`, catch up every page to a stable cursor, then drain buffered live ops in contiguous order. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations`; broadcast is the only write-side side effect.
 

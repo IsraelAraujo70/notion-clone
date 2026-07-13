@@ -31,3 +31,22 @@ npm run lint
 npm run test:e2e
 npm run build
 ```
+
+## Code editor and sidebar UX
+
+Code blocks use CodeMirror and stay inside the normal block-operation path. They
+support plaintext, JavaScript, TypeScript, JSX, TSX, HTML, CSS, JSON, Markdown,
+Bash, SQL, Python, Rust, Go, Java, C#, and C++. `Enter` creates a new code line;
+`Tab` and `Shift+Tab` indent it; `Shift+Enter` or `Escape` creates the next
+paragraph.
+
+On desktop, the sidebar can be resized from 200px up to `min(480px, 40vw)`. Its
+expanded width is saved locally, while `Cmd/Ctrl+B` and a rail click still
+collapse it. Deep page trees cap their visual indentation after four levels so
+page titles remain usable.
+
+Run the browser UX eval from the repository root:
+
+```bash
+make eval-editor-sidebar-ux
+```

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! git diff --cached --name-only -- \
+  frontend/components/editor \
+  frontend/components/pages/nav-pages.tsx \
+  frontend/components/ui/sidebar.tsx \
+  frontend/components/dashboard/dashboard-shell.tsx \
+  frontend/package.json \
+  frontend/package-lock.json | rg -q .; then
+  exit 0
+fi
+
+cd frontend
+npm run test:ux-gate

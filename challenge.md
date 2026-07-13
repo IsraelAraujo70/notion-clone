@@ -193,4 +193,4 @@ The challenge is successful when:
 
 Last updated: 2026-07-10.
 
-Overall status: M1–M4 implemented (editor, persistence/pages, sync/real-time/LWW, permissions, full-text search, public links, and permanent deletion). M5–M6 remain (AI and final hardening). M4 is proven by 49 Rust tests, 136 frontend tests, 15 Cypress scenarios, and a Postgres/MinIO eval covering roles, isolation, link lifecycle, purge, and media cleanup. The README records the architecture and remaining proof debt, including a dedicated two-browser convergence scenario for M3.
+Overall status: M1–M4 implemented (editor, persistence/pages, sync/real-time/LWW, permissions, full-text search, public links, and permanent deletion). M5–M6 remain (AI and final hardening). M4 is proven by 49 Rust tests, 149 frontend tests, 16 Cypress scenarios, and a Postgres/MinIO eval covering roles, isolation, link lifecycle, purge, media cleanup, and editor/sidebar UX. The README records the architecture and remaining proof debt, including a dedicated two-browser convergence scenario for M3.

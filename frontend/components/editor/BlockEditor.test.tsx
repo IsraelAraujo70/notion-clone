@@ -322,3 +322,47 @@ describe("BlockEditor callout layout", () => {
     expect(shell?.contains(row!.querySelector("[contenteditable]")!)).toBe(true)
   })
 })
+
+function treeWithCode(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const code = newBlock(
+    "code",
+    { text: "const answer = 42\nreturn answer", language: "typescript" },
+    "code-1"
+  )
+  return applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-code",
+    block: code,
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+}
+
+describe("BlockEditor code blocks", () => {
+  it("keeps code in the operation path when its language changes", async () => {
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <BlockEditor
+        {...editorProps(treeWithCode(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    expect(document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')).toHaveLength(2)
+    await user.click(screen.getByRole("combobox", { name: "Linguagem do código" }))
+    await user.click(screen.getByText("Python"))
+
+    expect(dispatchBatch).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "code-1",
+          properties: { language: "python" },
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+})

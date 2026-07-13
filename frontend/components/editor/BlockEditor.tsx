@@ -28,6 +28,10 @@ import {
 import { createId } from "@/lib/id"
 import type { PresencePeer } from "@/lib/api"
 import { CopyIcon, ScissorsIcon, Trash2Icon } from "lucide-react"
+import {
+  CodeBlockEditor,
+  type CodeBlockEditorHandle,
+} from "./CodeBlockEditor"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
 import { BlockPresenceAvatar } from "./presence-avatars"
 
@@ -200,6 +204,7 @@ export function BlockEditor({
   const [uploadingImage, setUploadingImage] = useState(false)
   const workspaceId = getBlock(tree, tree.rootId).workspaceId
   const editableRefs = useRef(new Map<string, HTMLElement>())
+  const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
   const containerRef = useRef<HTMLDivElement>(null)
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
@@ -237,6 +242,14 @@ export function BlockEditor({
     else editableRefs.current.delete(blockId)
   }, [])
 
+  const setCodeEditorRef = useCallback(
+    (blockId: string, editor: CodeBlockEditorHandle | null) => {
+      if (editor) codeEditorRefs.current.set(blockId, editor)
+      else codeEditorRefs.current.delete(blockId)
+    },
+    []
+  )
+
   const requestFocus = useCallback((request: FocusRequest) => {
     focusRequestRef.current = request
   }, [])
@@ -258,9 +271,17 @@ export function BlockEditor({
   useLayoutEffect(() => {
     const request = focusRequestRef.current
     if (!request) return
-    const element = editableRefs.current.get(request.blockId)
     const block = tree.blocks.get(request.blockId)
-    if (!element || !block || !isTextBlock(block)) return
+    if (!block || !isTextBlock(block)) return
+    if (block.type === "code") {
+      const editor = codeEditorRefs.current.get(request.blockId)
+      if (!editor) return
+      editor.focus(request.offset)
+      focusRequestRef.current = null
+      return
+    }
+    const element = editableRefs.current.get(request.blockId)
+    if (!element) return
     if (request.forceTextSync) setElementText(element, blockText(block))
     element.focus()
     setCaretOffset(element, request.offset)
@@ -339,6 +360,7 @@ export function BlockEditor({
               properties: {
                 text: shortcut.text,
                 checked: shortcut.blockType === "to_do" ? false : null,
+                language: shortcut.blockType === "code" ? "plaintext" : null,
               },
             },
           ],
@@ -582,6 +604,7 @@ export function BlockEditor({
             properties: {
               text: nextText,
               checked: type === "to_do" ? false : null,
+              language: type === "code" ? "plaintext" : null,
             },
           },
         ],
@@ -1247,6 +1270,60 @@ export function BlockEditor({
                 </p>
               ) : null}
             </div>
+          ) : block.type === "code" ? (
+            <CodeBlockEditor
+              ref={(editor) => setCodeEditorRef(block.id, editor)}
+              blockId={block.id}
+              value={text}
+              language={
+                typeof block.properties.language === "string"
+                  ? block.properties.language
+                  : undefined
+              }
+              readOnly={readOnly}
+              onChange={(nextText) =>
+                dispatchBatch(
+                  [
+                    {
+                      type: "update_block",
+                      opId: opId(),
+                      blockId: block.id,
+                      properties: { text: nextText },
+                    },
+                  ],
+                  { coalesceKey: `text:${block.id}` }
+                )
+              }
+              onLanguageChange={(language) =>
+                dispatchBatch(
+                  [
+                    {
+                      type: "update_block",
+                      opId: opId(),
+                      blockId: block.id,
+                      properties: { language },
+                    },
+                  ],
+                  { breakCoalescing: true }
+                )
+              }
+              onFocus={() => {
+                setFocusedBlockId(block.id)
+                onSelectedBlockChange(block.id)
+                clearSelection()
+              }}
+              onBlur={() => {
+                setFocusedBlockId((current) =>
+                  current === block.id ? null : current
+                )
+                dispatchBatch([], { breakCoalescing: true })
+              }}
+              onExit={() => exitCodeBlock(block)}
+              onMergeBackward={() => mergeBackward(block)}
+              onMoveFocus={(direction) => moveFocus(block.id, direction)}
+              onUndo={undo}
+              onRedo={redo}
+            />
           ) : (
             <div
               className={
@@ -1318,7 +1395,7 @@ export function BlockEditor({
                   ref={(element) => setRef(block.id, element)}
                   contentEditable={!readOnly}
                   suppressContentEditableWarning
-                  spellCheck={block.type !== "code"}
+                  spellCheck
                   className={`min-h-7 w-full break-words outline-none ${blockClasses(block.type)} ${
                     checked ? "text-muted-foreground line-through" : ""
                   }`}

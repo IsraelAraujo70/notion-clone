@@ -41,7 +41,6 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
 } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { PageSummary } from "@/lib/api"
@@ -74,9 +73,24 @@ export function buildPageTree(pages: PageSummary[]): PageNode[] {
   return roots
 }
 
-function PageIcon({ icon }: { icon: string }) {
+function PageIcon({
+  icon,
+  className,
+  dataCy,
+}: {
+  icon: string
+  className?: string
+  dataCy?: string
+}) {
   return (
-    <span aria-hidden="true" className="text-base leading-none">
+    <span
+      aria-hidden="true"
+      data-cy={dataCy}
+      className={
+        className ??
+        "flex size-5 shrink-0 items-center justify-center text-base leading-none"
+      }
+    >
       {icon || "📄"}
     </span>
   )
@@ -144,12 +158,17 @@ function RenameDialog({
   )
 }
 
-function PageRow({ node }: { node: PageNode }) {
+function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const router = useRouter()
   const { currentPageId, canWrite, createChildPage, deletePage } = usePages()
   const [open, setOpen] = useState(true)
   const [busy, setBusy] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const hasChildren = node.children.length > 0
+  const title = node.title || UNTITLED
+  const indent = Math.min(depth, 4) * 12
+  const leadingOffset = 8 + indent
+  const contentOffset = leadingOffset + (hasChildren ? 28 : 0)
 
   const addChild = async () => {
     setBusy(true)
@@ -168,9 +187,22 @@ function PageRow({ node }: { node: PageNode }) {
   // com a prop `tooltip` o botão embrulha o filho num Tooltip e os handlers do
   // menu de contexto se perdem no caminho.
   const link = (
-    <Link href={pagePath(node.id)} data-cy={`nav-page-${node.id}`}>
-      <PageIcon icon={node.icon} />
-      <span className="truncate">{node.title || UNTITLED}</span>
+    <Link
+      href={pagePath(node.id)}
+      data-cy={`nav-page-${node.id}`}
+      aria-label={title}
+      title={title}
+    >
+      {!hasChildren ? (
+        <PageIcon icon={node.icon} dataCy={`nav-page-leading-${node.id}`} />
+      ) : null}
+      <span
+        data-cy={`nav-page-title-${node.id}`}
+        className="min-w-24 flex-1 truncate"
+        title={title}
+      >
+        {title}
+      </span>
     </Link>
   )
 
@@ -178,7 +210,8 @@ function PageRow({ node }: { node: PageNode }) {
     <SidebarMenuButton
       asChild
       isActive={currentPageId === node.id}
-      tooltip={node.title || UNTITLED}
+      tooltip={title}
+      style={{ paddingInlineStart: `${contentOffset}px` }}
     >
       {children}
     </SidebarMenuButton>
@@ -253,28 +286,47 @@ function PageRow({ node }: { node: PageNode }) {
     </>
   )
 
-  if (node.children.length === 0) {
-    return <SidebarMenuItem>{body}</SidebarMenuItem>
+  const leadingControl = hasChildren ? (
+    <CollapsibleTrigger asChild>
+      <button
+        type="button"
+        data-cy={`nav-page-toggle-${node.id}`}
+        aria-label={`Alternar sub-páginas de ${title}`}
+        style={{ insetInlineStart: `${leadingOffset}px` }}
+        className="group/page-tree-toggle absolute top-1.5 z-10 flex size-5 items-center justify-center rounded-sm text-sidebar-foreground outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent focus-visible:ring-2"
+      >
+        <PageIcon
+          icon={node.icon}
+          dataCy={`nav-page-leading-${node.id}`}
+          className="shrink-0 text-base leading-none group-focus-within/page-tree-item:hidden group-hover/page-tree-item:hidden"
+        />
+        <ChevronRightIcon className="hidden size-4 group-focus-within/page-tree-item:block group-hover/page-tree-item:block group-data-[state=open]/page-tree-toggle:rotate-90" />
+      </button>
+    </CollapsibleTrigger>
+  ) : null
+
+  const item = (
+    <SidebarMenuItem className="group/page-tree-item min-w-0">
+      {leadingControl}
+      {body}
+    </SidebarMenuItem>
+  )
+
+  if (!hasChildren) {
+    return item
   }
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} asChild>
-      <SidebarMenuItem>
-        <CollapsibleTrigger asChild>
-          <SidebarMenuAction
-            className="left-1 data-[state=open]:rotate-90"
-            aria-label="Alternar sub-páginas"
-          >
-            <ChevronRightIcon />
-          </SidebarMenuAction>
-        </CollapsibleTrigger>
+      <SidebarMenuItem className="group/page-tree-item min-w-0">
+        {leadingControl}
         {body}
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenu className="group-data-[collapsible=icon]:hidden">
             {node.children.map((child) => (
-              <PageRow key={child.id} node={child} />
+              <PageRow key={child.id} node={child} depth={depth + 1} />
             ))}
-          </SidebarMenuSub>
+          </SidebarMenu>
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
@@ -313,7 +365,7 @@ export function NavPages() {
                 <Skeleton className="h-8 w-full" />
               </SidebarMenuItem>
             ))
-          : tree.map((node) => <PageRow key={node.id} node={node} />)}
+          : tree.map((node) => <PageRow key={node.id} node={node} depth={0} />)}
       </SidebarMenu>
     </SidebarGroup>
   )
