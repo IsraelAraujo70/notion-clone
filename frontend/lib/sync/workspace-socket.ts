@@ -1,4 +1,4 @@
-import type { Operation } from "@/lib/contracts"
+import type { Operation, OperationGroupMetadata } from "@/lib/contracts"
 import { api, type LoggedOperation, type PresencePeer } from "@/lib/api"
 
 export type AppliedOpEvent = {
@@ -7,6 +7,13 @@ export type AppliedOpEvent = {
   op_id: string
   actor_id: string
   operation: Operation
+  group?: OperationGroupMetadata
+}
+
+export function operationGroupMetadata(
+  event: AppliedOpEvent
+): OperationGroupMetadata | null {
+  return event.group ?? null
 }
 
 type ServerMessage =

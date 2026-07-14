@@ -34,7 +34,7 @@ describe("editor and sidebar UX eval", () => {
     cy.get('[data-block-type="paragraph"] [contenteditable="true"]')
       .first()
       .click()
-      .type("/code{enter}")
+      .type("```")
 
     cy.get('[data-cy^="code-editor-"] .cm-content')
       .should("be.visible")

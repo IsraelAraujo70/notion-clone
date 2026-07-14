@@ -1,10 +1,29 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::application::ports::RepositoryError;
 use crate::domain::block::{Block, BlockType, Operation};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationGroup {
+    pub id: Uuid,
+    pub source: String,
+    #[serde(default)]
+    pub provenance: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperationGroupMetadata {
+    pub group_id: Uuid,
+    pub group_ordinal: i32,
+    pub source: String,
+    pub initiated_by: Uuid,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub provenance: serde_json::Value,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LoggedOperation {
@@ -12,6 +31,14 @@ pub struct LoggedOperation {
     pub op_id: Uuid,
     pub actor_id: Uuid,
     pub operation: Operation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<OperationGroupMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppliedOperation {
+    pub envelope: LoggedOperation,
+    pub inserted: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,6 +147,14 @@ pub trait PageRepository: Send + Sync {
         page_id: Uuid,
     ) -> Result<PageView, RepositoryError>;
 
+    async fn get_page_for_block(
+        &self,
+        _workspace_id: Uuid,
+        _block_id: Uuid,
+    ) -> Result<PageView, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError>;
 
     /// Serializa a escrita no workspace, é idempotente por `op_id` e devolve o `seq` atribuído.
@@ -130,6 +165,33 @@ pub trait PageRepository: Send + Sync {
         operation: &Operation,
         now: DateTime<Utc>,
     ) -> Result<OperationAck, RepositoryError>;
+
+    async fn apply_operation_batch(
+        &self,
+        workspace_id: Uuid,
+        actor_id: Uuid,
+        operations: &[Operation],
+        _group: Option<&OperationGroup>,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<AppliedOperation>, RepositoryError> {
+        let mut applied = Vec::with_capacity(operations.len());
+        for operation in operations {
+            let ack = self
+                .apply_operation(workspace_id, actor_id, operation, now)
+                .await?;
+            applied.push(AppliedOperation {
+                envelope: LoggedOperation {
+                    seq: ack.seq,
+                    op_id: ack.op_id,
+                    actor_id,
+                    operation: operation.clone(),
+                    group: None,
+                },
+                inserted: true,
+            });
+        }
+        Ok(applied)
+    }
 
     /// Catch-up: ops com `after_seq < seq <= up_to_seq`, ordenadas e paginadas.
     /// Quando `up_to_seq` não é informado, o repositório captura o cursor atual
@@ -189,5 +251,38 @@ pub trait PageRepository: Send + Sync {
         _now: DateTime<Utc>,
     ) -> Result<PermanentDeleteResult, RepositoryError> {
         Err(RepositoryError::Unexpected)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn operation_group_metadata_extends_the_envelope_not_the_operation() {
+        let actor = Uuid::new_v4();
+        let group_id = Uuid::new_v4();
+        let logged = LoggedOperation {
+            seq: 7,
+            op_id: Uuid::new_v4(),
+            actor_id: actor,
+            operation: Operation::DeleteBlock {
+                op_id: Uuid::new_v4(),
+                block_id: Uuid::new_v4(),
+            },
+            group: Some(OperationGroupMetadata {
+                group_id,
+                group_ordinal: 2,
+                source: "ai".into(),
+                initiated_by: actor,
+                provenance: json!({"runId":"run"}),
+            }),
+        };
+        let value = serde_json::to_value(logged).unwrap();
+        assert_eq!(value["group"]["group_id"], json!(group_id));
+        assert_eq!(value["group"]["group_ordinal"], 2);
+        assert_eq!(value["operation"]["type"], "delete_block");
+        assert!(value["operation"].get("group_id").is_none());
     }
 }

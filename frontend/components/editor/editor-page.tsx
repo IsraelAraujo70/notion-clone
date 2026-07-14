@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
 } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { SparklesIcon } from "lucide-react"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
@@ -46,12 +47,16 @@ import { createId } from "@/lib/id"
 import { useWorkspacePresence } from "@/lib/sync/use-presence"
 import {
   catchUpOperations,
+  operationGroupMetadata,
   RemoteOperationBuffer,
   type AppliedOpEvent,
 } from "@/lib/sync/workspace-socket"
 import { PresenceAvatarStack } from "@/components/editor/presence-avatars"
 import { ShareDialog } from "@/components/pages/share-dialog"
 import { useSearchResultHighlight } from "@/components/editor/use-search-result-highlight"
+import { OperationGroupCoordinator } from "@/lib/ai/group-coordinator"
+import { AiAssistant } from "@/components/ai/organisms/ai-assistant"
+import type { AiAction } from "@/lib/ai/contracts"
 
 function opId() {
   return createId()
@@ -60,6 +65,18 @@ function opId() {
 function pageProperty(tree: BlockTree, key: "title" | "icon") {
   const value = getBlock(tree, tree.rootId).properties[key]
   return typeof value === "string" ? value : ""
+}
+
+function isActiveBlock(tree: BlockTree, blockId: string) {
+  let current = tree.blocks.get(blockId)
+  const visited = new Set<string>()
+  while (current) {
+    if (current.trashedAt || visited.has(current.id)) return false
+    visited.add(current.id)
+    if (!current.parentId) return true
+    current = tree.blocks.get(current.parentId)
+  }
+  return false
 }
 
 const SAVE_LABEL: Record<SaveState, string> = {
@@ -95,9 +112,9 @@ function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
 export function EditorPage({ pageId }: { pageId: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const { activeWorkspaceId } = useWorkspace()
-  const { canWrite, refreshPages, pageRevision } = usePages()
+  const { pages, canWrite, refreshPages, pageRevision } = usePages()
 
   const [tree, setTree] = useState<BlockTree | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<Crumb[]>([])
@@ -105,9 +122,13 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const [loadError, setLoadError] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([])
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
+  const [pendingAiAction, setPendingAiAction] = useState<AiAction | null>(null)
   const [recentEditors, setRecentEditors] = useState<PageEditor[]>([])
   const undoRef = useRef(new UndoManager())
   const queueRef = useRef<OpQueue | null>(null)
+  const queueGenerationRef = useRef(0)
   // Espelho do estado: as mutações do editor têm efeitos colaterais (undo stack,
   // fila de envio) e não podem morar dentro de um updater do setState.
   const treeRef = useRef<BlockTree | null>(null)
@@ -120,10 +141,28 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const syncGenerationRef = useRef(0)
   const socketReadyRef = useRef(false)
   const socketWorkspaceRef = useRef<string | null>(null)
+  const aiGroupsRef = useRef(new OperationGroupCoordinator())
+
+  const recordReadyAiGroups = useCallback(() => {
+    for (const group of aiGroupsRef.current.takeReady(remoteBuffer.cursor)) {
+      undoRef.current.closeGroup(group.groupId)
+    }
+  }, [remoteBuffer])
 
   const commit = useCallback((next: BlockTree | null) => {
     treeRef.current = next
     setTree(next)
+    if (!next) return
+    setSelectedBlockId((current) =>
+      current && !isActiveBlock(next, current) ? null : current
+    )
+    setFocusedBlockId((current) =>
+      current && !isActiveBlock(next, current) ? null : current
+    )
+    setSelectedBlockIds((current) => {
+      const active = current.filter((id) => isActiveBlock(next, id))
+      return active.length === current.length ? current : active
+    })
   }, [])
 
   const applyRemoteEvent = useCallback(
@@ -135,8 +174,15 @@ export function EditorPage({ pageId }: { pageId: string }) {
       let next = current
       let applied = false
       try {
-        next = applyOperation(current, event.operation).tree
+        const result = applyOperation(current, event.operation)
+        next = result.tree
         applied = true
+        const group = operationGroupMetadata(event)
+        if (group?.source === "ai" && group.initiated_by === user?.id) {
+          if (aiGroupsRef.current.add(group, event.op_id, event.seq)) {
+            undoRef.current.recordOpenGroup(group.group_id, result.inverse)
+          }
+        }
       } catch {
         // Op de outra página / bloco fora da subárvore carregada, ou replay de
         // uma op estrutural que já estava no snapshot inicial.
@@ -146,7 +192,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
         void refreshPages()
       }
     },
-    [commit, refreshPages]
+    [commit, refreshPages, user?.id]
   )
 
   // Os callbacks do socket não devem recriar a conexão quando refreshPages muda.
@@ -184,9 +230,11 @@ export function EditorPage({ pageId }: { pageId: string }) {
             op_id: entry.op_id,
             actor_id: entry.actor_id,
             operation: entry.operation,
+            group: entry.group,
           })
         }
         remoteBuffer.drain((event) => applyRemoteEventRef.current(event))
+        recordReadyAiGroups()
 
         if (remoteBuffer.cursor < latestSeq) {
           throw new Error(
@@ -195,12 +243,13 @@ export function EditorPage({ pageId }: { pageId: string }) {
         }
         if (!remoteBuffer.hasGap()) break
       }
+      recordReadyAiGroups()
     } catch {
       // O buffer continua intacto. O próximo hello/reconnect tenta preencher o gap.
     } finally {
       catchingUpRef.current = false
     }
-  }, [activeWorkspaceId, remoteBuffer, token])
+  }, [activeWorkspaceId, recordReadyAiGroups, remoteBuffer, token])
 
   const receiveRemoteEvent = useCallback(
     (event: AppliedOpEvent) => {
@@ -209,9 +258,10 @@ export function EditorPage({ pageId }: { pageId: string }) {
       if (!syncReadyRef.current || catchingUpRef.current) return
 
       remoteBuffer.drain((next) => applyRemoteEventRef.current(next))
+      recordReadyAiGroups()
       if (remoteBuffer.hasGap()) void runCatchUp()
     },
-    [activeWorkspaceId, remoteBuffer, runCatchUp]
+    [activeWorkspaceId, recordReadyAiGroups, remoteBuffer, runCatchUp]
   )
 
   useEffect(() => {
@@ -225,10 +275,15 @@ export function EditorPage({ pageId }: { pageId: string }) {
     syncReadyRef.current = false
     remoteBuffer.reset(0)
     undoRef.current = new UndoManager()
+    aiGroupsRef.current.reset()
     localOpIdsRef.current = new Set()
     queueMicrotask(() => {
       if (cancelled) return
       commit(null)
+      setSelectedBlockId(null)
+      setSelectedBlockIds([])
+      setFocusedBlockId(null)
+      setPendingAiAction(null)
       setLoadError(false)
       setSaveState("saved")
       api
@@ -251,6 +306,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
     return () => {
       cancelled = true
       syncReadyRef.current = false
+      void queueRef.current?.flush().catch(() => {})
     }
   }, [
     activeWorkspaceId,
@@ -265,17 +321,29 @@ export function EditorPage({ pageId }: { pageId: string }) {
 
   useEffect(() => {
     if (!token || !activeWorkspaceId || !canWrite) return
-    queueRef.current = createOpQueue({
+    const generation = queueGenerationRef.current + 1
+    queueGenerationRef.current = generation
+    const queue = createOpQueue({
       // O ACK confirma a escrita local, mas não prova que todos os `seq`
       // anteriores foram entregues. Só WS/catch-up avançam o cursor contíguo.
       send: (operation) =>
         api.applyOperation(token, activeWorkspaceId, operation),
-      onStateChange: setSaveState,
+      onStateChange: (state) => {
+        if (queueGenerationRef.current === generation) {
+          setSaveState(state)
+        }
+      },
+      onCoalesced: (operation) => localOpIdsRef.current.delete(operation.opId),
     })
+    queueRef.current = queue
     return () => {
-      queueRef.current = null
+      if (queueGenerationRef.current === generation) {
+        queueGenerationRef.current += 1
+      }
+      void queue.flush().catch(() => {})
+      if (queueRef.current === queue) queueRef.current = null
     }
-  }, [activeWorkspaceId, canWrite, token])
+  }, [activeWorkspaceId, canWrite, pageId, reloadKey, token])
 
   const { pagePeers, blockPresence, sendPresence } = useWorkspacePresence(
     activeWorkspaceId,
@@ -291,15 +359,18 @@ export function EditorPage({ pageId }: { pageId: string }) {
   )
 
   useEffect(() => {
-    sendPresence(pageId, selectedBlockId)
-  }, [pageId, selectedBlockId, sendPresence])
+    sendPresence(pageId, focusedBlockId)
+  }, [focusedBlockId, pageId, sendPresence])
 
   const dispatchBatch = useCallback(
     (
       ops: Operation[],
       options?: { coalesceKey?: string; breakCoalescing?: boolean }
     ) => {
-      if (options?.breakCoalescing) undoRef.current.breakCoalescing()
+      if (options?.breakCoalescing) {
+        undoRef.current.breakCoalescing()
+        void queueRef.current?.flush().catch(() => {})
+      }
       const current = treeRef.current
       if (ops.length === 0 || !canWrite || !current) return
       let next = current
@@ -344,7 +415,11 @@ export function EditorPage({ pageId }: { pageId: string }) {
   // um refresh otimista leria o servidor antes da escrita chegar nele.
   const flushSidebar = useCallback(async () => {
     sidebarDirty.current = true
-    await queueRef.current?.drained()
+    try {
+      await queueRef.current?.drained()
+    } catch {
+      return
+    }
     if (!sidebarDirty.current) return
     sidebarDirty.current = false
     await refreshPages()
@@ -443,6 +518,19 @@ export function EditorPage({ pageId }: { pageId: string }) {
 
   useSearchResultHighlight(searchParams.get("block"), tree !== null)
 
+  const openAiAction = useCallback((action: AiAction) => {
+    setPendingAiAction(action)
+  }, [])
+
+  const completeAiGroup = useCallback(
+    (groupId: string, lastSeq: number) => {
+      aiGroupsRef.current.complete(groupId, lastSeq)
+      recordReadyAiGroups()
+      if (remoteBuffer.cursor < lastSeq) void runCatchUp()
+    },
+    [recordReadyAiGroups, remoteBuffer, runCatchUp]
+  )
+
   if (loadError) {
     return (
       <main className="grid min-h-svh place-items-center bg-background text-foreground">
@@ -461,14 +549,17 @@ export function EditorPage({ pageId }: { pageId: string }) {
 
   return (
     <main className="min-h-svh bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-4 border-b bg-background/80 px-6 backdrop-blur">
-        <Breadcrumb>
-          <BreadcrumbList>
+      <header className="sticky top-0 z-10 flex min-h-12 min-w-0 items-center justify-between gap-2 border-b bg-background/80 px-2 py-1.5 backdrop-blur sm:h-12 sm:gap-4 sm:px-6 sm:py-0">
+        <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
+          <BreadcrumbList className="flex-nowrap overflow-hidden whitespace-nowrap">
             {crumbs.map((crumb, index) => (
               <Fragment key={crumb.id}>
-                <BreadcrumbItem>
+                <BreadcrumbItem className="min-w-0 shrink last:flex-1 max-sm:not-last:hidden">
                   {index === crumbs.length - 1 ? (
-                    <BreadcrumbPage data-cy="breadcrumb-current">
+                    <BreadcrumbPage
+                      data-cy="breadcrumb-current"
+                      className="block truncate"
+                    >
                       <span aria-hidden="true" className="mr-1">
                         {crumb.icon || "📄"}
                       </span>
@@ -486,18 +577,34 @@ export function EditorPage({ pageId }: { pageId: string }) {
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>
-                {index < crumbs.length - 1 ? <BreadcrumbSeparator /> : null}
+                {index < crumbs.length - 1 ? (
+                  <BreadcrumbSeparator className="max-sm:hidden" />
+                ) : null}
               </Fragment>
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2 md:gap-3">
+          {tree ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!canWrite}
+              aria-label="Resumir página com AI"
+              onClick={() =>
+                openAiAction({ type: "summarize_page", page_id: pageId })
+              }
+            >
+              <SparklesIcon data-icon="inline-start" />
+              <span className="hidden sm:inline">Resumir</span>
+            </Button>
+          ) : null}
           <ShareDialog pageId={pageId} canWrite={canWrite} />
           <PresenceAvatarStack live={pagePeers} recent={recentEditors} />
           <span
             data-cy="save-state"
             data-state={canWrite ? saveState : "read-only"}
-            className={`text-xs ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
+            className={`text-xs max-sm:sr-only ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
           >
             {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
           </span>
@@ -523,7 +630,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
         </div>
       ) : null}
 
-      <section className="mx-auto flex w-full max-w-[708px] flex-col px-6 py-14 leading-7 md:py-20">
+      <section className="mx-auto flex w-full max-w-[708px] flex-col px-4 py-10 leading-7 sm:px-6 sm:py-14 md:py-20">
         {!tree ? (
           <div className="space-y-4" data-cy="page-loading">
             <Skeleton className="h-12 w-2/3" />
@@ -556,11 +663,28 @@ export function EditorPage({ pageId }: { pageId: string }) {
               onKeyDown={handleTitleKeyDown}
             />
             <BlockEditor
+              key={`${activeWorkspaceId}:${pageId}`}
               tree={tree}
               collapsed={collapsed}
               onToggleCollapsed={toggleCollapsed}
               selectedBlockId={selectedBlockId}
               onSelectedBlockChange={setSelectedBlockId}
+              onSelectedBlockIdsChange={setSelectedBlockIds}
+              onFocusedBlockChange={setFocusedBlockId}
+              onAiAction={(action, blockIds) => {
+                if (action === "continue_writing" && blockIds[0]) {
+                  openAiAction({
+                    type: "continue_writing",
+                    anchor_block_id: blockIds[0],
+                  })
+                } else if (blockIds.length > 0) {
+                  openAiAction({
+                    type: "transform_selection",
+                    block_ids: blockIds,
+                    instruction: "Improve clarity and formatting",
+                  })
+                }
+              }}
               dispatchBatch={dispatchBatch}
               undo={undo}
               redo={redo}
@@ -595,6 +719,30 @@ export function EditorPage({ pageId }: { pageId: string }) {
           </>
         )}
       </section>
+      {token && activeWorkspaceId ? (
+        <AiAssistant
+          token={token}
+          workspaceId={activeWorkspaceId}
+          pages={pages}
+          pageId={pageId}
+          pageBlockIds={tree ? getBlock(tree, tree.rootId).content : []}
+          selectedBlockIds={
+            selectedBlockIds.length > 0
+              ? selectedBlockIds
+              : selectedBlockId
+                ? [selectedBlockId]
+                : []
+          }
+          anchorBlockId={focusedBlockId ?? selectedBlockId}
+          canWrite={canWrite}
+          requestedAction={pendingAiAction}
+          onRequestedActionHandled={() => setPendingAiAction(null)}
+          onRunCompleted={completeAiGroup}
+          onBeforeMutatingAction={() =>
+            queueRef.current?.drained() ?? Promise.resolve()
+          }
+        />
+      ) : null}
     </main>
   )
 }

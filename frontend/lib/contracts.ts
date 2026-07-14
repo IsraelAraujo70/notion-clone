@@ -90,3 +90,11 @@ export interface RestoreBlockOp extends OpBase {
 
 export type Operation =
   InsertBlockOp | UpdateBlockOp | MoveBlockOp | DeleteBlockOp | RestoreBlockOp
+
+export type OperationGroupMetadata = {
+  group_id: string
+  group_ordinal: number
+  source: string
+  initiated_by: string
+  provenance?: JsonValue
+}

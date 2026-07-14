@@ -85,6 +85,106 @@ describe("block editor", () => {
     )
   })
 
+  it("debounces rapid text edits and character deletion", () => {
+    const textUpdates: unknown[] = []
+    cy.intercept("POST", "**/operations", (request) => {
+      const body = request.body as {
+        type?: string
+        properties?: { text?: string }
+      }
+      if (body.type === "update_block" && "text" in (body.properties ?? {})) {
+        textUpdates.push(body)
+      }
+    })
+
+    firstBlock().click().type("debounced-value", { delay: 0 })
+    firstBlock().should("have.text", "debounced-value")
+    cy.wait(500).then(() => {
+      expect(textUpdates).to.have.length(1)
+      expect(textUpdates[0]).to.have.nested.property(
+        "properties.text",
+        "debounced-value"
+      )
+    })
+
+    firstBlock().type("{backspace}{backspace}{backspace}{backspace}", {
+      delay: 0,
+    })
+    cy.wait(500).then(() => {
+      expect(textUpdates).to.have.length(2)
+      expect(textUpdates[1]).to.have.nested.property(
+        "properties.text",
+        "debounced-v"
+      )
+    })
+  })
+
+  it("draws a marquee and keeps a multi-selection in the custom menu", () => {
+    firstBlock().click().type("Alpha{enter}Bravo{enter}Charlie")
+    saved()
+
+    cy.get('[data-block-id]').then(($rows) => {
+      const first = $rows[0].getBoundingClientRect()
+      const second = $rows[1].getBoundingClientRect()
+      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
+        const editor = $editor[0]
+        editor.setPointerCapture = () => {}
+        editor.releasePointerCapture = () => {}
+        editor.hasPointerCapture = () => true
+        editor.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 7,
+            pointerType: "mouse",
+            button: 0,
+            clientX: first.left - 12,
+            clientY: first.top - 4,
+          })
+        )
+        editor.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            pointerId: 7,
+            pointerType: "mouse",
+            buttons: 1,
+            clientX: first.right + 8,
+            clientY: second.bottom + 4,
+          })
+        )
+      })
+      cy.get('[data-cy="block-selection-marquee"]').should("be.visible")
+      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
+        $editor[0].dispatchEvent(
+          new PointerEvent("pointerup", {
+            bubbles: true,
+            pointerId: 7,
+            pointerType: "mouse",
+          })
+        )
+      })
+    })
+
+    cy.get('[data-block-id]').then(($rows) => {
+      const selected = [...$rows].filter((row) =>
+        row.classList.contains("bg-primary/15")
+      )
+      expect(selected).to.have.length(2)
+      const rect = selected[0].getBoundingClientRect()
+      selected[0].dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          button: 2,
+          clientX: rect.left + 20,
+          clientY: rect.top + 10,
+        })
+      )
+    })
+    cy.contains("2 blocos selecionados").should("be.visible")
+    cy.contains("Duplicar").should("be.visible")
+    cy.contains("Transformar em").should("be.visible")
+  })
+
   it("creates a nested page, navigates by breadcrumb, and persists its content", () => {
     cy.get('[data-cy="page-title"]').click().type("Pai")
     cy.get('[data-cy="page-title"]').blur()

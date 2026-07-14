@@ -1,3 +1,8 @@
+import {
+  installWorkspaceSocketTracker,
+  type SocketTrackingWindow,
+} from "./workspace-socket"
+
 type ApiOptions = {
   token?: string
   body?: unknown
@@ -73,6 +78,18 @@ Cypress.Commands.add("authenticatedVisit", (path: string, token: string) => {
   })
 })
 
+Cypress.Commands.add(
+  "authenticatedVisitWithSocketTracker",
+  (path: string, token: string) => {
+    return cy.visit(path, {
+      onBeforeLoad(win) {
+        win.localStorage.setItem("notion_clone_token", token)
+        installWorkspaceSocketTracker(win as SocketTrackingWindow)
+      },
+    })
+  }
+)
+
 declare global {
   namespace Cypress {
     interface Chainable {
@@ -84,6 +101,10 @@ declare global {
       signupByApi(email: string, password?: string): Chainable<AuthResponse>
       loginByApi(email: string, password?: string): Chainable<AuthResponse>
       authenticatedVisit(path: string, token: string): Chainable<AUTWindow>
+      authenticatedVisitWithSocketTracker(
+        path: string,
+        token: string
+      ): Chainable<AUTWindow>
     }
   }
 }

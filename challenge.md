@@ -191,6 +191,6 @@ The challenge is successful when:
 
 ## Current Implementation Status
 
-Last updated: 2026-07-10.
+Last updated: 2026-07-14.
 
-Overall status: M1–M4 implemented (editor, persistence/pages, sync/real-time/LWW, permissions, full-text search, public links, and permanent deletion). M5–M6 remain (AI and final hardening). M4 is proven by 49 Rust tests, 149 frontend tests, 16 Cypress scenarios, and a Postgres/MinIO eval covering roles, isolation, link lifecycle, purge, media cleanup, and editor/sidebar UX. The README records the architecture and remaining proof debt, including a dedicated two-browser convergence scenario for M3.
+Overall status: M1–M5 estao concluidos; somente M6 permanece parcial. A evidencia final de M5 inclui `make eval-m5`, o eval pago `docs/evals/m5-live.mjs` 4/4 com `openai/gpt-5.6-luna` e `openai/text-embedding-3-large` (18.075 tokens de prompt e 1.145 de conclusao), e `frontend/cypress/e2e/m5-ai.cy.ts` 1/1 com dois `EditorPage` reais. Ela prova resumo, continue com duas insercoes ordenadas, transformacao, Q&A iterativo que segue a pagina filha `X` e encontra `43` na primeira pergunta, citacoes e controle de acesso, negacao a nao membro, uso/proveniencia, undo por operacoes inversas, colaboracao WebSocket e convergencia persistida sem reload. Tambem passaram 90 testes Rust de lib, 2 de worker, `cargo fmt` e `cargo check`; 214 testes frontend, lint sem warnings, typecheck e build de producao; 21 cenarios Cypress apos repeticao direcionada do M5; e drag multiplo manual persistido sem deletes. As migracoes 0012–0014 foram aplicadas em PostgreSQL 17/pgvector 0.8.4 com HNSW. O smoke final de deploy/Railway com IA e trabalho de M6.

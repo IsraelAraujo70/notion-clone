@@ -1,4 +1,6 @@
+pub mod ai;
 pub mod auth;
+pub mod embeddings;
 pub mod pages;
 pub mod ports;
 pub mod realtime;
@@ -19,6 +21,7 @@ pub enum AppError {
     Repository,
     Email,
     StorageNotConfigured,
+    AiUnavailable,
     Internal,
 }
 

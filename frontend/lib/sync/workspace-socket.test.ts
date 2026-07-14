@@ -3,9 +3,37 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { api, type LoggedOperation } from "@/lib/api"
 import {
   catchUpOperations,
+  operationGroupMetadata,
   RemoteOperationBuffer,
   type AppliedOpEvent,
 } from "@/lib/sync/workspace-socket"
+
+describe("operationGroupMetadata", () => {
+  it("reads the current backend group envelope without legacy fields", () => {
+    expect(
+      operationGroupMetadata({
+        workspace_id: "workspace-1",
+        seq: 4,
+        op_id: "op-4",
+        actor_id: "user-1",
+        operation: operation(4).operation,
+        group: {
+          group_id: "group-1",
+          group_ordinal: 2,
+          source: "ai",
+          initiated_by: "user-1",
+          provenance: null,
+        },
+      })
+    ).toEqual({
+      group_id: "group-1",
+      group_ordinal: 2,
+      source: "ai",
+      initiated_by: "user-1",
+      provenance: null,
+    })
+  })
+})
 
 vi.mock("@/lib/api", () => ({
   api: {

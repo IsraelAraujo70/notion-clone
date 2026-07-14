@@ -391,6 +391,28 @@ pub fn apply_operation(
     }
 }
 
+/// Applies a batch atomically in memory. Persistence uses this before writing rows,
+/// so a later invalid operation cannot leave earlier operations partially applied.
+pub fn apply_operation_batch(
+    tree: &mut BlockTree,
+    operations: &[Operation],
+    workspace_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Vec<Vec<Uuid>>, DomainError> {
+    let mut candidate = tree.clone();
+    let mut touched = Vec::with_capacity(operations.len());
+    for operation in operations {
+        touched.push(apply_operation(
+            &mut candidate,
+            operation,
+            workspace_id,
+            now,
+        )?);
+    }
+    *tree = candidate;
+    Ok(touched)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,6 +885,30 @@ mod tests {
             ),
             Err(DomainError::Validation("Block not found"))
         );
+    }
+
+    #[test]
+    fn batch_is_atomic_when_a_later_operation_fails() {
+        let mut f = fixture();
+        let before = f.tree.blocks[&f.root].content.clone();
+        let fresh = Uuid::new_v4();
+        let operations = vec![
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(fresh, f.workspace_id, BlockType::Paragraph),
+                parent_id: f.root,
+                index: 0,
+            },
+            Operation::MoveBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.root,
+                new_parent_id: f.first,
+                index: 0,
+            },
+        ];
+        assert!(apply_operation_batch(&mut f.tree, &operations, f.workspace_id, now()).is_err());
+        assert_eq!(f.tree.blocks[&f.root].content, before);
+        assert!(!f.tree.blocks.contains_key(&fresh));
     }
 
     #[test]

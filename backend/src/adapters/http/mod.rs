@@ -1,3 +1,4 @@
+pub mod ai_routes;
 pub mod app_routes;
 pub mod auth_extractor;
 pub mod auth_routes;

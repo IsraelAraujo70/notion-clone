@@ -1,8 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use notion_clone_api::adapters::ai::openrouter::OpenRouterAiProvider;
+use notion_clone_api::adapters::postgres::{PostgresAiRepository, PostgresEmbeddingRepository};
 use notion_clone_api::adapters::storage::{NoopObjectStorage, S3ObjectStorage};
+use notion_clone_api::application::embeddings::{
+    DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSIONS, validate_embeddings,
+};
 use notion_clone_api::application::ports::ObjectStorage;
+use notion_clone_api::application::ports::ai::{AiProvider, AiRepository};
+use notion_clone_api::application::ports::embedding::EmbeddingJobRepository;
 use notion_clone_api::bootstrap::config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -10,6 +17,8 @@ use uuid::Uuid;
 
 const DEFAULT_BATCH_SIZE: i64 = 25;
 const MAX_RETRY_SECONDS: i64 = 3_600;
+const EMBEDDING_LEASE: Duration = Duration::from_secs(120);
+const EMBEDDING_PROVIDER_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, sqlx::FromRow)]
 struct ObjectDeletionJob {
@@ -22,6 +31,13 @@ struct ObjectDeletionJob {
 struct BatchResult {
     deleted: usize,
     retried: usize,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EmbeddingBatchResult {
+    completed: usize,
+    retried: usize,
+    stale: usize,
 }
 
 #[tokio::main]
@@ -48,12 +64,53 @@ async fn main() {
     };
     let interval_seconds = env_i64("WORKER_INTERVAL_SECONDS", 5).max(1) as u64;
     let batch_size = env_i64("OBJECT_DELETION_BATCH_SIZE", DEFAULT_BATCH_SIZE).clamp(1, 100);
+    let embedding_batch_size = env_i64("EMBEDDING_BATCH_SIZE", 32).clamp(1, 100);
+    let embedding_dimensions = env_i64("EMBEDDING_DIMENSIONS", EMBEDDING_DIMENSIONS as i64);
+    assert_eq!(
+        embedding_dimensions, EMBEDDING_DIMENSIONS as i64,
+        "EMBEDDING_DIMENSIONS must match the fixed Postgres halfvec(3072) schema"
+    );
+    let embedding_model =
+        std::env::var("AI_EMBEDDING_MODEL").unwrap_or_else(|_| DEFAULT_EMBEDDING_MODEL.to_string());
+    assert_eq!(
+        embedding_model, DEFAULT_EMBEDDING_MODEL,
+        "AI_EMBEDDING_MODEL must match the model used by transactional enqueue"
+    );
+    let embedding_provider = std::env::var("OPENROUTER_API_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+        .map(|key| {
+            OpenRouterAiProvider::new(
+                key,
+                std::env::var("OPENROUTER_BASE_URL")
+                    .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string()),
+            )
+        });
+    let embedding_repository = PostgresEmbeddingRepository::new(pool.clone());
+    let ai_repository = PostgresAiRepository::new(pool.clone());
 
-    tracing::info!(interval_seconds, batch_size, "notion-clone-worker starting");
+    tracing::info!(
+        interval_seconds,
+        batch_size,
+        embedding_batch_size,
+        embedding_model,
+        embeddings_enabled = embedding_provider.is_some(),
+        "notion-clone-worker starting"
+    );
+    if embedding_provider.is_none() {
+        tracing::warn!("OPENROUTER_API_KEY is not configured; embedding jobs will remain pending");
+    }
 
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_seconds));
     loop {
         ticker.tick().await;
+        match ai_repository.recover_stale_runs(chrono::Utc::now()).await {
+            Ok(recovered) if recovered > 0 => {
+                tracing::warn!(recovered, "stale AI runs marked failed")
+            }
+            Ok(_) => tracing::debug!("no stale AI runs"),
+            Err(error) => tracing::error!(error = ?error, "stale AI run recovery failed"),
+        }
         match process_object_deletions(&pool, storage.as_ref(), batch_size).await {
             Ok(result) if result != BatchResult::default() => tracing::info!(
                 deleted = result.deleted,
@@ -63,7 +120,114 @@ async fn main() {
             Ok(_) => tracing::debug!("no pending object deletions"),
             Err(error) => tracing::error!(error = %error, "object deletion batch failed"),
         }
+        if let Some(provider) = embedding_provider.as_ref() {
+            match process_embeddings(
+                &embedding_repository,
+                provider,
+                &embedding_model,
+                embedding_batch_size,
+            )
+            .await
+            {
+                Ok(result) if result != EmbeddingBatchResult::default() => tracing::info!(
+                    completed = result.completed,
+                    retried = result.retried,
+                    stale = result.stale,
+                    "embedding batch completed"
+                ),
+                Ok(_) => tracing::debug!("no pending embedding jobs"),
+                Err(error) => tracing::error!(error, "embedding batch failed"),
+            }
+        }
     }
+}
+
+async fn process_embeddings(
+    repository: &dyn EmbeddingJobRepository,
+    provider: &dyn AiProvider,
+    model: &str,
+    batch_size: i64,
+) -> Result<EmbeddingBatchResult, String> {
+    let jobs = repository
+        .claim(batch_size, EMBEDDING_LEASE)
+        .await
+        .map_err(|error| format!("claim failed: {error:?}"))?;
+    if jobs.is_empty() {
+        return Ok(EmbeddingBatchResult::default());
+    }
+    let oldest_lag_seconds = jobs
+        .iter()
+        .map(|job| (chrono::Utc::now() - job.created_at).num_seconds().max(0))
+        .max()
+        .unwrap_or(0);
+    tracing::info!(
+        pending = jobs.len(),
+        oldest_lag_seconds,
+        "embedding jobs claimed"
+    );
+
+    if jobs
+        .iter()
+        .any(|job| job.model != model || job.dimensions != EMBEDDING_DIMENSIONS)
+    {
+        let mut result = EmbeddingBatchResult::default();
+        for job in &jobs {
+            if repository
+                .retry(job, "embedding job model or dimensions do not match worker")
+                .await
+                .map_err(|error| format!("retry failed: {error:?}"))?
+            {
+                result.retried += 1;
+            } else {
+                result.stale += 1;
+            }
+        }
+        return Ok(result);
+    }
+
+    let inputs = jobs
+        .iter()
+        .map(|job| job.content.clone())
+        .collect::<Vec<_>>();
+    let provider_result =
+        tokio::time::timeout(EMBEDDING_PROVIDER_TIMEOUT, provider.embed(model, &inputs)).await;
+    let vectors = match provider_result {
+        Ok(Ok(vectors)) => validate_embeddings(vectors, jobs.len(), EMBEDDING_DIMENSIONS),
+        Ok(Err(error)) => Err(error),
+        Err(_) => Err(notion_clone_api::application::ports::ai::AiProviderError::Unavailable),
+    };
+    let vectors = match vectors {
+        Ok(vectors) => vectors,
+        Err(error) => {
+            let mut result = EmbeddingBatchResult::default();
+            for job in &jobs {
+                if repository
+                    .retry(job, &format!("provider error: {error:?}"))
+                    .await
+                    .map_err(|retry_error| format!("retry failed: {retry_error:?}"))?
+                {
+                    result.retried += 1;
+                } else {
+                    result.stale += 1;
+                }
+            }
+            return Ok(result);
+        }
+    };
+
+    let mut result = EmbeddingBatchResult::default();
+    for (job, vector) in jobs.iter().zip(vectors.iter()) {
+        if repository
+            .complete(job, vector)
+            .await
+            .map_err(|error| format!("completion failed: {error:?}"))?
+        {
+            result.completed += 1;
+        } else {
+            result.stale += 1;
+        }
+    }
+    Ok(result)
 }
 
 async fn process_object_deletions(

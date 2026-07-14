@@ -5,7 +5,7 @@ Spec canônica do modelo de dados e das cinco operações. As implementações e
 - TypeScript (cliente): `frontend/lib/contracts.ts` — tipos usados pelo editor e pelo engine local (`frontend/lib/engine/tree.ts`).
 - Rust (servidor): `backend/src/domain/block.rs` — o apply do servidor reimplementa a mesma semântica, coberta pelos mesmos casos de teste.
 
-A API HTTP está em [`docs/api/pages.md`](../docs/api/pages.md); o protocolo de sync em [`docs/api/sync.md`](../docs/api/sync.md); busca, publicação e purge em [`docs/api/m4.md`](../docs/api/m4.md).
+A API HTTP está em [`docs/api/pages.md`](../docs/api/pages.md); o protocolo de sync em [`docs/api/sync.md`](../docs/api/sync.md); busca, publicação e purge em [`docs/api/m4.md`](../docs/api/m4.md); IA em [`docs/api/ai.md`](../docs/api/ai.md).
 
 Quando um segundo consumidor TypeScript existir (ex.: desktop client), promova `frontend/lib/contracts.ts` de volta a pacote compartilhado.
 
@@ -65,3 +65,13 @@ Uma página filha renderizada dentro do pai é um link, nunca conteúdo inline: 
 - Um link público expõe a página e seus descendentes que não são páginas. Blocos `page` filhos e suas referências são removidos da resposta.
 - `delete_block` revoga links públicos das páginas na subárvore na mesma transação; `restore_block` não republica.
 - Purge aceita somente uma raiz listada na lixeira. A subárvore sai do banco e as chaves de imagem entram em `object_deletion_jobs`; o operation log permanece para auditoria.
+
+## Grupos de operações (M5 parcial)
+
+O envelope persistido/broadcast pode ter `group` sem alterar o payload de uma das cinco operações: `group_id`, `group_ordinal`, `source`, `initiated_by` e `provenance`. `source` e `human` ou `ai`. Para IA, a proveniencia vincula `runId`, acao e modelo; `group_ordinal` preserva a ordem. O `last_seq` do run faz o cliente esperar receber todas as operacoes antes de fechar o grupo de undo.
+
+## Contrato interno de IA (M5 parcial)
+
+O backend acessa provedores apenas por `chat_stream(model, messages, tools)` e `embed(model, inputs)`. O adaptador entregue e OpenRouter. Chat padrao: `openai/gpt-5.6-luna`; embeddings: `openai/text-embedding-3-large` em 3072 dimensoes/`halfvec`.
+
+As acoes sao `continue_writing`, `summarize_page`, `transform_selection` e `workspace_agent`. As tres primeiras escrevem exclusivamente por `apply_operations`, usando este mesmo protocolo; `workspace_agent` e leitura e nao recebe ferramenta de mutacao. Detalhes HTTP/SSE e escopos: [`docs/api/ai.md`](../docs/api/ai.md).

@@ -8,9 +8,11 @@ editor, on Tailwind CSS and shadcn/ui.
 Pages live at `/dashboard/pages/[pageId]`; `/dashboard` redirects to the active
 workspace's root page. Every edit is applied optimistically to the local block
 tree, then sent as a typed operation to `POST /workspaces/{id}/operations`
-through a sequential queue (`lib/engine/op-queue.ts`). Typing bursts coalesce
-into one request per round trip; a rejected operation stops the queue and the
-editor offers to reload the server state.
+through a sequential queue (`lib/engine/op-queue.ts`). Text, title, caption, and
+code updates use a 300 ms trailing debounce while remaining immediately visible
+locally. Blur, structural edits, undo/redo, navigation, and AI actions flush the
+pending value in order. A rejected operation stops the queue and the editor
+offers to reload the server state with a fresh queue.
 
 ## Develop
 
@@ -39,6 +41,13 @@ support plaintext, JavaScript, TypeScript, JSX, TSX, HTML, CSS, JSON, Markdown,
 Bash, SQL, Python, Rust, Go, Java, C#, and C++. `Enter` creates a new code line;
 `Tab` and `Shift+Tab` indent it; `Shift+Enter` or `Escape` creates the next
 paragraph.
+
+Desktop block selection uses a Notion-style pointer marquee with autoscroll,
+Cmd/Ctrl additive selection, Shift ranges, normalized subtree roots, and an
+accessible selection announcement. Copy/cut carry both plain text and a bounded
+versioned block-tree payload. Right-click and a handle click share the same
+custom options menu; dragging one selected handle moves every selected root in
+document order.
 
 On desktop, the sidebar can be resized from 200px up to `min(480px, 40vw)`. Its
 expanded width is saved locally, while `Cmd/Ctrl+B` and a rail click still

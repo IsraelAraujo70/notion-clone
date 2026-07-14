@@ -1,11 +1,11 @@
 use axum::Router;
-use axum::extract::MatchedPath;
+use axum::extract::{DefaultBodyLimit, MatchedPath};
 use axum::http::Request;
 use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
 use crate::adapters::http::{
-    app_routes, auth_routes, media_routes, page_routes, workspace_routes, ws_routes,
+    ai_routes, app_routes, auth_routes, media_routes, page_routes, workspace_routes, ws_routes,
 };
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
@@ -92,6 +92,24 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/workspaces/{workspace_id}/operations",
             get(page_routes::list_operations).post(page_routes::apply_operation),
+        )
+        .route(
+            "/workspaces/{workspace_id}/ai/conversations",
+            get(ai_routes::list_conversations).post(ai_routes::create_conversation),
+        )
+        .route(
+            "/workspaces/{workspace_id}/ai/conversations/{conversation_id}/messages",
+            get(ai_routes::messages),
+        )
+        .route(
+            "/workspaces/{workspace_id}/ai/runs/{run_id}",
+            get(ai_routes::run_status),
+        )
+        .route(
+            "/workspaces/{workspace_id}/ai/actions/{action}",
+            post(ai_routes::action).layer(DefaultBodyLimit::max(
+                crate::application::ai::use_case::MAX_AI_ACTION_BODY_BYTES,
+            )),
         )
         .route(
             "/workspaces/{workspace_id}/ws",

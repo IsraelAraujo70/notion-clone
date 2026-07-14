@@ -12,6 +12,7 @@ export type SaveState = "saved" | "saving" | "error"
 const BASE_DELAY_MS = 250
 const MAX_DELAY_MS = 4000
 const MAX_ATTEMPTS = 6
+export const OP_DEBOUNCE_MS = 300
 
 function isTransient(error: unknown): boolean {
   return !(error instanceof ApiError) || error.status >= 500
@@ -32,19 +33,32 @@ export interface OpQueue {
    * então uma rajada vira uma requisição por round-trip em vez de por tecla.
    */
   push: (ops: Operation[], coalesceKey?: string) => void
-  /** Resolve quando a fila esvazia (ou falha). Para testes e teardown. */
+  /** Libera a edição retida e resolve quando tudo foi confirmado. */
+  flush: () => Promise<void>
+  /** Mesmo contrato de flush; mantido para consumidores que só aguardam a fila. */
   drained: () => Promise<void>
 }
 
 export function createOpQueue(options: {
   send: (op: Operation) => Promise<unknown>
   onStateChange: (state: SaveState, error?: unknown) => void
+  onCoalesced?: (operation: Operation) => void
+  debounceMs?: number
   sleep?: (ms: number) => Promise<void>
 }): OpQueue {
-  const { send, onStateChange, sleep = realSleep } = options
+  const {
+    send,
+    onStateChange,
+    onCoalesced,
+    debounceMs = OP_DEBOUNCE_MS,
+    sleep = realSleep,
+  } = options
   const pending: Entry[] = []
+  let held: Entry | null = null
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let running: Promise<void> | null = null
   let stopped = false
+  let failure: unknown
 
   async function sendWithRetry(op: Operation) {
     let delay = BASE_DELAY_MS
@@ -61,35 +75,84 @@ export function createOpQueue(options: {
   }
 
   async function drain() {
-    onStateChange("saving")
     while (pending.length > 0) {
       try {
         await sendWithRetry(pending[0].op)
       } catch (error) {
         stopped = true
+        failure = error
         pending.length = 0
+        if (held) onCoalesced?.(held.op)
+        held = null
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = null
         onStateChange("error", error)
         return
       }
       pending.shift()
     }
-    onStateChange("saved")
+    if (!held) onStateChange("saved")
+  }
+
+  function ensureRunning() {
+    if (running || stopped || pending.length === 0) return
+    running = drain().finally(() => {
+      running = null
+      // Uma op pode entrar depois do último `pending.shift()` e antes deste
+      // finally. Inicie outro drain para não deixá-la presa na fila.
+      ensureRunning()
+    })
+  }
+
+  function releaseHeld() {
+    if (!held) return
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = null
+    pending.push(held)
+    held = null
+  }
+
+  function scheduleHeld() {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null
+      releaseHeld()
+      ensureRunning()
+    }, debounceMs)
+  }
+
+  async function flush() {
+    for (;;) {
+      releaseHeld()
+      ensureRunning()
+      if (running) await running
+      if (!running && pending.length === 0 && !held) break
+    }
+    if (failure) throw failure
   }
 
   return {
     push(ops, coalesceKey) {
       if (stopped || ops.length === 0) return
-      // `pending[0]` pode estar em voo: nunca é substituída.
-      const last = pending.length > 1 ? pending[pending.length - 1] : undefined
-      if (
-        coalesceKey &&
+      onStateChange("saving")
+      const debounceEligible =
+        Boolean(coalesceKey) &&
         ops.length === 1 &&
-        last &&
-        last.coalesceKey === coalesceKey
-      ) {
-        last.op = ops[0]
+        ops[0].type === "update_block"
+      if (debounceEligible) {
+        const replaced = held
+        if (replaced && replaced.coalesceKey === coalesceKey) {
+          onCoalesced?.(replaced.op)
+        }
+        else {
+          releaseHeld()
+          ensureRunning()
+        }
+        held = { op: ops[0], coalesceKey }
+        scheduleHeld()
         return
       }
+      releaseHeld()
       pending.push(
         ...ops.map((op, index) => ({
           op,
@@ -97,13 +160,9 @@ export function createOpQueue(options: {
           coalesceKey: index === ops.length - 1 ? coalesceKey : undefined,
         }))
       )
-      if (running) return
-      running = drain().finally(() => {
-        running = null
-      })
+      ensureRunning()
     },
-    async drained() {
-      while (running) await running
-    },
+    flush,
+    drained: flush,
   }
 }

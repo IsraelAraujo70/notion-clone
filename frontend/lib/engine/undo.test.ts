@@ -155,4 +155,63 @@ describe("UndoManager", () => {
     })
     expect(s.undo.canRedo).toBe(false)
   })
+
+  it("keeps an open AI group at its first op in chronological undo order", () => {
+    const s = setup()
+    const applyAi = (op: Operation) => {
+      const result = applyOperation(s.tree, op)
+      s.tree = result.tree
+      s.undo.recordOpenGroup("ai-group", result.inverse)
+    }
+
+    applyAi({
+      type: "insert_block",
+      opId: oid(),
+      block: newBlock("paragraph", { text: "AI first" }, "ai-first"),
+      parentId: "root",
+      index: 0,
+    })
+    s.apply({
+      type: "insert_block",
+      opId: oid(),
+      block: newBlock("paragraph", { text: "Human" }, "human"),
+      parentId: "root",
+      index: 1,
+    })
+    applyAi({
+      type: "insert_block",
+      opId: oid(),
+      block: newBlock("paragraph", { text: "AI later" }, "ai-later"),
+      parentId: "root",
+      index: 2,
+    })
+    s.undo.closeGroup("ai-group")
+
+    s.tree = s.undo.undo(s.tree).tree
+    expect(
+      visibleTree(s.tree).children.map((child) => child.properties.text)
+    ).toEqual(["AI first", "AI later"])
+
+    s.tree = s.undo.undo(s.tree).tree
+    expect(visibleTree(s.tree).children).toEqual([])
+  })
+
+  it("keeps accumulated inverses when a failed open group closes", () => {
+    const s = setup()
+    const result = applyOperation(s.tree, {
+      type: "insert_block",
+      opId: oid(),
+      block: newBlock("paragraph", { text: "Partial" }, "partial"),
+      parentId: "root",
+      index: 0,
+    })
+    s.tree = result.tree
+    s.undo.recordOpenGroup("failed-group", result.inverse)
+    expect(s.undo.canUndo).toBe(false)
+
+    s.undo.closeGroup("failed-group")
+    expect(s.undo.canUndo).toBe(true)
+    s.tree = s.undo.undo(s.tree).tree
+    expect(visibleTree(s.tree).children).toEqual([])
+  })
 })

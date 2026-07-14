@@ -1,5 +1,5 @@
 import type { Block, BlockType } from "@/lib/contracts"
-import { getBlock, getChildren, type BlockTree } from "@/lib/engine/tree"
+import { getChildren, type BlockTree } from "@/lib/engine/tree"
 
 export interface VisibleBlock {
   block: Block

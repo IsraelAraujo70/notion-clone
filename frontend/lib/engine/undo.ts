@@ -10,6 +10,7 @@ import { applyAll, type BlockTree } from "./tree"
 interface UndoEntry {
   inverse: Operation[]
   coalesceKey?: string
+  open?: boolean
 }
 
 /** `ops` são as operações efetivamente aplicadas — o editor as envia ao servidor. */
@@ -21,12 +22,32 @@ export interface UndoResult {
 export class UndoManager {
   private undoStack: UndoEntry[] = []
   private redoStack: Operation[][] = []
+  private openGroups = new Map<string, UndoEntry>()
 
   record(inverse: Operation[], coalesceKey?: string): void {
     this.redoStack = []
     if (coalesceKey && this.undoStack.at(-1)?.coalesceKey === coalesceKey)
       return
     this.undoStack.push({ inverse, coalesceKey })
+  }
+
+  recordOpenGroup(groupKey: string, inverse: Operation[]): void {
+    this.redoStack = []
+    const existing = this.openGroups.get(groupKey)
+    if (existing) {
+      existing.inverse.unshift(...inverse)
+      return
+    }
+    const entry = { inverse: [...inverse], open: true }
+    this.openGroups.set(groupKey, entry)
+    this.undoStack.push(entry)
+  }
+
+  closeGroup(groupKey: string): void {
+    const entry = this.openGroups.get(groupKey)
+    if (!entry) return
+    entry.open = false
+    this.openGroups.delete(groupKey)
   }
 
   /** Fecha o grupo de coalescing atual (chamar em blur, Enter, ops estruturais…). */
@@ -36,7 +57,7 @@ export class UndoManager {
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0
+    return this.undoStack.length > 0 && !this.undoStack.at(-1)?.open
   }
 
   get canRedo(): boolean {
@@ -44,6 +65,7 @@ export class UndoManager {
   }
 
   undo(tree: BlockTree): UndoResult {
+    if (this.undoStack.at(-1)?.open) return { tree, ops: [] }
     const entry = this.undoStack.pop()
     if (!entry) return { tree, ops: [] }
     const { tree: next, inverse } = applyAll(tree, entry.inverse)

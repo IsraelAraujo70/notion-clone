@@ -34,7 +34,7 @@ The reference architecture, from Notion's public engineering material:
 
 What this clone borrows at portfolio scale: the block model verbatim, the operation log with LWW verbatim, `workspace_id` as the partition key on every table and every query so sharding stays a pure infra move, pgvector instead of a data lake, and the SQLite client as a documented future step.
 
-## Proposed Architecture
+## Arquitetura atual
 
 Use a services-first monorepo, bootstrapped from `microsaas-starter` (which already ships auth/sessions/password-reset, the dashboard shell, Cypress, and the Railway deploy shape proven in drive-clone):
 
@@ -109,7 +109,7 @@ Frontend:
 
 - Login, signup, and workspace screens.
 - Block editor: each block is its own small contenteditable element; the editor state is the block tree, not one big document.
-- Slash menu, markdown shortcuts, drag reorder, indent/outdent.
+- Slash menu, markdown shortcuts, paste estrutural de Markdown em blocos, debounce de 300 ms, marquee multi-bloco, clipboard estruturado, menu contextual e drag multiplo, indent/outdent.
 - Local op queue with optimistic apply and undo stack (undo emits inverse ops).
 - WebSocket client with cursor-based catch-up on reconnect.
 - Sidebar page tree, breadcrumbs, search UI, trash UI.
@@ -144,11 +144,11 @@ Frontend:
 - shadcn/ui.
 - Custom block editor. No ProseMirror/TipTap/Slate: those frameworks model one rich document, and the whole point here is that a page is a tree of small blocks. One contenteditable per block keeps each editing surface trivial and makes the block model the real editor state. Tradeoff documented: rich inline formatting (bold/italic/links inside a block) starts minimal.
 
-AI (M5 target):
+AI (M5 concluido):
 
-- Local Claude Code behind one self-contained `services/llm/` contract; no application service calls a hosted LLM provider directly.
-- Embeddings behind the same internal contract.
-- pgvector for storage and retrieval. No separate vector database.
+- OpenRouter e o adaptador implementado, isolado por um contrato interno tipado de chat streaming e embeddings; nenhum caso de uso chama o provedor diretamente.
+- Chat padrao: `openai/gpt-5.6-luna`. Titulos de conversa sao gerados a partir da primeira mensagem por `deepseek/deepseek-v4-flash`. Embeddings: `openai/text-embedding-3-large`, 3072 dimensoes, persistidos como `halfvec`.
+- pgvector para armazenamento e recuperacao; nao existe banco vetorial separado.
 
 Infrastructure:
 
@@ -165,10 +165,13 @@ Core tables (all workspace-scoped tables carry `workspace_id`):
 - `workspaces`: tenant root.
 - `workspace_members`: membership and role.
 - `blocks`: `id`, `workspace_id`, `type`, `properties` (jsonb), `content` (ordered array of child block ids), `parent_id`, `created_by`, timestamps, `trashed_at`. Pages are rows in this table.
-- `operations`: the log. `workspace_id`, monotonic `seq` per workspace, `actor_id` (user or AI), `op` (jsonb), `applied_at`. This is the sync feed, the audit trail, and the AI's paper trail.
+- `operations`: the log. `workspace_id`, monotonic `seq` per workspace, `actor_id` (o humano que autorizou a operacao), `op` (jsonb), `applied_at`. A proveniencia de IA fica em `operation_groups.source = "ai"`, nunca em um `actor_id` artificial de IA.
 - `public_page_links`: one revocable public read-only UUID token per published page.
 - `object_deletion_jobs`: transactional outbox for retryable S3 cleanup after permanent deletion.
-- `block_embeddings`: `block_id`, `workspace_id`, `embedding` (vector), `content_hash`, `updated_at`. HNSW index. `content_hash` makes the refresh job idempotent.
+- `block_embeddings`: `block_id`, `workspace_id`, `embedding` (`halfvec(3072)`), `content_hash`, `embedded_at`. Indice HNSW de cosseno; `content_hash` torna a atualizacao idempotente.
+- `block_embedding_jobs`: outbox coalescente de embeddings, com lease, hash, tentativas e backoff.
+- `operation_groups`: proveniencia e ordem de uma escrita agrupada; operacoes de IA guardam `runId`, acao e modelo.
+- `ai_conversations`, `ai_messages`, `ai_runs`, `ai_usage_events`: historico privado, execucoes e uso da IA.
 - `sessions`: opaque bearer tokens, stored hashed.
 
 Partition key discipline: every query filters by `workspace_id` first. That is the entire sharding story prepared in advance: when one Postgres is not enough, split by workspace and nothing above the storage layer changes.
@@ -253,29 +256,26 @@ Measurable outcomes:
 - A block is excluded when it or any ancestor is trashed.
 - Embedding refresh lag is observable (metric: blocks pending embedding).
 
-## AI Integration Design
+## IA entregue (M5 concluido)
 
-The three principles, made concrete:
+O adaptador implementado e OpenRouter. O chat padrao e `openai/gpt-5.6-luna`; embeddings usam obrigatoriamente `openai/text-embedding-3-large` em 3072 dimensoes, armazenados em `HALFVEC(3072)` com indice HNSW de cosseno. A API, SSE, limites e variaveis estao em [`docs/api/ai.md`](./docs/api/ai.md); schema e outbox em [`docs/database.md`](./docs/database.md).
 
-**1. The AI is a client of the sync engine.** AI endpoints do not return text. They stream operations. "Continue writing" produces a stream of `insert_block` ops that go through the exact same apply function as a user's ops, with `actor_id` marking the AI. Consequences, for free: output appears block by block in real time for every collaborator, undo works (inverse ops), the op log audits everything the AI ever did, and permissions are enforced because the apply path already enforces them. There is no second write path to secure or debug.
+Principios aplicados:
 
-**2. Context is assembled, not dumped.** `backend/src/ai/context.rs` is a deterministic function: `(workspace_id, user_id, block_id, task) -> Context`. It serializes the current page subtree to a compact text form, adds ancestor titles for orientation, runs a permission-scoped pgvector query for related blocks when the task needs workspace knowledge, and cuts everything to an explicit token budget with documented priority order (page > ancestors > retrieved blocks). It is pure and unit-tested: same inputs, same context, no LLM involved.
+**1. IA e cliente do sync engine.** As acoes de escrita chamam `apply_operations`; cada op passa pelo mesmo apply, autorizacao, transacao e broadcast de uma escrita humana. `actor_id` continua sendo o humano que autorizou a execucao; o grupo registra `source: "ai"` e a proveniencia. A escrita recebe `operation_group` e `last_seq`, para que o cliente feche o grupo de undo somente depois de observar todas as operacoes.
 
-**3. Quality is measured.** The LLM lives behind one typed contract in `contracts/`: `complete(context, task) -> op stream` and `embed(texts) -> vectors`. Deterministic gate tests cover context assembly, op-stream parsing, and budget enforcement. A paid eval suite scores the four features against fixture workspaces with pass thresholds, and runs before ship.
+**2. Contexto e montado, nao despejado.** O builder deterministico prioriza pedido, pagina/selecao, ancestrais e recuperacao semantica, em limite conservador de 8000 caracteres. E uma estimativa deterministica por caracteres, nao uma contagem por tokenizer. Documentos sao marcados como conteudo nao confiavel. A consulta vetorial aplica membership no SQL antes de selecionar vizinhos e exclui ancestrais na lixeira.
 
-Features and their op shapes:
+**3. Escopo e ferramentas sao impostos.** Continue, resumo e transformacao recebem ferramentas de leitura e `apply_operations`, validada contra o escopo da acao. Q&A funciona como harness iterativo: prioriza paginas mencionadas por `@`, abre a pagina atual, segue links com `read_page`, refaz buscas permissionadas com `search_workspace`, usa o historico recente e continua ate a resposta final ou ate esgotar oito rodadas de ferramentas. Nao pode escrever e so aceita citacoes acumuladas por leituras autorizadas; valores explicitos como `responda com 43` precisam aparecer na resposta final. Os testes unitarios cobrem parsing de stream, limites, contexto cycle-safe, ferramentas e vetores.
 
-- Continue writing: `insert_block`* after the cursor block.
-- Summarize page: read subtree, `insert_block` (callout) at index 0.
-- Transform selection: `insert_block`* + `delete_block`* replacing the selection, transactional.
-- Workspace Q&A: retrieval via pgvector, answer with source `block_id`s the frontend renders as clickable citations. Read-only, no ops.
+As quatro acoes implementadas:
 
-Measurable outcomes:
+- Continue writing: insercoes apos o anchor, uma por commit.
+- Summarize page: um `insert_block` callout no indice 0.
+- Transform selection: alteracoes/substituicoes apenas nas raizes selecionadas, em lote atomico.
+- Workspace Q&A: recuperacao via pgvector e citacoes de blocos autorizados; somente leitura.
 
-- AI output is visible in a second collaborating browser as it streams (e2e).
-- Undo after an AI insertion restores the previous state exactly (gate test on inverse ops).
-- Q&A citations always resolve to blocks the asking user can access (e2e).
-- Eval scores per feature tracked across commits.
+Evidencia verificada em 2026-07-14: `make eval-m5` passou; o eval pago `docs/evals/m5-live.mjs` passou 4/4 com `openai/gpt-5.6-luna` e `openai/text-embedding-3-large` (18.075 tokens de prompt e 1.145 de conclusao), cobrindo resumo, continue com duas insercoes ordenadas, transformacao e Q&A que segue a pagina filha `X` ate encontrar e citar a nota com resposta `43`, alem de acesso, negacao a nao membro, uso/proveniencia e undo por operacoes inversas. `m5-ai.cy.ts` passou 1/1 com dois clientes `EditorPage` reais, insercoes progressivas ordenadas, colaboracao WebSocket, undo agrupado, deletes inversos e convergencia persistida sem reload de snapshot.
 
 ## Railway Deployment Plan
 
@@ -290,7 +290,7 @@ Required deployment behavior:
 
 - `/health` returns healthy only when Postgres is reachable and the pgvector extension is present.
 - Frontend reads the deployed API base URL from configuration.
-- Backend reads all configuration from environment variables; M5 will configure the local Claude Code service command, not a hosted LLM API key.
+- Backend le configuracao por variaveis de ambiente. IA usa `OPENROUTER_API_KEY` e, opcionalmente, `OPENROUTER_BASE_URL`; `AI_CHAT_MODEL` (default `openai/gpt-5.6-luna`), `AI_TITLE_MODEL` (default `deepseek/deepseek-v4-flash`) e `AI_EMBEDDING_MODEL` (obrigatoriamente `openai/text-embedding-3-large`) selecionam os modelos. O worker aceita `EMBEDDING_BATCH_SIZE`, `EMBEDDING_DIMENSIONS=3072` e `WORKER_INTERVAL_SECONDS`.
 - Database migrations run through a controlled command.
 - Every release gets a smoke test: sign in, create a page, type a block, see it from a second session, run one AI action.
 
@@ -305,7 +305,7 @@ Initial deployment status:
 - Web service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/frontend`, Dockerfile build (`output: "standalone"`), serving on port 8080.
 - Worker service source: `IsraelAraujo70/notion-clone`, branch `main`, root `/backend`, start command `notion-clone-worker` (processes permanent-delete S3 cleanup with retry).
 - Postgres: `ghcr.io/railwayapp-templates/postgres-ssl:18` (ships pgvector 0.8.4); `DATABASE_URL` is referenced into api and worker.
-- Migrations `0001`–`0011` run on boot, including pgvector, M4 public links/search, and the concurrent GIN index.
+- Migrations `0001`–`0014` incluem pgvector, M4 e as tabelas/indice HNSW de IA e embeddings. As migracoes `0012`–`0014` foram aplicadas com sucesso em PostgreSQL 17/pgvector 0.8.4.
 - Deploy smoke: `/health` 200, web `/` 200, API signup creates the user, workspace, and root page.
 
 The api healthcheck lives on the service instance, not in `backend/railway.json`, because that file is shared with the worker (same `/backend` root) and the worker serves no HTTP.
@@ -330,13 +330,13 @@ Status: shipped. Pages live at `/dashboard/pages/[pageId]`; `/dashboard` redirec
 
 Two bugs the work surfaced. Editor mutations (undo stack, outgoing queue) used to run inside a `setState` updater, which React StrictMode double-invokes — the M1 Cypress undo assertion was passing *because of* the double undo. State now lives in a ref and the updater is pure. Second: the op queue sent one request per keystroke, so it coalesces pending `update_block`s by the same key while never touching the operation already in flight.
 
-### M3: Sync and real-time — DONE (2026-07-09)
+### M3: Sync and real-time — DONE (2026-07-14)
 
 Deliver: WebSocket transport, cursor catch-up (`GET /workspaces/{id}/operations?after_seq=`), property-level LWW, reconnection recovery. Writes stay on HTTP POST (op queue); after commit the server broadcasts on the workspace socket. The op log, `seq`, `op_id` idempotency, and client queue were already in M2.
 
 Done when: two browsers editing the same page converge, and a disconnected client catches up from its cursor.
 
-Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines. Catch-up starts only after `hello`, paginates to a stable snapshot, buffers out-of-order live events, and never advances its delivery cursor from a write ACK. The 501-operation regression is covered by a gate test and `make eval-sync-catch-up`. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
+Status: shipped. Hub in-process (`application/realtime`); `WS /workspaces/{id}/ws?token=`; LWW on `blocks.prop_versions` mirrored in Rust + TS engines. Catch-up starts only after `hello`, paginates to a stable snapshot, buffers out-of-order live events, and never advances its delivery cursor from a write ACK. Alem do gate de 501 operacoes, `frontend/cypress/e2e/m3-sync.cy.ts` passa 2/2: dois `EditorPage` reais convergem e uma reconexao bloqueada recupera faixa contigua sem reload. Protocol: [`docs/api/sync.md`](./docs/api/sync.md).
 
 ### M4: Membership, permissions, search — DONE (2026-07-10)
 
@@ -346,15 +346,15 @@ Done when: cross-workspace access fails everywhere and search finds only what it
 
 Status: shipped. Owner/editor/viewer enforcement covers pages, writes, search, sharing, and permanent deletion. `GET /search` runs permission filtering and trashed-ancestor filtering inside PostgreSQL. Owner and editor can publish one page through a revocable read-only link; child pages are omitted, and trash revokes links transactionally. Permanent deletion removes the DB subtree and queues image keys for retryable worker cleanup. Protocol: [`docs/api/m4.md`](./docs/api/m4.md). Proof: 49 Rust tests, 149 frontend tests, 16 Cypress scenarios, `make eval-m4` against Postgres + MinIO, and `make eval-editor-sidebar-ux` for the editor/sidebar UX.
 
-### M5: AI
+### M5: AI — DONE (2026-07-14)
 
-Deliver: `contracts/` AI contract, context builder with tests, embeddings worker + pgvector retrieval, the four features streaming ops, eval suite with thresholds.
+Entregue e verificado: contrato OpenRouter, contexto deterministico, conversas/runs/uso, quatro acoes com ferramentas e escopo imposto, grupos de operacoes, worker/outbox de embeddings e recuperacao semantica com filtro de permissao. `make eval-m5` passou; o eval pago ao vivo passou 4/4 e o Cypress `m5-ai.cy.ts` passou 1/1 com dois clientes reais. Documentacao: [`docs/api/ai.md`](./docs/api/ai.md), [`docs/database.md`](./docs/database.md) e [`docs/evals/README.md`](./docs/evals/README.md).
 
-Done when: AI writes stream into a collaborator's browser, undo works on AI output, and Q&A cites real accessible blocks.
+O smoke final de deploy/Railway, inclusive uma acao de IA no ambiente publicado, pertence ao M6.
 
 ### M6: Hardening and deploy
 
-Deliver: Railway deployment, worker jobs, observability, load sanity checks on op apply and subtree fetch, architecture diagram, failure-mode notes, demo script.
+Deliver: smoke final de Railway (incluindo IA), worker jobs, observability, load sanity checks on op apply and subtree fetch, architecture diagram, failure-mode notes, demo script.
 
 Done when: the deployed URL passes the full smoke test and the README matches reality.
 
@@ -430,16 +430,18 @@ make backend
 ```
 
 
-`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit; `make eval-m4` proves role enforcement, search isolation, public-link lifecycle, purge, and MinIO cleanup. `make eval-editor-sidebar-ux` proves the multiline highlighted code editor, persisted sidebar width, and legible deep page trees in a real browser. AI evals arrive with M5.
+`make test` runs the Rust (`cargo test --lib --bins`) and Vitest gates; `make test-e2e` runs Cypress against the composed stack. `make eval-page-persistence` drives the block API end to end; `make eval-sync-catch-up` proves recovery beyond the 500-op page limit; `make eval-m4` proves role enforcement, search isolation, public-link lifecycle, purge, and MinIO cleanup. `make eval-editor-sidebar-ux` proves the multiline highlighted code editor, persisted sidebar width, and legible deep page trees in a real browser. `make eval-m5` is the deterministic AI gate; `docs/evals/m5-live.mjs` is the opt-in paid live eval.
 
 ## Current Status
 
 M4 done (2026-07-10): global full-text search is scoped by membership and excludes trashed ancestry; public pages are single-page, read-only, revocable, and private by default; owner/editor can permanently delete a trash root while the worker reliably cleans up S3 objects. The local full-stack proof is 16/16 Cypress scenarios plus the M4 Postgres/MinIO eval and the editor/sidebar UX eval.
 
-M3 done (2026-07-09): real-time sync. Clients load a page and cursor from one repeatable-read snapshot, wait for the workspace WebSocket `hello`, catch up every page to a stable cursor, then drain buffered live ops in contiguous order. Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock. Writes still go through `POST /operations`; broadcast is the only write-side side effect.
+M5 done (2026-07-14): `make eval-m5` passou; o eval pago ao vivo passou 4/4 com `openai/gpt-5.6-luna` e `openai/text-embedding-3-large` (18.075 prompt, 1.145 completion tokens), incluindo a busca iterativa `pagina atual -> X -> nota -> 43`; e `m5-ai.cy.ts` passou 1/1 com dois `EditorPage` reais. A prova cobre escrita progressiva colaborativa, undo agrupado por operacoes inversas, persistencia/convergencia sem reload, Q&A com citacoes autorizadas, proveniencia, uso e negacao a nao membro. Backend: 90 testes de lib + 2 de worker, `cargo fmt` e `cargo check` passaram. Frontend: 214 testes, lint sem warnings, typecheck e build de producao passaram. A suite Cypress fechou 21/21 apos a repeticao direcionada do `m5-ai.cy.ts`; `editor.cy.ts` passou 11/11 com debounce e marquee. O drag multiplo manual gerou duas `move_block`, nenhum delete e persistiu apos reload.
+
+M3 done (2026-07-14): real-time sync. Dois clientes `EditorPage` reais convergem e uma reconexao recupera a faixa contigua congelada sem reload (`m3-sync.cy.ts`, 2/2). Property-level LWW is enforced on both engines; structural ops stay serialized by the workspace lock.
 
 M2 done (2026-07-08): pages are rows in `blocks`, edited only through the five typed operations. Nested pages, breadcrumbs, sidebar tree, and trash/restore round-trip through Postgres. Writes are serialized per workspace, idempotent by `op_id`, and numbered by a monotonic `seq`.
 
 M1 done (2026-07-08): in-memory block editor with every block type, slash menu, markdown shortcuts, indent/outdent, drag reorder, and exact undo/redo via inverse ops.
 
-Next: M5 — the local Claude Code service contract, deterministic context builder, embeddings worker, four AI features, and thresholded evals.
+Next: M6 — smoke final de deploy/Railway com IA, observabilidade, carga, CI, diagramas e documentacao de falhas. MCP/API publica para agentes externos continua sendo extensao futura.

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "costLimits": {
+    "maxRuns": 4,
+    "maxEmbeddingInputs": 8,
+    "maxPromptTokens": 50000,
+    "maxCompletionTokens": 6000
+  },
+  "suiteThresholds": {
+    "requiredPassedFixtures": 4,
+    "requiredTotalFixtures": 4
+  },
+  "fixtures": [
+    {
+      "id": "continue-concise-release-notes",
+      "action": "continue_writing",
+      "prompt": "Continue below the selected anchor with exactly two short paragraph blocks. Match the concise factual release-note style. Use apply_operations once with two ordered insert_block operations and no other operations.",
+      "thresholds": {
+        "minInsertedBlocks": 2,
+        "maxInsertedBlocks": 2,
+        "minNonEmptyBlocks": 2,
+        "requireOrderedOperations": true
+      }
+    },
+    {
+      "id": "summarize-launch-brief",
+      "action": "summarize_page",
+      "prompt": "Summarize the current page in one concise callout at index 0. Include the launch date, owner, and primary risk. Use exactly one insert_block operation.",
+      "expectedConcepts": [
+        "Aurora",
+        "17 September 2026",
+        "Mina Costa",
+        "mobile review"
+      ],
+      "thresholds": {
+        "minConceptMatches": 3,
+        "requiredBlockType": "callout",
+        "requiredIndex": 0,
+        "requiredOperationCount": 1
+      }
+    },
+    {
+      "id": "transform-requirements-to-list",
+      "action": "transform_selection",
+      "prompt": "Transform only the selected requirements paragraph into a concise bulleted list while preserving both requirements: offline mode and audit export. Use only canonical typed operations through apply_operations.",
+      "expectedConcepts": [
+        "offline mode",
+        "audit export"
+      ],
+      "thresholds": {
+        "minConceptMatches": 2,
+        "allowedBlockTypes": [
+          "bulleted_list_item"
+        ],
+        "requireSelectionScopedOperations": true
+      }
+    },
+    {
+      "id": "qa-follows-nested-page-to-treasure",
+      "action": "workspace_agent",
+      "prompt": "Consegue achar o X que marca o tesouro? Siga as pistas até a resposta final, responda com o número encontrado e cite a fonte.",
+      "expectedConcepts": [
+        "43"
+      ],
+      "thresholds": {
+        "minConceptMatches": 1,
+        "minAccessibleCitations": 1,
+        "maxCitations": 8,
+        "requireNoMutations": true
+      }
+    }
+  ]
+}

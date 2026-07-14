@@ -7,11 +7,14 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::adapters::postgres::tx::map_sqlx_error;
+use crate::application::embeddings::{
+    DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSIONS, canonical_block_text, content_hash,
+};
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    Breadcrumb, LoggedOperation, OperationAck, OperationsPage, PageEditor, PageList,
-    PageRepository, PageSummary, PageTree, PageView, PermanentDeleteResult, PublicLink,
-    SearchResult, TrashEntry,
+    Breadcrumb, LoggedOperation, OperationAck, OperationGroup, OperationGroupMetadata,
+    OperationsPage, PageEditor, PageList, PageRepository, PageSummary, PageTree, PageView,
+    PermanentDeleteResult, PublicLink, SearchResult, TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
@@ -85,6 +88,11 @@ struct OperationRow {
     op_id: Uuid,
     actor_id: Uuid,
     operation: Value,
+    group_id: Option<Uuid>,
+    group_actor_id: Option<Uuid>,
+    group_source: Option<String>,
+    group_provenance: Option<Value>,
+    group_ordinal: Option<i32>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -276,6 +284,191 @@ async fn update_block_row(
 
     if affected == 0 {
         return Err(RepositoryError::Unexpected);
+    }
+    Ok(())
+}
+
+fn has_trashed_ancestry(tree: &BlockTree, block_id: Uuid) -> bool {
+    let mut current = Some(block_id);
+    let mut remaining = tree.blocks.len().saturating_add(1);
+    while let Some(id) = current {
+        if remaining == 0 {
+            return true;
+        }
+        remaining -= 1;
+        let Some(block) = tree.blocks.get(&id) else {
+            return true;
+        };
+        if block.trashed_at.is_some() {
+            return true;
+        }
+        current = block.parent_id;
+    }
+    false
+}
+
+fn is_in_subtree(tree: &BlockTree, root_id: Uuid, block_id: Uuid) -> bool {
+    let mut current = Some(block_id);
+    let mut remaining = tree.blocks.len().saturating_add(1);
+    while let Some(id) = current {
+        if id == root_id {
+            return true;
+        }
+        if remaining == 0 {
+            return false;
+        }
+        remaining -= 1;
+        current = tree.blocks.get(&id).and_then(|block| block.parent_id);
+    }
+    false
+}
+
+async fn sync_embedding_job(
+    tx: &mut Transaction<'_, Postgres>,
+    tree: &BlockTree,
+    block_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<(), RepositoryError> {
+    let block = tree
+        .blocks
+        .get(&block_id)
+        .ok_or(RepositoryError::Unexpected)?;
+    if has_trashed_ancestry(tree, block_id) {
+        sqlx::query("DELETE FROM block_embedding_jobs WHERE workspace_id = $1 AND block_id = $2")
+            .bind(block.workspace_id)
+            .bind(block.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        sqlx::query("DELETE FROM block_embeddings WHERE workspace_id = $1 AND block_id = $2")
+            .bind(block.workspace_id)
+            .bind(block.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        return Ok(());
+    }
+
+    let Some(content) = canonical_block_text(block) else {
+        sqlx::query("DELETE FROM block_embedding_jobs WHERE workspace_id = $1 AND block_id = $2")
+            .bind(block.workspace_id)
+            .bind(block.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        sqlx::query("DELETE FROM block_embeddings WHERE workspace_id = $1 AND block_id = $2")
+            .bind(block.workspace_id)
+            .bind(block.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        return Ok(());
+    };
+    let hash = content_hash(DEFAULT_EMBEDDING_MODEL, &content);
+
+    sqlx::query(
+        "DELETE FROM block_embeddings
+         WHERE workspace_id = $1 AND block_id = $2
+           AND (model <> $3 OR content_hash <> $4)",
+    )
+    .bind(block.workspace_id)
+    .bind(block.id)
+    .bind(DEFAULT_EMBEDDING_MODEL)
+    .bind(&hash[..])
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sqlx_error)?;
+
+    let current = sqlx::query_as::<_, (bool,)>(
+        "SELECT EXISTS (
+             SELECT 1 FROM block_embeddings
+             WHERE workspace_id = $1 AND block_id = $2 AND model = $3 AND content_hash = $4
+         )",
+    )
+    .bind(block.workspace_id)
+    .bind(block.id)
+    .bind(DEFAULT_EMBEDDING_MODEL)
+    .bind(&hash[..])
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_sqlx_error)?
+    .0;
+    if current {
+        sqlx::query("DELETE FROM block_embedding_jobs WHERE workspace_id = $1 AND block_id = $2")
+            .bind(block.workspace_id)
+            .bind(block.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_error)?;
+    } else {
+        sqlx::query(
+            "INSERT INTO block_embedding_jobs
+                 (workspace_id, block_id, model, dimensions, content, content_hash,
+                  attempts, available_at, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $7, $7)
+             ON CONFLICT (workspace_id, block_id) DO UPDATE
+             SET model = EXCLUDED.model, dimensions = EXCLUDED.dimensions,
+                 content = EXCLUDED.content, content_hash = EXCLUDED.content_hash,
+                 attempts = 0, available_at = EXCLUDED.available_at,
+                 lease_token = NULL, leased_until = NULL, last_error = NULL,
+                 updated_at = EXCLUDED.updated_at
+             WHERE block_embedding_jobs.model IS DISTINCT FROM EXCLUDED.model
+                OR block_embedding_jobs.content_hash IS DISTINCT FROM EXCLUDED.content_hash",
+        )
+        .bind(block.workspace_id)
+        .bind(block.id)
+        .bind(DEFAULT_EMBEDDING_MODEL)
+        .bind(EMBEDDING_DIMENSIONS as i32)
+        .bind(content)
+        .bind(&hash[..])
+        .bind(now)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_sqlx_error)?;
+    }
+    Ok(())
+}
+
+async fn sync_operation_embeddings(
+    tx: &mut Transaction<'_, Postgres>,
+    tree: &BlockTree,
+    operation: &Operation,
+    touched: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<(), RepositoryError> {
+    let mut ids: std::collections::HashSet<Uuid> = touched.iter().copied().collect();
+    if let Operation::RestoreBlock { block_id, .. } = operation {
+        ids.extend(
+            tree.blocks
+                .keys()
+                .copied()
+                .filter(|id| is_in_subtree(tree, *block_id, *id)),
+        );
+    }
+    if let Operation::DeleteBlock { block_id, .. } = operation {
+        sqlx::query(
+            "WITH RECURSIVE subtree AS (
+                 SELECT id FROM blocks WHERE id = $1 AND workspace_id = $2
+                 UNION ALL
+                 SELECT b.id FROM subtree s JOIN blocks b ON b.parent_id = s.id
+                 WHERE b.workspace_id = $2
+             )
+             DELETE FROM block_embedding_jobs j USING subtree s
+             WHERE j.workspace_id = $2 AND j.block_id = s.id",
+        )
+        .bind(block_id)
+        .bind(
+            tree.blocks
+                .get(block_id)
+                .ok_or(RepositoryError::Unexpected)?
+                .workspace_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(map_sqlx_error)?;
+    }
+    for id in ids {
+        sync_embedding_job(tx, tree, id, now).await?;
     }
     Ok(())
 }
@@ -483,6 +676,32 @@ impl PageRepository for PostgresPageRepository {
         Ok(view)
     }
 
+    async fn get_page_for_block(
+        &self,
+        workspace_id: Uuid,
+        block_id: Uuid,
+    ) -> Result<PageView, RepositoryError> {
+        let page_id = sqlx::query_as::<_, (Uuid,)>(
+            "WITH RECURSIVE ancestors AS (
+                 SELECT id, type, parent_id, 0 AS depth
+                 FROM blocks WHERE workspace_id=$1 AND id=$2 AND trashed_at IS NULL
+                 UNION ALL
+                 SELECT p.id, p.type, p.parent_id, a.depth+1
+                 FROM ancestors a JOIN blocks p ON p.id=a.parent_id
+                 WHERE p.workspace_id=$1 AND p.trashed_at IS NULL
+             )
+             SELECT id FROM ancestors WHERE type='page' ORDER BY depth LIMIT 1",
+        )
+        .bind(workspace_id)
+        .bind(block_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(page_not_found)?
+        .0;
+        self.get_page(workspace_id, page_id).await
+    }
+
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
         // Só as raízes das subárvores no lixo: descendentes voltam junto no restore.
         let rows = sqlx::query_as::<_, TrashRow>(
@@ -533,8 +752,8 @@ impl PageRepository for PostgresPageRepository {
             .ok_or(RepositoryError::NotFound)?;
 
         // Idempotência: replay do mesmo op_id devolve o seq original sem reaplicar.
-        if let Some((seq,)) = sqlx::query_as::<_, (i64,)>(
-            "SELECT seq FROM operations WHERE workspace_id = $1 AND op_id = $2",
+        if let Some((seq, stored)) = sqlx::query_as::<_, (i64, Value)>(
+            "SELECT seq, operation FROM operations WHERE workspace_id = $1 AND op_id = $2",
         )
         .bind(workspace_id)
         .bind(op_id)
@@ -542,6 +761,11 @@ impl PageRepository for PostgresPageRepository {
         .await
         .map_err(map_sqlx_error)?
         {
+            if stored != serde_json::to_value(operation).map_err(|_| RepositoryError::Unexpected)? {
+                return Err(RepositoryError::Domain(DomainError::Validation(
+                    "Operation replay conflicts with persisted operation",
+                )));
+            }
             tx.rollback().await.map_err(map_sqlx_error)?;
             return Ok(OperationAck { op_id, seq });
         }
@@ -575,6 +799,7 @@ impl PageRepository for PostgresPageRepository {
                 update_block_row(&mut tx, block).await?;
             }
         }
+        sync_operation_embeddings(&mut tx, &tree, operation, &touched, now).await?;
 
         // Publicação nunca sobrevive ao envio da página (ou de um ancestral) ao lixo.
         // O restore é deliberadamente assimétrico: não republica conteúdo.
@@ -647,6 +872,169 @@ impl PageRepository for PostgresPageRepository {
         Ok(OperationAck { op_id, seq })
     }
 
+    async fn apply_operation_batch(
+        &self,
+        workspace_id: Uuid,
+        actor_id: Uuid,
+        operations: &[Operation],
+        group: Option<&OperationGroup>,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<crate::application::ports::page::AppliedOperation>, RepositoryError> {
+        if operations.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        sqlx::query("SELECT id FROM workspaces WHERE id=$1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?
+            .ok_or(RepositoryError::NotFound)?;
+
+        if let Some(group) = group {
+            sqlx::query("INSERT INTO operation_groups(id,workspace_id,actor_id,source,provenance,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,id) DO NOTHING")
+                .bind(group.id).bind(workspace_id).bind(actor_id).bind(&group.source).bind(&group.provenance).bind(now)
+                .execute(&mut *tx).await.map_err(map_sqlx_error)?;
+            let stored = sqlx::query_as::<_, (Uuid, String, Value)>(
+                "SELECT actor_id, source, provenance FROM operation_groups WHERE workspace_id=$1 AND id=$2",
+            )
+            .bind(workspace_id)
+            .bind(group.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+            if stored != (actor_id, group.source.clone(), group.provenance.clone()) {
+                return Err(RepositoryError::Domain(DomainError::Validation(
+                    "Operation group replay conflicts with persisted group",
+                )));
+            }
+        }
+
+        let query = format!("SELECT {BLOCK_COLUMNS} FROM blocks WHERE workspace_id=$1");
+        let rows = sqlx::query_as::<_, BlockRow>(&query)
+            .bind(workspace_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        let mut tree = BlockTree::from_blocks(
+            rows.into_iter()
+                .map(Block::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        let mut applied = Vec::with_capacity(operations.len());
+        let mut next_ordinal = if let Some(group) = group {
+            sqlx::query_as::<_, (i32,)>(
+                "SELECT COALESCE(MAX(group_ordinal), -1) + 1 FROM operations WHERE workspace_id=$1 AND group_id=$2",
+            )
+            .bind(workspace_id)
+            .bind(group.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?
+            .0
+        } else {
+            0
+        };
+
+        for operation in operations {
+            let op_id = operation.op_id();
+            if let Some(row) = sqlx::query_as::<_, OperationRow>(
+                "SELECT o.seq,o.op_id,o.actor_id,o.operation,o.group_id,g.actor_id AS group_actor_id,g.source AS group_source,g.provenance AS group_provenance,o.group_ordinal
+                 FROM operations o LEFT JOIN operation_groups g ON g.workspace_id=o.workspace_id AND g.id=o.group_id
+                 WHERE o.workspace_id=$1 AND o.op_id=$2",
+            )
+            .bind(workspace_id)
+            .bind(op_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?
+            {
+                let requested = serde_json::to_value(operation)
+                    .map_err(|_| RepositoryError::Unexpected)?;
+                if row.operation != requested || row.group_id != group.map(|value| value.id) {
+                    return Err(RepositoryError::Domain(DomainError::Validation(
+                        "Operation replay conflicts with persisted operation",
+                    )));
+                }
+                let canonical: Operation = serde_json::from_value(row.operation)
+                    .map_err(|_| RepositoryError::Unexpected)?;
+                applied.push(crate::application::ports::page::AppliedOperation {
+                    envelope: LoggedOperation {
+                        seq: row.seq,
+                        op_id: row.op_id,
+                        actor_id: row.actor_id,
+                        operation: canonical,
+                        group: row.group_id.map(|id| OperationGroupMetadata {
+                            group_id: id,
+                            group_ordinal: row.group_ordinal.expect("group ordinal constrained"),
+                            source: row.group_source.expect("group source joined"),
+                            initiated_by: row.group_actor_id.expect("group actor joined"),
+                            provenance: row.group_provenance.expect("group provenance joined"),
+                        }),
+                    },
+                    inserted: false,
+                });
+                continue;
+            }
+            let touched = apply_operation(&mut tree, operation, workspace_id, now)?;
+            let inserted = match operation {
+                Operation::InsertBlock { block, .. } => Some(block.id),
+                _ => None,
+            };
+            for id in &touched {
+                let block = tree.blocks.get(id).expect("touched block exists");
+                if Some(*id) == inserted {
+                    insert_block_row(&mut tx, block, actor_id).await?;
+                } else {
+                    update_block_row(&mut tx, block).await?;
+                }
+            }
+            sync_operation_embeddings(&mut tx, &tree, operation, &touched, now).await?;
+            if let Operation::DeleteBlock { block_id, .. } = operation {
+                sqlx::query("WITH RECURSIVE subtree AS (SELECT id,type FROM blocks WHERE id=$1 AND workspace_id=$2 UNION ALL SELECT b.id,b.type FROM subtree s JOIN blocks b ON b.parent_id=s.id WHERE b.workspace_id=$2) UPDATE public_page_links l SET revoked_at=$3 FROM subtree s WHERE l.page_id=s.id AND s.type='page' AND l.revoked_at IS NULL")
+                    .bind(block_id).bind(workspace_id).bind(now).execute(&mut *tx).await.map_err(map_sqlx_error)?;
+            }
+            let mut page_ids = std::collections::HashSet::new();
+            for id in &touched {
+                if let Some(page_id) = resolve_containing_page(&tree, *id) {
+                    page_ids.insert(page_id);
+                }
+            }
+            for page_id in page_ids {
+                sqlx::query("INSERT INTO page_recent_editors(page_id,user_id,last_edited_at) VALUES($1,$2,$3) ON CONFLICT(page_id,user_id) DO UPDATE SET last_edited_at=EXCLUDED.last_edited_at")
+                    .bind(page_id).bind(actor_id).bind(now).execute(&mut *tx).await.map_err(map_sqlx_error)?;
+            }
+            let seq=sqlx::query_as::<_,(i64,)>("UPDATE workspaces SET operation_seq=operation_seq+1 WHERE id=$1 RETURNING operation_seq")
+                .bind(workspace_id).fetch_one(&mut *tx).await.map_err(map_sqlx_error)?.0;
+            sqlx::query("INSERT INTO operations(workspace_id,seq,op_id,actor_id,operation,group_id,group_ordinal) VALUES($1,$2,$3,$4,$5,$6,$7)")
+                .bind(workspace_id).bind(seq).bind(op_id).bind(actor_id)
+                .bind(serde_json::to_value(operation).map_err(|_|RepositoryError::Unexpected)?)
+                .bind(group.map(|g|g.id)).bind(group.map(|_|next_ordinal)).execute(&mut *tx).await.map_err(map_sqlx_error)?;
+            let metadata = group.map(|value| OperationGroupMetadata {
+                group_id: value.id,
+                group_ordinal: next_ordinal,
+                source: value.source.clone(),
+                initiated_by: actor_id,
+                provenance: value.provenance.clone(),
+            });
+            if group.is_some() {
+                next_ordinal += 1;
+            }
+            applied.push(crate::application::ports::page::AppliedOperation {
+                envelope: LoggedOperation {
+                    seq,
+                    op_id,
+                    actor_id,
+                    operation: operation.clone(),
+                    group: metadata,
+                },
+                inserted: true,
+            });
+        }
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(applied)
+    }
+
     async fn list_operations_after(
         &self,
         workspace_id: Uuid,
@@ -669,9 +1057,12 @@ impl PageRepository for PostgresPageRepository {
             .unwrap_or(workspace_latest_seq);
 
         let rows = sqlx::query_as::<_, OperationRow>(
-            "SELECT seq, op_id, actor_id, operation
-             FROM operations
-             WHERE workspace_id = $1 AND seq > $2 AND seq <= $3
+            "SELECT o.seq, o.op_id, o.actor_id, o.operation, o.group_id,
+                    g.actor_id AS group_actor_id,
+                    g.source AS group_source, g.provenance AS group_provenance, o.group_ordinal
+             FROM operations o LEFT JOIN operation_groups g
+               ON g.workspace_id=o.workspace_id AND g.id=o.group_id
+             WHERE o.workspace_id = $1 AND o.seq > $2 AND o.seq <= $3
              ORDER BY seq ASC
              LIMIT $4",
         )
@@ -693,6 +1084,13 @@ impl PageRepository for PostgresPageRepository {
                     op_id: row.op_id,
                     actor_id: row.actor_id,
                     operation,
+                    group: row.group_id.map(|id| OperationGroupMetadata {
+                        group_id: id,
+                        group_ordinal: row.group_ordinal.unwrap_or_default(),
+                        source: row.group_source.unwrap_or_default(),
+                        initiated_by: row.group_actor_id.expect("group actor joined"),
+                        provenance: row.group_provenance.unwrap_or(Value::Null),
+                    }),
                 })
             })
             .collect::<Result<Vec<_>, RepositoryError>>()?;

@@ -2,25 +2,31 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use crate::adapters::ai::{NoopAiProvider, openrouter::OpenRouterAiProvider};
 use crate::adapters::email::noop::NoopEmailSender;
 use crate::adapters::email::resend::ResendEmailSender;
 use crate::adapters::postgres::{
-    PostgresAuthRepository, PostgresPageRepository, PostgresWorkspaceRepository,
+    PostgresAiRepository, PostgresAuthRepository, PostgresEmbeddingRepository,
+    PostgresPageRepository, PostgresWorkspaceRepository,
 };
 use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
+use crate::application::ai::AiUseCases;
 use crate::application::auth::{
     ChangePasswordUseCase, GetCurrentUserUseCase, LoginUseCase, LogoutUseCase,
     PresignAvatarUseCase, RequestPasswordResetUseCase, ResetPasswordUseCase, SignupUseCase,
     UpdateProfileUseCase,
 };
+use crate::application::embeddings::{DEFAULT_EMBEDDING_MODEL, SemanticSearchUseCase};
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
     ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase, PublicLinksUseCase,
     SearchPagesUseCase,
 };
+use crate::application::ports::ai::{AiProvider, AiRepository, SemanticSearch};
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
+use crate::application::ports::embedding::SemanticEmbeddingRepository;
 use crate::application::ports::page::PageRepository;
 use crate::application::ports::storage::ObjectStorage;
 use crate::application::ports::workspace::WorkspaceRepository;
@@ -64,6 +70,7 @@ pub struct AppState {
     pub search_pages: SearchPagesUseCase,
     pub public_links: PublicLinksUseCase,
     pub permanently_delete: PermanentlyDeleteUseCase,
+    pub ai: AiUseCases,
 }
 
 impl AppState {
@@ -90,6 +97,47 @@ impl AppState {
             Some(api_key) => Arc::new(ResendEmailSender::new(api_key, resend_from_email)),
             None => Arc::new(NoopEmailSender),
         };
+        let ai_repository: Arc<dyn AiRepository> =
+            Arc::new(PostgresAiRepository::new(pool.clone()));
+        let ai_provider: Arc<dyn AiProvider> = match std::env::var("OPENROUTER_API_KEY")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+        {
+            Some(key) => Arc::new(OpenRouterAiProvider::new(
+                key,
+                std::env::var("OPENROUTER_BASE_URL")
+                    .unwrap_or_else(|_| "https://openrouter.ai/api/v1".into()),
+            )),
+            None => Arc::new(NoopAiProvider),
+        };
+        let semantic_repository: Arc<dyn SemanticEmbeddingRepository> =
+            Arc::new(PostgresEmbeddingRepository::new(pool.clone()));
+        let embedding_model =
+            std::env::var("AI_EMBEDDING_MODEL").unwrap_or_else(|_| DEFAULT_EMBEDDING_MODEL.into());
+        let semantic: Arc<dyn SemanticSearch> = Arc::new(
+            SemanticSearchUseCase::new(ai_provider.clone(), semantic_repository, embedding_model)
+                .expect("AI_EMBEDDING_MODEL must match the fixed embedding schema"),
+        );
+        let chat_model = std::env::var("AI_CHAT_MODEL")
+            .unwrap_or_else(|_| crate::bootstrap::config::DEFAULT_AI_CHAT_MODEL.into());
+        let title_model = std::env::var("AI_TITLE_MODEL")
+            .unwrap_or_else(|_| crate::bootstrap::config::DEFAULT_AI_TITLE_MODEL.into());
+        let apply_operation = ApplyOperationUseCase::new(
+            page_repository.clone(),
+            workspace_repository.clone(),
+            clock.clone(),
+            hub.clone(),
+        );
+        let ai = AiUseCases::new(
+            ai_repository,
+            ai_provider,
+            semantic,
+            page_repository.clone(),
+            workspace_repository.clone(),
+            apply_operation.clone(),
+            chat_model,
+            title_model,
+        );
 
         Self {
             pool,
@@ -129,12 +177,7 @@ impl AppState {
                 workspace_repository.clone(),
             ),
             get_page: GetPageUseCase::new(page_repository.clone(), workspace_repository.clone()),
-            apply_operation: ApplyOperationUseCase::new(
-                page_repository.clone(),
-                workspace_repository.clone(),
-                clock.clone(),
-                hub,
-            ),
+            apply_operation,
             list_operations: ListOperationsUseCase::new(
                 page_repository.clone(),
                 workspace_repository.clone(),
@@ -156,6 +199,7 @@ impl AppState {
                 workspace_repository,
                 clock,
             ),
+            ai,
         }
     }
 }

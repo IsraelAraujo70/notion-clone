@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "lastUpdated": "2026-07-14",
+  "challengeStatus": "in_progress",
+  "sourceOfTruth": {
+    "requirements": "challenge.md",
+    "architecture": "README.md",
+    "operationProtocol": "contracts/README.md"
+  },
+  "summary": {
+    "completed": 5,
+    "partial": 1,
+    "notStarted": 0,
+    "nextMilestone": "M6"
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Local block editor",
+      "status": "completed",
+      "completedAt": "2026-07-08",
+      "evidence": [
+        "frontend/components/editor/",
+        "frontend/lib/engine/"
+      ],
+      "remaining": []
+    },
+    {
+      "id": "M2",
+      "name": "Persistence and pages",
+      "status": "completed",
+      "completedAt": "2026-07-08",
+      "evidence": [
+        "backend/migrations/0005_blocks_and_operations.sql",
+        "backend/src/domain/block.rs",
+        "docs/api/pages.md"
+      ],
+      "remaining": []
+    },
+    {
+      "id": "M3",
+      "name": "Sync and real-time",
+      "status": "completed",
+      "completedAt": "2026-07-14",
+      "implemented": [
+        "WebSocket por workspace",
+        "Broadcast de operacoes persistidas",
+        "Cursor monotonicamente crescente por workspace",
+        "Catch-up paginado ate um cursor estavel",
+        "LWW por propriedade",
+        "Heartbeat e presence"
+      ],
+      "evidence": [
+        "backend/src/application/realtime/",
+        "backend/src/adapters/http/ws_routes.rs",
+        "frontend/lib/sync/",
+        "docs/api/sync.md",
+        "frontend/cypress/e2e/m3-sync.cy.ts (2/2: dois EditorPage reais e catch-up apos desconexao)"
+      ],
+      "remaining": []
+    },
+    {
+      "id": "M4",
+      "name": "Membership, permissions and search",
+      "status": "completed",
+      "completedAt": "2026-07-10",
+      "evidence": [
+        "backend/src/application/workspaces/permissions.rs",
+        "docs/api/m4.md",
+        "docs/evals/m4-smoke.mjs",
+        "frontend/cypress/e2e/m4.cy.ts"
+      ],
+      "remaining": []
+    },
+    {
+      "id": "M5",
+      "name": "AI",
+      "status": "completed",
+      "completedAt": "2026-07-14",
+      "implemented": [
+        "Contrato OpenRouter para chat streaming e embeddings",
+        "Chat padrao openai/gpt-5.6-luna e embeddings openai/text-embedding-3-large/3072 halfvec",
+        "Conversas, mensagens, runs e eventos de uso privados",
+        "SSE e quatro acoes com ferramentas e escopo imposto",
+        "Operation groups com proveniencia, last_seq e coordenacao de undo",
+        "Outbox de embeddings com hash, lease, retry e HNSW",
+        "Recuperacao semantica filtrada por permissao no SQL"
+      ],
+      "evidence": [
+        "backend/migrations/0012_ai_and_operation_groups.sql",
+        "backend/migrations/0013_block_embeddings.sql",
+        "backend/migrations/0014_block_embeddings_cosine_index.sql",
+        "docs/api/ai.md",
+        "docs/database.md",
+        "90 testes Rust de lib + 2 de worker; cargo fmt e cargo check passaram",
+        "214 testes frontend, lint sem warnings, typecheck e build de producao passaram",
+        "suite Cypress fechou 21/21 apos repeticao direcionada do m5-ai; editor.cy.ts passou 11/11 com debounce e marquee",
+        "drag multiplo manual persistiu duas move_block sem deletes",
+        "Migracoes 0012-0014 aplicadas em PostgreSQL 17 com pgvector 0.8.4 e HNSW",
+        "make eval-m5 passou",
+        "docs/evals/m5-live.mjs passou 4/4, incluindo pagina atual -> X -> nota -> resposta 43, com openai/gpt-5.6-luna e openai/text-embedding-3-large; 18.075 tokens de prompt e 1.145 de conclusao",
+        "frontend/cypress/e2e/m5-ai.cy.ts passou 1/1 com dois EditorPage reais; streaming ordenado, colaboracao WebSocket, undo agrupado, deletes inversos e convergencia sem reload",
+        "frontend/cypress/e2e/m3-sync.cy.ts passou 2/2; suite Cypress fechou 19/19 apos corrigir o eval de code block"
+      ],
+      "remaining": []
+    },
+    {
+      "id": "M6",
+      "name": "Hardening and deploy",
+      "status": "partial",
+      "implemented": [
+        "Deploy Railway de API, web, worker e PostgreSQL",
+        "Health check com PostgreSQL e pgvector",
+        "Worker de limpeza permanente de objetos com retry",
+        "Heartbeat WebSocket",
+        "Redacao de tokens nos logs HTTP"
+      ],
+      "evidence": [
+        "backend/railway.json",
+        "frontend/railway.json",
+        "backend/src/bootstrap/health.rs",
+        "backend/src/bin/worker.rs",
+        "docs/evals/request-log-redaction-smoke.mjs"
+      ],
+      "remaining": [
+        "Adicionar metricas e observabilidade operacional",
+        "Executar load sanity tests de operacoes e page subtree",
+        "Documentar failure modes e recuperacao",
+        "Criar diagrama da arquitetura atual e da evolucao",
+        "Adicionar CI para gates, E2E e evals deterministas",
+        "Executar smoke final de Railway com duas sessoes e uma acao de IA",
+        "Alinhar README.md com as capacidades realmente entregues"
+      ]
+    }
+  ],
+  "priorityQueue": [
+    {
+      "priority": 1,
+      "milestone": "M6",
+      "task": "Executar smoke final de Railway com duas sessoes e uma acao de IA"
+    },
+    {
+      "priority": 2,
+      "milestone": "M6",
+      "task": "Concluir observabilidade, carga, CI, diagramas e documentacao de falhas"
+    }
+  ]
+}

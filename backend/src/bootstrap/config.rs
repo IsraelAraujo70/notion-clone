@@ -6,6 +6,9 @@ use crate::adapters::storage::S3Config;
 
 pub const DEFAULT_PUBLIC_WEB_URL: &str = "http://localhost:3000";
 pub const DEFAULT_RESEND_FROM_EMAIL: &str = "MicroSaaS Starter <onboarding@resend.dev>";
+pub const DEFAULT_AI_CHAT_MODEL: &str = "openai/gpt-5.6-luna";
+pub const DEFAULT_AI_TITLE_MODEL: &str = "deepseek/deepseek-v4-flash";
+pub const DEFAULT_AI_EMBEDDING_MODEL: &str = "openai/text-embedding-3-large";
 
 #[derive(Debug, Clone)]
 pub struct Config {

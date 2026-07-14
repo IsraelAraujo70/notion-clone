@@ -6,6 +6,7 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::application::ports::page::OperationGroupMetadata;
 use crate::domain::block::Operation;
 
 const CHANNEL_CAPACITY: usize = 1024;
@@ -18,6 +19,8 @@ pub struct AppliedOpEvent {
     pub op_id: Uuid,
     pub actor_id: Uuid,
     pub operation: Operation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<OperationGroupMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +175,7 @@ mod tests {
                 properties: Some(Map::new()),
                 prop_versions: None,
             },
+            group: None,
         };
         hub.publish_op(event);
 

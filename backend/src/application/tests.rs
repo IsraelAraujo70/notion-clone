@@ -1465,6 +1465,24 @@ async fn owner_and_editor_write_but_viewer_cannot() {
         AppError::Forbidden
     );
     assert_eq!(f.pages.applied.lock().unwrap().len(), 2);
+
+    assert_eq!(
+        apply
+            .execute_batch(
+                f.viewer_id,
+                f.workspace_id,
+                vec![delete_op(Uuid::new_v4()), delete_op(Uuid::new_v4())],
+                Some(crate::application::ports::page::OperationGroup {
+                    id: Uuid::new_v4(),
+                    source: "ai".to_string(),
+                    provenance: serde_json::json!({"runId": Uuid::new_v4()}),
+                }),
+            )
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert_eq!(f.pages.applied.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

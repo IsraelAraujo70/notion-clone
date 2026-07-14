@@ -67,6 +67,11 @@ impl IntoResponse for HttpError {
                 "storage_not_configured",
                 "Object storage is not configured",
             ),
+            AppError::AiUnavailable => (
+                StatusCode::BAD_GATEWAY,
+                "ai_unavailable",
+                "AI provider could not satisfy the request",
+            ),
             AppError::Repository | AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
