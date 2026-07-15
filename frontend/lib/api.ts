@@ -147,6 +147,12 @@ export type OperationAck = {
   seq: number
 }
 
+export type TransferSubtreeResponse = {
+  transfer_id: string
+  source_seq: number
+  destination_seq: number
+}
+
 export type LoggedOperation = {
   seq: number
   op_id: string
@@ -357,6 +363,24 @@ export const api = {
     request<PageResponse>(`/workspaces/${workspaceId}/pages/${pageId}`, {
       token,
     }),
+  transferPage: (
+    token: string,
+    workspaceId: string,
+    pageId: string,
+    destinationWorkspaceId: string,
+    transferId: string
+  ) =>
+    request<TransferSubtreeResponse>(
+      `/workspaces/${workspaceId}/pages/${pageId}/transfer`,
+      {
+        method: "POST",
+        token,
+        body: {
+          destination_workspace_id: destinationWorkspaceId,
+          transfer_id: transferId,
+        },
+      }
+    ),
   applyOperation: (token: string, workspaceId: string, operation: Operation) =>
     request<OperationAck>(`/workspaces/${workspaceId}/operations`, {
       method: "POST",

@@ -139,6 +139,20 @@ pub enum Operation {
         op_id: Uuid,
         block_id: Uuid,
     },
+    TransferSubtreeOut {
+        op_id: Uuid,
+        transfer_id: Uuid,
+        block_id: Uuid,
+        destination_workspace_id: Uuid,
+    },
+    TransferSubtreeIn {
+        op_id: Uuid,
+        transfer_id: Uuid,
+        blocks: Vec<Block>,
+        parent_id: Uuid,
+        index: i64,
+        source_workspace_id: Uuid,
+    },
 }
 
 impl Operation {
@@ -148,7 +162,9 @@ impl Operation {
             | Self::UpdateBlock { op_id, .. }
             | Self::MoveBlock { op_id, .. }
             | Self::DeleteBlock { op_id, .. }
-            | Self::RestoreBlock { op_id, .. } => *op_id,
+            | Self::RestoreBlock { op_id, .. }
+            | Self::TransferSubtreeOut { op_id, .. }
+            | Self::TransferSubtreeIn { op_id, .. } => *op_id,
         }
     }
 }
@@ -387,6 +403,84 @@ pub fn apply_operation(
             block_mut.trashed_index = None;
 
             Ok(vec![*block_id, parent_id])
+        }
+
+        Operation::TransferSubtreeOut { block_id, .. } => {
+            let block = tree.get(*block_id)?;
+            let Some(parent_id) = block.parent_id else {
+                return Err(DomainError::Validation("Cannot transfer the root block"));
+            };
+            let parent = tree.get(parent_id)?;
+            if !parent.content.contains(block_id) {
+                return Err(DomainError::Validation("content/parentId mismatch"));
+            }
+            let removed: Vec<_> = tree
+                .blocks
+                .keys()
+                .copied()
+                .filter(|id| *id == *block_id || tree.is_descendant(*block_id, *id))
+                .collect();
+            for id in removed {
+                tree.blocks.remove(&id);
+            }
+            tree.blocks
+                .get_mut(&parent_id)
+                .expect("parent exists")
+                .content
+                .retain(|id| id != block_id);
+            Ok(vec![parent_id])
+        }
+
+        Operation::TransferSubtreeIn {
+            blocks,
+            parent_id,
+            index,
+            ..
+        } => {
+            if blocks.is_empty() {
+                return Err(DomainError::Validation("Transfer requires a subtree"));
+            }
+            let parent = tree.get(*parent_id)?;
+            if parent.trashed_at.is_some() {
+                return Err(DomainError::Validation(
+                    "Cannot transfer into trashed block",
+                ));
+            }
+            let incoming: HashMap<_, _> = blocks.iter().map(|block| (block.id, block)).collect();
+            let roots: Vec<_> = blocks
+                .iter()
+                .filter(|block| block.parent_id.is_none_or(|id| !incoming.contains_key(&id)))
+                .collect();
+            if roots.len() != 1 {
+                return Err(DomainError::Validation(
+                    "Transfer requires exactly one subtree root",
+                ));
+            }
+            for block in blocks {
+                if tree.blocks.contains_key(&block.id) {
+                    return Err(DomainError::Validation("Duplicate block id"));
+                }
+                for child_id in &block.content {
+                    if incoming.get(child_id).and_then(|child| child.parent_id) != Some(block.id) {
+                        return Err(DomainError::Validation("Invalid transferred subtree"));
+                    }
+                }
+            }
+            let root_id = roots[0].id;
+            for block in blocks {
+                let mut inserted = block.clone();
+                inserted.workspace_id = workspace_id;
+                if inserted.id == root_id {
+                    inserted.parent_id = Some(*parent_id);
+                }
+                tree.blocks.insert(inserted.id, inserted);
+            }
+            let parent = tree.blocks.get_mut(parent_id).expect("parent exists");
+            let at = clamp_index(*index, parent.content.len());
+            parent.content.insert(at, root_id);
+            let mut touched: Vec<_> = blocks.iter().map(|block| block.id).collect();
+            touched.push(*parent_id);
+            Ok(touched)
         }
     }
 }
@@ -866,6 +960,62 @@ mod tests {
                 }
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn transfer_out_and_in_preserve_the_complete_subtree() {
+        let mut source = fixture();
+        let child = Uuid::new_v4();
+        apply!(
+            source,
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(child, source.workspace_id, BlockType::Paragraph),
+                parent_id: source.first,
+                index: 0,
+            },
+        )
+        .unwrap();
+        let transferred = vec![
+            source.tree.blocks[&source.first].clone(),
+            source.tree.blocks[&child].clone(),
+        ];
+        let transfer_id = Uuid::new_v4();
+        apply!(
+            source,
+            Operation::TransferSubtreeOut {
+                op_id: transfer_id,
+                transfer_id,
+                block_id: source.first,
+                destination_workspace_id: Uuid::new_v4(),
+            },
+        )
+        .unwrap();
+        assert!(!source.tree.blocks.contains_key(&source.first));
+        assert!(!source.tree.blocks.contains_key(&child));
+
+        let mut destination = fixture();
+        apply!(
+            destination,
+            Operation::TransferSubtreeIn {
+                op_id: Uuid::new_v4(),
+                transfer_id,
+                blocks: transferred,
+                parent_id: destination.root,
+                index: 0,
+                source_workspace_id: source.workspace_id,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            destination.tree.blocks[&destination.root].content[0],
+            source.first
+        );
+        assert_eq!(destination.tree.blocks[&source.first].content, vec![child]);
+        assert_eq!(
+            destination.tree.blocks[&source.first].workspace_id,
+            destination.workspace_id
         );
     }
 

@@ -1,4 +1,4 @@
-// Contrato compartilhado frontend/backend: modelo de bloco e as cinco operações.
+// Contrato compartilhado frontend/backend: modelo de bloco e operações tipadas.
 // O backend Rust espelha estes tipos; este arquivo é a fonte da verdade.
 
 export const BLOCK_TYPES = [
@@ -88,8 +88,32 @@ export interface RestoreBlockOp extends OpBase {
   blockId: string
 }
 
+/** Face da transferência aplicada no workspace de origem. */
+export interface TransferSubtreeOutOp extends OpBase {
+  type: "transfer_subtree_out"
+  transferId: string
+  blockId: string
+  destinationWorkspaceId: string
+}
+
+/** Face da transferência aplicada no workspace de destino. */
+export interface TransferSubtreeInOp extends OpBase {
+  type: "transfer_subtree_in"
+  transferId: string
+  blocks: Block[]
+  parentId: string
+  index: number
+  sourceWorkspaceId: string
+}
+
 export type Operation =
-  InsertBlockOp | UpdateBlockOp | MoveBlockOp | DeleteBlockOp | RestoreBlockOp
+  | InsertBlockOp
+  | UpdateBlockOp
+  | MoveBlockOp
+  | DeleteBlockOp
+  | RestoreBlockOp
+  | TransferSubtreeOutOp
+  | TransferSubtreeInOp
 
 export type OperationGroupMetadata = {
   group_id: string

@@ -12,9 +12,10 @@ use crate::application::embeddings::{
 };
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    Breadcrumb, LoggedOperation, OperationAck, OperationGroup, OperationGroupMetadata,
-    OperationsPage, PageEditor, PageList, PageRepository, PageSummary, PageTree, PageView,
-    PermanentDeleteResult, PublicLink, SearchResult, TrashEntry,
+    AppliedOperation, Breadcrumb, LoggedOperation, OperationAck, OperationGroup,
+    OperationGroupMetadata, OperationsPage, PageEditor, PageList, PageRepository, PageSummary,
+    PageTree, PageView, PermanentDeleteResult, PublicLink, SearchResult, TransferSubtreeResult,
+    TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
@@ -870,6 +871,367 @@ impl PageRepository for PostgresPageRepository {
 
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(OperationAck { op_id, seq })
+    }
+
+    async fn transfer_subtree(
+        &self,
+        source_workspace_id: Uuid,
+        destination_workspace_id: Uuid,
+        block_id: Uuid,
+        transfer_id: Uuid,
+        actor_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<TransferSubtreeResult, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        let (first, second) = if source_workspace_id < destination_workspace_id {
+            (source_workspace_id, destination_workspace_id)
+        } else {
+            (destination_workspace_id, source_workspace_id)
+        };
+        for workspace_id in [first, second] {
+            sqlx::query("SELECT id FROM workspaces WHERE id=$1 FOR UPDATE")
+                .bind(workspace_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx_error)?
+                .ok_or(RepositoryError::NotFound)?;
+        }
+        let owned_workspaces = sqlx::query_as::<_, (i64,)>(
+            "SELECT COUNT(*) FROM workspace_members
+             WHERE user_id=$1 AND workspace_id=ANY($2) AND role='owner'",
+        )
+        .bind(actor_id)
+        .bind(&[source_workspace_id, destination_workspace_id][..])
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+        if owned_workspaces != 2 {
+            return Err(RepositoryError::Domain(DomainError::Forbidden));
+        }
+
+        if let Some((source_seq, source_op_id, source_actor, source_value)) =
+            sqlx::query_as::<_, (i64, Uuid, Uuid, Value)>(
+                "SELECT seq,op_id,actor_id,operation FROM operations
+                 WHERE workspace_id=$1 AND op_id=$2",
+            )
+            .bind(source_workspace_id)
+            .bind(transfer_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?
+        {
+            let source_operation: Operation =
+                serde_json::from_value(source_value).map_err(|_| RepositoryError::Unexpected)?;
+            if !matches!(
+                &source_operation,
+                Operation::TransferSubtreeOut {
+                    transfer_id: stored_transfer_id,
+                    block_id: stored_block_id,
+                    destination_workspace_id: stored_destination,
+                    ..
+                } if *stored_transfer_id == transfer_id
+                    && *stored_block_id == block_id
+                    && *stored_destination == destination_workspace_id
+            ) {
+                return Err(RepositoryError::Domain(DomainError::Validation(
+                    "Transfer replay conflicts with persisted operation",
+                )));
+            }
+            let (destination_seq, destination_op_id, destination_actor, destination_value) =
+                sqlx::query_as::<_, (i64, Uuid, Uuid, Value)>(
+                    "SELECT seq,op_id,actor_id,operation FROM operations
+                     WHERE workspace_id=$1
+                       AND operation->>'type'='transfer_subtree_in'
+                       AND operation->>'transferId'=$2
+                       AND operation->>'sourceWorkspaceId'=$3",
+                )
+                .bind(destination_workspace_id)
+                .bind(transfer_id.to_string())
+                .bind(source_workspace_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx_error)?
+                .ok_or(RepositoryError::Unexpected)?;
+            let destination_operation: Operation = serde_json::from_value(destination_value)
+                .map_err(|_| RepositoryError::Unexpected)?;
+            if !matches!(
+                &destination_operation,
+                Operation::TransferSubtreeIn {
+                    transfer_id: stored_transfer_id,
+                    source_workspace_id: stored_source,
+                    ..
+                } if *stored_transfer_id == transfer_id && *stored_source == source_workspace_id
+            ) {
+                return Err(RepositoryError::Domain(DomainError::Validation(
+                    "Transfer replay conflicts with destination operation",
+                )));
+            }
+            tx.rollback().await.map_err(map_sqlx_error)?;
+            return Ok(TransferSubtreeResult {
+                source: AppliedOperation {
+                    envelope: LoggedOperation {
+                        seq: source_seq,
+                        op_id: source_op_id,
+                        actor_id: source_actor,
+                        operation: source_operation,
+                        group: None,
+                    },
+                    inserted: false,
+                },
+                destination: AppliedOperation {
+                    envelope: LoggedOperation {
+                        seq: destination_seq,
+                        op_id: destination_op_id,
+                        actor_id: destination_actor,
+                        operation: destination_operation,
+                        group: None,
+                    },
+                    inserted: false,
+                },
+            });
+        }
+
+        let source_root = sqlx::query_as::<_, (Uuid,)>(
+            "SELECT root_page_id FROM workspace_page_roots WHERE workspace_id=$1",
+        )
+        .bind(source_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+        if block_id == source_root {
+            return Err(RepositoryError::Domain(DomainError::Validation(
+                "Cannot transfer the workspace root",
+            )));
+        }
+        let destination_root = sqlx::query_as::<_, (Uuid,)>(
+            "SELECT root_page_id FROM workspace_page_roots WHERE workspace_id=$1",
+        )
+        .bind(destination_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+
+        let query = format!(
+            "WITH RECURSIVE subtree AS (
+                 SELECT {BLOCK_COLUMNS} FROM blocks
+                 WHERE id=$1 AND workspace_id=$2 AND type='page' AND trashed_at IS NULL
+                 UNION ALL
+                 SELECT b.id,b.workspace_id,b.type,b.properties,b.content,b.parent_id,
+                        b.trashed_at,b.trashed_index,b.prop_versions
+                 FROM subtree s JOIN blocks b ON b.parent_id=s.id
+                 WHERE b.workspace_id=$2
+             ) SELECT * FROM subtree"
+        );
+        let rows = sqlx::query_as::<_, BlockRow>(&query)
+            .bind(block_id)
+            .bind(source_workspace_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        if rows.is_empty() {
+            return Err(page_not_found());
+        }
+        let mut blocks = rows
+            .into_iter()
+            .map(Block::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let source_parent_id = blocks
+            .iter()
+            .find(|block| block.id == block_id)
+            .and_then(|block| block.parent_id)
+            .ok_or_else(page_not_found)?;
+        let block_ids: Vec<_> = blocks.iter().map(|block| block.id).collect();
+        let page_ids: Vec<_> = blocks
+            .iter()
+            .filter(|block| block.block_type == BlockType::Page)
+            .map(|block| block.id)
+            .collect();
+
+        let source_parent_updated = sqlx::query(
+            "UPDATE blocks SET content=array_remove(content,$1),updated_at=$3
+             WHERE id=$2 AND workspace_id=$4 AND $1=ANY(content)",
+        )
+        .bind(block_id)
+        .bind(source_parent_id)
+        .bind(now)
+        .bind(source_workspace_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .rows_affected();
+        if source_parent_updated != 1 {
+            return Err(RepositoryError::Domain(DomainError::Validation(
+                "content/parentId mismatch",
+            )));
+        }
+
+        sqlx::query("DELETE FROM block_embedding_jobs WHERE workspace_id=$1 AND block_id=ANY($2)")
+            .bind(source_workspace_id)
+            .bind(&block_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        sqlx::query("DELETE FROM block_embeddings WHERE workspace_id=$1 AND block_id=ANY($2)")
+            .bind(source_workspace_id)
+            .bind(&block_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        sqlx::query(
+            "UPDATE public_page_links
+             SET revoked_at=$2,revoked_by=$3,workspace_id=$4
+             WHERE page_id=ANY($1) AND revoked_at IS NULL",
+        )
+        .bind(&page_ids)
+        .bind(now)
+        .bind(actor_id)
+        .bind(destination_workspace_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+        sqlx::query("UPDATE public_page_links SET workspace_id=$2 WHERE page_id=ANY($1)")
+            .bind(&page_ids)
+            .bind(destination_workspace_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        sqlx::query("DELETE FROM page_recent_editors WHERE page_id=ANY($1)")
+            .bind(&page_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+
+        sqlx::query(
+            "UPDATE blocks SET workspace_id=$2,updated_at=$3 WHERE id=ANY($1) AND workspace_id=$4",
+        )
+        .bind(&block_ids)
+        .bind(destination_workspace_id)
+        .bind(now)
+        .bind(source_workspace_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+        sqlx::query("UPDATE blocks SET parent_id=$2 WHERE id=$1 AND workspace_id=$3")
+            .bind(block_id)
+            .bind(destination_root)
+            .bind(destination_workspace_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        let destination_index = sqlx::query_as::<_, (i64,)>(
+            "UPDATE blocks SET content=array_append(content,$1),updated_at=$3
+             WHERE id=$2 AND workspace_id=$4
+             RETURNING (cardinality(content)-1)::bigint",
+        )
+        .bind(block_id)
+        .bind(destination_root)
+        .bind(now)
+        .bind(destination_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+
+        for block in &mut blocks {
+            block.workspace_id = destination_workspace_id;
+            if block.id == block_id {
+                block.parent_id = Some(destination_root);
+            }
+        }
+        let destination_root_row = sqlx::query_as::<_, BlockRow>(&format!(
+            "SELECT {BLOCK_COLUMNS} FROM blocks WHERE id=$1 AND workspace_id=$2"
+        ))
+        .bind(destination_root)
+        .bind(destination_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+        let mut embedding_blocks = blocks.clone();
+        embedding_blocks.push(Block::try_from(destination_root_row)?);
+        let destination_tree = BlockTree::from_blocks(embedding_blocks);
+        for id in &block_ids {
+            sync_embedding_job(&mut tx, &destination_tree, *id, now).await?;
+        }
+
+        let source_operation = Operation::TransferSubtreeOut {
+            op_id: transfer_id,
+            transfer_id,
+            block_id,
+            destination_workspace_id,
+        };
+        let destination_operation = Operation::TransferSubtreeIn {
+            op_id: Uuid::new_v4(),
+            transfer_id,
+            blocks,
+            parent_id: destination_root,
+            index: destination_index,
+            source_workspace_id,
+        };
+        let source_seq = sqlx::query_as::<_, (i64,)>(
+            "UPDATE workspaces SET operation_seq=operation_seq+1 WHERE id=$1 RETURNING operation_seq",
+        )
+        .bind(source_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+        let destination_seq = sqlx::query_as::<_, (i64,)>(
+            "UPDATE workspaces SET operation_seq=operation_seq+1 WHERE id=$1 RETURNING operation_seq",
+        )
+        .bind(destination_workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .0;
+        for (workspace_id, seq, operation) in [
+            (source_workspace_id, source_seq, &source_operation),
+            (
+                destination_workspace_id,
+                destination_seq,
+                &destination_operation,
+            ),
+        ] {
+            sqlx::query(
+                "INSERT INTO operations(workspace_id,seq,op_id,actor_id,operation,applied_at)
+                 VALUES($1,$2,$3,$4,$5,$6)",
+            )
+            .bind(workspace_id)
+            .bind(seq)
+            .bind(operation.op_id())
+            .bind(actor_id)
+            .bind(serde_json::to_value(operation).map_err(|_| RepositoryError::Unexpected)?)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+        tx.commit().await.map_err(map_sqlx_error)?;
+
+        Ok(TransferSubtreeResult {
+            source: AppliedOperation {
+                envelope: LoggedOperation {
+                    seq: source_seq,
+                    op_id: source_operation.op_id(),
+                    actor_id,
+                    operation: source_operation,
+                    group: None,
+                },
+                inserted: true,
+            },
+            destination: AppliedOperation {
+                envelope: LoggedOperation {
+                    seq: destination_seq,
+                    op_id: destination_operation.op_id(),
+                    actor_id,
+                    operation: destination_operation,
+                    group: None,
+                },
+                inserted: true,
+            },
+        })
     }
 
     async fn apply_operation_batch(

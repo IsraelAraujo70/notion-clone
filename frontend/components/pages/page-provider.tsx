@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -38,6 +39,11 @@ type PageContextValue = {
   setPageIcon: (pageId: string, icon: string | null) => Promise<void>
   /** Manda a página (e a subárvore dela) para a lixeira. A raiz não pode ir. */
   deletePage: (pageId: string) => Promise<void>
+  /** Transfere a página e todos os descendentes para a raiz de outro workspace. */
+  movePageToWorkspace: (
+    pageId: string,
+    destinationWorkspaceId: string
+  ) => Promise<void>
   trash: TrashEntry[]
   refreshTrash: () => Promise<void>
   restore: (blockId: string) => Promise<void>
@@ -71,6 +77,7 @@ export function PageProvider({
   const [trash, setTrash] = useState<TrashEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [pageRevision, setPageRevision] = useState(0)
+  const pendingTransfers = useRef(new Map<string, string>())
 
   const canWrite = Boolean(
     token &&
@@ -209,6 +216,28 @@ export function PageProvider({
     [activeWorkspaceId, loadPages, token]
   )
 
+  const movePageToWorkspace = useCallback(
+    async (pageId: string, destinationWorkspaceId: string) => {
+      if (!token || !activeWorkspaceId) return
+      const key = `${activeWorkspaceId}:${pageId}:${destinationWorkspaceId}`
+      const transferId = pendingTransfers.current.get(key) ?? createId()
+      pendingTransfers.current.set(key, transferId)
+      await api.transferPage(
+        token,
+        activeWorkspaceId,
+        pageId,
+        destinationWorkspaceId,
+        transferId
+      )
+      pendingTransfers.current.delete(key)
+      // A transferência já confirmou commit; falha no refresh não deve induzir
+      // uma segunda tentativa com uma nova intenção de movimento.
+      await loadPages().catch(() => undefined)
+      setPageRevision((revision) => revision + 1)
+    },
+    [activeWorkspaceId, loadPages, token]
+  )
+
   const createTopLevelPage = useCallback(async () => {
     if (!containerPageId) throw new Error("No workspace container")
     return createChildPage(containerPageId)
@@ -261,6 +290,7 @@ export function PageProvider({
       renamePage,
       setPageIcon,
       deletePage,
+      movePageToWorkspace,
       trash,
       refreshTrash,
       restore,
@@ -273,6 +303,7 @@ export function PageProvider({
       createChildPage,
       createTopLevelPage,
       deletePage,
+      movePageToWorkspace,
       loadPages,
       loading,
       pageId,

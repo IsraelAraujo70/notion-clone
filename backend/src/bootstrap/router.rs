@@ -84,6 +84,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             get(page_routes::get_page),
         )
         .route(
+            "/workspaces/{workspace_id}/pages/{page_id}/transfer",
+            post(page_routes::transfer_subtree),
+        )
+        .route(
             "/workspaces/{workspace_id}/pages/{page_id}/public-link",
             get(page_routes::get_public_link)
                 .post(page_routes::create_public_link)

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   applyOperation: vi.fn(),
   listTrash: vi.fn(),
   permanentlyDelete: vi.fn(),
+  transferPage: vi.fn(),
   workspace: {
     activeWorkspace: { id: "ws-1", role: "owner" },
     activeWorkspaceId: "ws-1",
@@ -35,6 +36,7 @@ vi.mock("@/lib/api", () => ({
     applyOperation: (...args: unknown[]) => mocks.applyOperation(...args),
     listTrash: (...args: unknown[]) => mocks.listTrash(...args),
     permanentlyDelete: (...args: unknown[]) => mocks.permanentlyDelete(...args),
+    transferPage: (...args: unknown[]) => mocks.transferPage(...args),
   },
 }))
 
@@ -64,6 +66,7 @@ function Probe() {
     setPageIcon,
     deletePage,
     permanentDelete,
+    movePageToWorkspace,
   } = usePages()
   return (
     <div>
@@ -78,6 +81,9 @@ function Probe() {
       <button onClick={() => setPageIcon("page-child", null)}>sem-icone</button>
       <button onClick={() => deletePage("page-child")}>apagar</button>
       <button onClick={() => permanentDelete("page-child")}>purgar</button>
+      <button onClick={() => movePageToWorkspace("page-child", "ws-2")}>
+        mover
+      </button>
     </div>
   )
 }
@@ -98,6 +104,11 @@ describe("PageProvider", () => {
     mocks.permanentlyDelete.mockReset().mockResolvedValue({
       deleted_blocks: 2,
       media_cleanup_queued: 1,
+    })
+    mocks.transferPage.mockReset().mockResolvedValue({
+      transfer_id: "transfer",
+      source_seq: 2,
+      destination_seq: 1,
     })
     mocks.listPages.mockReset().mockResolvedValue(PAGES)
     mocks.workspace.activeWorkspace = { id: "ws-1", role: "owner" }
@@ -252,5 +263,24 @@ describe("PageProvider", () => {
     )
     expect(mocks.listPages).toHaveBeenCalled()
     expect(mocks.listTrash).toHaveBeenCalled()
+  })
+
+  it("transfers a page to another workspace and refreshes the source tree", async () => {
+    renderProvider("page-root")
+    await waitFor(() =>
+      expect(screen.getByTestId("root")).toHaveTextContent("container")
+    )
+    mocks.listPages.mockClear()
+
+    await userEvent.click(screen.getByText("mover"))
+
+    await waitFor(() => expect(mocks.transferPage).toHaveBeenCalledTimes(1))
+    expect(mocks.transferPage.mock.calls[0].slice(0, 4)).toEqual([
+      "secret-token",
+      "ws-1",
+      "page-child",
+      "ws-2",
+    ])
+    expect(mocks.listPages).toHaveBeenCalled()
   })
 })

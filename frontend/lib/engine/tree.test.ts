@@ -281,6 +281,52 @@ describe("delete_block / restore_block", () => {
   })
 })
 
+describe("transfer_subtree", () => {
+  it("removes a complete subtree from the source and inserts it at the destination root", () => {
+    let source = fixture()
+    source = applyOperation(source, {
+      type: "move_block",
+      opId: oid(),
+      blockId: "c",
+      newParentId: "b",
+      index: 0,
+    }).tree
+    const transferred = [getBlock(source, "b"), getBlock(source, "c")].map(
+      (block) => ({ ...block, workspaceId: "source" })
+    )
+
+    source = applyOperation(source, {
+      type: "transfer_subtree_out",
+      opId: oid(),
+      transferId: oid(),
+      blockId: "b",
+      destinationWorkspaceId: "destination",
+    }).tree
+    expect(source.blocks.has("b")).toBe(false)
+    expect(source.blocks.has("c")).toBe(false)
+    expect(texts(source)).toEqual(["a"])
+    checkInvariants(source)
+
+    const destination = applyOperation(
+      createPageTree("Destination", "dest-root"),
+      {
+        type: "transfer_subtree_in",
+        opId: oid(),
+        transferId: oid(),
+        blocks: transferred,
+        parentId: "dest-root",
+        index: 0,
+        sourceWorkspaceId: "source",
+      }
+    ).tree
+    expect(texts(destination, "dest-root")).toEqual(["b"])
+    expect(texts(destination, "b")).toEqual(["c"])
+    expect(getBlock(destination, "b").parentId).toBe("dest-root")
+    expect(getBlock(destination, "c").workspaceId).toBe("local")
+    checkInvariants(destination)
+  })
+})
+
 describe("fuzz: random ops keep invariants and undo returns to the start", () => {
   // PRNG seedado (mulberry32): o teste é determinístico.
   function rng(seed: number) {
@@ -371,9 +417,9 @@ describe("fuzz: random ops keep invariants and undo returns to the start", () =>
 describe("server-backed blocks", () => {
   it("newBlock takes the real workspace id, defaulting to the local one", () => {
     expect(newBlock("paragraph").workspaceId).toBe("local")
-    expect(
-      newBlock("paragraph", { text: "" }, "b1", "ws-1").workspaceId
-    ).toBe("ws-1")
+    expect(newBlock("paragraph", { text: "" }, "b1", "ws-1").workspaceId).toBe(
+      "ws-1"
+    )
   })
 
   it("treeFromBlocks rebuilds the tree the server sent", () => {
@@ -388,6 +434,8 @@ describe("server-backed blocks", () => {
 
     const tree = treeFromBlocks("root", [root, child])
     checkInvariants(tree)
-    expect(getChildren(tree, "root").map((block) => block.id)).toEqual(["child"])
+    expect(getChildren(tree, "root").map((block) => block.id)).toEqual([
+      "child",
+    ])
   })
 })

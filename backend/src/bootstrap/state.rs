@@ -20,7 +20,7 @@ use crate::application::embeddings::{DEFAULT_EMBEDDING_MODEL, SemanticSearchUseC
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
     ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase, PublicLinksUseCase,
-    SearchPagesUseCase,
+    SearchPagesUseCase, TransferSubtreeUseCase,
 };
 use crate::application::ports::ai::{AiProvider, AiRepository, SemanticSearch};
 use crate::application::ports::auth::AuthRepository;
@@ -70,6 +70,7 @@ pub struct AppState {
     pub search_pages: SearchPagesUseCase,
     pub public_links: PublicLinksUseCase,
     pub permanently_delete: PermanentlyDeleteUseCase,
+    pub transfer_subtree: TransferSubtreeUseCase,
     pub ai: AiUseCases,
 }
 
@@ -123,6 +124,12 @@ impl AppState {
         let title_model = std::env::var("AI_TITLE_MODEL")
             .unwrap_or_else(|_| crate::bootstrap::config::DEFAULT_AI_TITLE_MODEL.into());
         let apply_operation = ApplyOperationUseCase::new(
+            page_repository.clone(),
+            workspace_repository.clone(),
+            clock.clone(),
+            hub.clone(),
+        );
+        let transfer_subtree = TransferSubtreeUseCase::new(
             page_repository.clone(),
             workspace_repository.clone(),
             clock.clone(),
@@ -199,6 +206,7 @@ impl AppState {
                 workspace_repository,
                 clock,
             ),
+            transfer_subtree,
             ai,
         }
     }

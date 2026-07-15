@@ -86,6 +86,12 @@ pub struct OperationAck {
     pub seq: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct TransferSubtreeResult {
+    pub source: AppliedOperation,
+    pub destination: AppliedOperation,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PageEditor {
     pub user_id: Uuid,
@@ -250,6 +256,18 @@ pub trait PageRepository: Send + Sync {
         _block_id: Uuid,
         _now: DateTime<Utc>,
     ) -> Result<PermanentDeleteResult, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn transfer_subtree(
+        &self,
+        _source_workspace_id: Uuid,
+        _destination_workspace_id: Uuid,
+        _block_id: Uuid,
+        _transfer_id: Uuid,
+        _actor_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<TransferSubtreeResult, RepositoryError> {
         Err(RepositoryError::Unexpected)
     }
 }

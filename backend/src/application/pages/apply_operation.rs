@@ -57,6 +57,17 @@ impl ApplyOperationUseCase {
         if operations.is_empty() {
             return Ok(Vec::new());
         }
+        if operations.iter().any(|operation| {
+            matches!(
+                operation,
+                Operation::TransferSubtreeOut { .. } | Operation::TransferSubtreeIn { .. }
+            )
+        }) {
+            return Err(crate::domain::error::DomainError::Validation(
+                "Transfer operations must use the transfer endpoint",
+            )
+            .into());
+        }
         require_writer(&self.workspace_repository, workspace_id, user_id).await?;
         let applied = self
             .page_repository

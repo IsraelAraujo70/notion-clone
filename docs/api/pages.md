@@ -1,7 +1,8 @@
 # Pages API (M2)
 
 All routes require `Authorization: Bearer <session token>` and workspace
-membership. Reads need any role; writes need `owner` or `editor`.
+membership. Reads need any role; writes need `owner` or `editor`. Cross-workspace
+transfers require `owner` in both workspaces.
 
 Block and operation payloads use camelCase (they are the `contracts/` types
 verbatim). Envelopes reuse the snake_case shape of the rest of the API.
@@ -154,6 +155,33 @@ page, setting its icon, and moving it to the trash are just `update_block` /
 `properties` is a patch: `null` removes the key. `propVersions` drives
 property-level LWW (see [`sync.md`](./sync.md)): lower versions for a key are
 skipped; equal or higher apply; missing versions bump `stored + 1`.
+
+## `POST /workspaces/{workspace_id}/pages/{page_id}/transfer`
+
+Moves a live page and its complete subtree to the top level of another workspace.
+The caller must own both workspaces. `transfer_id` is the idempotency key.
+
+```json
+{
+  "destination_workspace_id": "c22e…",
+  "transfer_id": "68be…"
+}
+```
+
+```json
+{
+  "transfer_id": "68be…",
+  "source_seq": 19,
+  "destination_seq": 7
+}
+```
+
+The database move and both operation-log entries commit atomically. Existing
+public links in the transferred subtree are revoked, embeddings are regenerated
+under the destination workspace, and connected clients receive the corresponding
+`transfer_subtree_out` or `transfer_subtree_in` event. These two server-generated
+operations are rejected by the generic `POST /operations` route and do not enter
+the editor's local undo history.
 
 ## `GET /workspaces/{workspace_id}/trash`
 

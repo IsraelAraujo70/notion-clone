@@ -91,6 +91,8 @@ function rememberLocalOp(localOpIds: Set<string>, op: Operation) {
 
 function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
   if (op.type === "insert_block") return op.block.type === "page"
+  if (op.type === "transfer_subtree_out" || op.type === "transfer_subtree_in")
+    return true
   if (
     op.type === "delete_block" ||
     op.type === "restore_block" ||

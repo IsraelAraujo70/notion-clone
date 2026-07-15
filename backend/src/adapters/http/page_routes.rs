@@ -33,6 +33,12 @@ pub struct SearchQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TransferSubtreeRequest {
+    pub destination_workspace_id: Uuid,
+    pub transfer_id: Uuid,
+}
+
 pub async fn search(
     State(state): State<AppState>,
     auth: AuthenticatedUser,
@@ -133,6 +139,26 @@ pub async fn get_page(
             .and_then(|key| state.storage.public_url(key));
     }
     Ok(Json(page))
+}
+
+pub async fn transfer_subtree(
+    State(state): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((workspace_id, page_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<TransferSubtreeRequest>,
+) -> Result<Json<crate::application::pages::transfer_subtree::TransferSubtreeResponse>, HttpError> {
+    Ok(Json(
+        state
+            .transfer_subtree
+            .execute(
+                auth.user.id,
+                workspace_id,
+                request.destination_workspace_id,
+                page_id,
+                request.transfer_id,
+            )
+            .await?,
+    ))
 }
 
 pub async fn apply_operation(

@@ -9,7 +9,7 @@ import type {
 import { TYPE_PROP_VERSION_KEY } from "@/lib/contracts"
 import { createId } from "@/lib/id"
 
-// Engine puro: aplica as cinco operações numa árvore em memória e devolve
+// Engine puro: aplica as operações numa árvore em memória e devolve
 // a árvore nova + as ops inversas (base do undo). O servidor reimplementa
 // esta mesma semântica; os testes daqui viram o contrato de comportamento.
 
@@ -74,9 +74,7 @@ export function stampPropVersions(tree: BlockTree, op: Operation): Operation {
         (block.propVersions?.[TYPE_PROP_VERSION_KEY] ?? 0) + 1
     }
   }
-  return Object.keys(propVersions).length > 0
-    ? { ...op, propVersions }
-    : op
+  return Object.keys(propVersions).length > 0 ? { ...op, propVersions } : op
 }
 
 export function createPageTree(
@@ -321,6 +319,64 @@ export function applyOperation(
           },
         ],
       }
+    }
+
+    case "transfer_subtree_out": {
+      const block = getBlock(tree, op.blockId)
+      if (!block.parentId)
+        throw new EngineError("cannot transfer the root block")
+      const parent = getBlock(tree, block.parentId)
+      const index = parent.content.indexOf(op.blockId)
+      if (index === -1)
+        throw new EngineError(`content/parentId mismatch for ${op.blockId}`)
+
+      const removed = new Set<string>([op.blockId])
+      for (const candidate of tree.blocks.values()) {
+        if (isDescendant(tree, op.blockId, candidate.id))
+          removed.add(candidate.id)
+      }
+      const blocks = new Map(tree.blocks)
+      for (const id of removed) blocks.delete(id)
+      const content = [...parent.content]
+      content.splice(index, 1)
+      blocks.set(parent.id, { ...parent, content })
+      return { tree: { ...tree, blocks }, inverse: [] }
+    }
+
+    case "transfer_subtree_in": {
+      const parent = getBlock(tree, op.parentId)
+      if (parent.trashedAt)
+        throw new EngineError("cannot transfer into trashed block")
+      if (op.blocks.length === 0)
+        throw new EngineError("transfer requires a non-empty subtree")
+      const incoming = new Map(op.blocks.map((block) => [block.id, block]))
+      const roots = op.blocks.filter(
+        (block) => !incoming.has(block.parentId ?? "")
+      )
+      if (roots.length !== 1)
+        throw new EngineError("transfer requires exactly one subtree root")
+      for (const block of op.blocks) {
+        if (tree.blocks.has(block.id))
+          throw new EngineError(`duplicate block id: ${block.id}`)
+        for (const childId of block.content) {
+          const child = incoming.get(childId)
+          if (!child || child.parentId !== block.id)
+            throw new EngineError(`invalid transferred subtree: ${childId}`)
+        }
+      }
+      const root = roots[0]!
+      const blocks = new Map(tree.blocks)
+      for (const block of op.blocks)
+        blocks.set(block.id, { ...block, workspaceId: parent.workspaceId })
+      blocks.set(root.id, {
+        ...root,
+        workspaceId: parent.workspaceId,
+        parentId: op.parentId,
+      })
+      const content = [...parent.content]
+      content.splice(clampIndex(op.index, content.length), 0, root.id)
+      blocks.set(parent.id, { ...parent, content })
+      return { tree: { ...tree, blocks }, inverse: [] }
     }
   }
 }

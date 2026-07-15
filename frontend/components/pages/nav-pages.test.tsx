@@ -10,6 +10,9 @@ import type { PageSummary } from "@/lib/api"
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   pages: [] as PageSummary[],
+  movePageToWorkspace: vi.fn(),
+  canWrite: false,
+  workspaces: [{ id: "ws-1", name: "Origem", role: "owner" }],
 }))
 
 vi.mock("next/navigation", () => ({
@@ -21,13 +24,22 @@ vi.mock("@/components/pages/page-provider", () => ({
   usePages: () => ({
     pages: mocks.pages,
     loading: false,
-    canWrite: false,
+    canWrite: mocks.canWrite,
     containerPageId: "workspace-root",
     currentPageId: null,
     createTopLevelPage: vi.fn(),
     createChildPage: vi.fn(),
     deletePage: vi.fn(),
     renamePage: vi.fn(),
+    movePageToWorkspace: mocks.movePageToWorkspace,
+  }),
+}))
+
+vi.mock("@/components/workspace/workspace-provider", () => ({
+  useWorkspace: () => ({
+    activeWorkspace: { id: "ws-1", name: "Origem", role: "owner" },
+    activeWorkspaceId: "ws-1",
+    workspaces: mocks.workspaces,
   }),
 }))
 
@@ -65,7 +77,10 @@ function getByDataCy(value: string) {
 describe("NavPages", () => {
   beforeEach(() => {
     mocks.push.mockReset()
+    mocks.movePageToWorkspace.mockReset().mockResolvedValue(undefined)
     mocks.pages = []
+    mocks.canWrite = false
+    mocks.workspaces = [{ id: "ws-1", name: "Origem", role: "owner" }]
   })
 
   it("builds roots when an old page points to a missing parent", () => {
@@ -120,5 +135,29 @@ describe("NavPages", () => {
     expect(deepTitle).toHaveClass("min-w-24", "flex-1", "truncate")
     expect(deepTitle).toHaveAttribute("title", longTitle)
     expect(deepTitle.closest("a")).toHaveAttribute("aria-label", longTitle)
+  })
+
+  it("offers owner workspaces as transfer destinations", async () => {
+    mocks.pages = [page("root", null, "Planejamento")]
+    mocks.canWrite = true
+    mocks.workspaces = [
+      { id: "ws-1", name: "Origem", role: "owner" },
+      { id: "ws-2", name: "Destino", role: "owner" },
+      { id: "ws-3", name: "Somente leitura", role: "viewer" },
+    ]
+    const user = userEvent.setup()
+    renderNavPages()
+
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: getByDataCy("nav-page-root"),
+    })
+    await user.click(getByDataCy("nav-page-move-workspace"))
+
+    const select = getByDataCy("move-workspace-select")
+    expect(select).toHaveValue("ws-2")
+    expect(select).not.toHaveTextContent("Somente leitura")
+    await user.click(getByDataCy("move-workspace-submit"))
+    expect(mocks.movePageToWorkspace).toHaveBeenCalledWith("root", "ws-2")
   })
 })

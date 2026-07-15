@@ -18,6 +18,7 @@ use crate::application::auth::signup::{SignupInput, SignupUseCase};
 use crate::application::pages::{
     ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
     ListTrashUseCase, PermanentlyDeleteUseCase, PublicLinksUseCase, SearchPagesUseCase,
+    TransferSubtreeUseCase,
 };
 use crate::application::ports::auth::{
     AuthRepository, CreateUserRecord, CreateUserWithDefaultWorkspaceRecord,
@@ -25,11 +26,12 @@ use crate::application::ports::auth::{
 use crate::application::ports::clock::Clock;
 use crate::application::ports::email::{EmailSender, PasswordResetEmail, WorkspaceInviteEmail};
 use crate::application::ports::page::{
-    OperationAck, PageList, PageRepository, PageTree, PageView, PermanentDeleteResult, PublicLink,
-    SearchResult, TrashEntry,
+    AppliedOperation, LoggedOperation, OperationAck, PageList, PageRepository, PageTree, PageView,
+    PermanentDeleteResult, PublicLink, SearchResult, TransferSubtreeResult, TrashEntry,
 };
 use crate::application::ports::workspace::{CreateWorkspaceInviteRecord, WorkspaceRepository};
 use crate::application::ports::{EmailError, RepositoryError};
+use crate::application::realtime::RealtimeHub;
 use crate::application::workspaces::accept_invite::{AcceptInviteInput, AcceptInviteUseCase};
 use crate::application::workspaces::create_workspace::{
     CreateWorkspaceInput, CreateWorkspaceUseCase,
@@ -1121,6 +1123,7 @@ struct FakePageRepository {
     public_link_creates: Mutex<Vec<(Uuid, Uuid, Uuid)>>,
     public_link_revokes: Mutex<Vec<(Uuid, Uuid)>>,
     purge_calls: Mutex<Vec<(Uuid, Uuid)>>,
+    transfer_calls: Mutex<Vec<(Uuid, Uuid, Uuid)>>,
 }
 
 #[async_trait]
@@ -1260,6 +1263,58 @@ impl PageRepository for FakePageRepository {
         Ok(PermanentDeleteResult {
             deleted_blocks: 3,
             media_cleanup_queued: 1,
+        })
+    }
+
+    async fn transfer_subtree(
+        &self,
+        source_workspace_id: Uuid,
+        destination_workspace_id: Uuid,
+        block_id: Uuid,
+        transfer_id: Uuid,
+        actor_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> Result<TransferSubtreeResult, RepositoryError> {
+        self.transfer_calls.lock().unwrap().push((
+            source_workspace_id,
+            destination_workspace_id,
+            block_id,
+        ));
+        let source_operation = Operation::TransferSubtreeOut {
+            op_id: transfer_id,
+            transfer_id,
+            block_id,
+            destination_workspace_id,
+        };
+        let destination_operation = Operation::TransferSubtreeIn {
+            op_id: Uuid::new_v4(),
+            transfer_id,
+            blocks: Vec::new(),
+            parent_id: Uuid::new_v4(),
+            index: 0,
+            source_workspace_id,
+        };
+        Ok(TransferSubtreeResult {
+            source: AppliedOperation {
+                envelope: LoggedOperation {
+                    seq: 1,
+                    op_id: source_operation.op_id(),
+                    actor_id,
+                    operation: source_operation,
+                    group: None,
+                },
+                inserted: true,
+            },
+            destination: AppliedOperation {
+                envelope: LoggedOperation {
+                    seq: 1,
+                    op_id: destination_operation.op_id(),
+                    actor_id,
+                    operation: destination_operation,
+                    group: None,
+                },
+                inserted: true,
+            },
         })
     }
 }
@@ -1483,6 +1538,49 @@ async fn owner_and_editor_write_but_viewer_cannot() {
         AppError::Forbidden
     );
     assert_eq!(f.pages.applied.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn transferring_content_requires_owner_role_in_both_workspaces() {
+    let source = Uuid::new_v4();
+    let destination = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let workspaces = Arc::new(FakeWorkspaceRepository::default());
+    workspaces.workspaces.lock().unwrap().extend([
+        (user_id, membership(source, WorkspaceRole::Owner)),
+        (user_id, membership(destination, WorkspaceRole::Editor)),
+    ]);
+    let pages = Arc::new(FakePageRepository::default());
+    let use_case = TransferSubtreeUseCase::new(
+        pages.clone(),
+        workspaces.clone(),
+        Arc::new(FixedClock { now: fixed_now() }),
+        RealtimeHub::new(),
+    );
+
+    assert_eq!(
+        use_case
+            .execute(user_id, source, destination, Uuid::new_v4(), Uuid::new_v4(),)
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert!(pages.transfer_calls.lock().unwrap().is_empty());
+
+    workspaces
+        .workspaces
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(_, membership)| membership.id == destination)
+        .unwrap()
+        .1
+        .role = WorkspaceRole::Owner;
+    use_case
+        .execute(user_id, source, destination, Uuid::new_v4(), Uuid::new_v4())
+        .await
+        .unwrap();
+    assert_eq!(pages.transfer_calls.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
+  ArrowRightLeftIcon,
   ChevronRightIcon,
   PencilIcon,
   PlusIcon,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { pagePath, usePages } from "@/components/pages/page-provider"
+import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { Button } from "@/components/ui/button"
 import { isUnauthorizedApiError } from "@/lib/api"
 import {
@@ -44,6 +46,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { PageSummary } from "@/lib/api"
+import type { Workspace } from "@/lib/api"
 
 const UNTITLED = "Sem título"
 
@@ -158,12 +161,95 @@ function RenameDialog({
   )
 }
 
+function MoveWorkspaceDialog({
+  node,
+  destinations,
+  open,
+  onOpenChange,
+}: {
+  node: PageNode
+  destinations: Workspace[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { movePageToWorkspace } = usePages()
+  const [destinationId, setDestinationId] = useState(destinations[0]?.id ?? "")
+  const [moving, setMoving] = useState(false)
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!destinationId) return
+    setMoving(true)
+    try {
+      await movePageToWorkspace(node.id, destinationId)
+      onOpenChange(false)
+    } catch (error) {
+      rethrowUnlessUnauthorized(error)
+    } finally {
+      setMoving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-cy="move-workspace-dialog">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Mover para outro workspace</DialogTitle>
+          </DialogHeader>
+          <p className="mt-2 text-sm text-muted-foreground">
+            A página &quot;{node.title || UNTITLED}&quot; e todas as sub-páginas
+            serão transferidas.
+          </p>
+          <label className="my-4 block text-sm font-medium">
+            Workspace de destino
+            <select
+              className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              data-cy="move-workspace-select"
+              value={destinationId}
+              onChange={(event) => setDestinationId(event.target.value)}
+            >
+              {destinations.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={moving || !destinationId}
+              data-cy="move-workspace-submit"
+            >
+              Mover página
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const router = useRouter()
   const { currentPageId, canWrite, createChildPage, deletePage } = usePages()
+  const { activeWorkspace, activeWorkspaceId, workspaces } = useWorkspace()
   const [open, setOpen] = useState(true)
   const [busy, setBusy] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const destinations = workspaces.filter(
+    (workspace) =>
+      workspace.id !== activeWorkspaceId && workspace.role === "owner"
+  )
   const hasChildren = node.children.length > 0
   const title = node.title || UNTITLED
   const indent = Math.min(depth, 4) * 12
@@ -251,6 +337,15 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
           <PlusIcon />
           Adicionar sub-página
         </ContextMenuItem>
+        {activeWorkspace?.role === "owner" && destinations.length > 0 ? (
+          <ContextMenuItem
+            data-cy="nav-page-move-workspace"
+            onSelect={() => setMoving(true)}
+          >
+            <ArrowRightLeftIcon />
+            Mover para outro workspace
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuSeparator />
         <ContextMenuItem
           variant="destructive"
@@ -282,6 +377,14 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       {addAction}
       {renaming ? (
         <RenameDialog node={node} open onOpenChange={setRenaming} />
+      ) : null}
+      {moving ? (
+        <MoveWorkspaceDialog
+          node={node}
+          destinations={destinations}
+          open
+          onOpenChange={setMoving}
+        />
       ) : null}
     </>
   )
