@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::domain::error::DomainError;
 
 // Espelho Rust de `frontend/lib/engine/tree.ts`. O contrato canônico está em
-// `contracts/README.md`; os testes daqui replicam os testes do engine TS.
+// `docs/protocolo.md`; os testes daqui replicam os testes do engine TS.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

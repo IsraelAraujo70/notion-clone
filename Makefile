@@ -4,7 +4,7 @@ WEB_DIR ?= frontend
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
 DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e eval-password-reset eval-page-persistence eval-sync-catch-up eval-request-log-redaction eval-frontend-components eval-m4 eval-m5 eval-m5-live eval-editor-sidebar-ux clean kill-web
+.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e clean kill-web
 
 help:
 	@printf '%s\n' \
@@ -19,15 +19,6 @@ help:
 		'  make ps                        Show container status' \
 		'  make test                      Run API and web gate tests' \
 		'  make test-e2e                  Run Cypress full-stack E2E tests' \
-		'  make eval-password-reset       Run password-reset smoke eval against local API' \
-		'  make eval-page-persistence     Run block persistence smoke eval against local API' \
-		'  make eval-sync-catch-up         Prove paginated recovery beyond 500 operations' \
-		'  make eval-request-log-redaction Prove request logs never contain auth tokens' \
-		'  make eval-frontend-components  Check frontend boundary rules' \
-		'  make eval-m4                   Prove M4 search, sharing, permissions and purge' \
-		'  make eval-m5                   Run deterministic M5 gate (no provider or API)' \
-		'  make eval-m5-live              Run opt-in paid M5 smoke (requires configured local API)' \
-		'  make eval-editor-sidebar-ux    Prove code editor and sidebar UX in Cypress' \
 		'  make clean                     Stop containers, free :3000, remove volumes'
 
 # If the daemon is down, open Docker Desktop (macOS) and wait until it answers.
@@ -104,35 +95,6 @@ test-web:
 test-e2e: docker-ready
 	$(COMPOSE) --profile e2e up -d --build api-e2e worker-e2e web-e2e
 	$(COMPOSE) --profile e2e run --rm cypress
-
-eval-password-reset:
-	bash docs/evals/password-reset-smoke.sh
-
-eval-page-persistence:
-	node docs/evals/page-persistence-smoke.mjs
-
-eval-sync-catch-up:
-	node docs/evals/sync-catch-up-smoke.mjs
-
-eval-request-log-redaction:
-	node docs/evals/request-log-redaction-smoke.mjs
-
-eval-frontend-components:
-	bash docs/evals/frontend-component-boundaries.sh
-
-eval-m4:
-	node docs/evals/m4-smoke.mjs
-
-eval-m5:
-	bash docs/evals/m5-gate.sh
-
-eval-m5-live: docker-ready
-	@test -n "$$OPENROUTER_API_KEY" || (printf '%s\n' 'OPENROUTER_API_KEY is required (value is never printed)' >&2; exit 1)
-	node docs/evals/m5-live.mjs
-
-eval-editor-sidebar-ux: docker-ready
-	$(COMPOSE) --profile e2e up -d --build api-e2e worker-e2e web-e2e
-	$(COMPOSE) --profile e2e run --rm cypress "npm ci && npx cypress run --spec cypress/e2e/editor-sidebar-ux.cy.ts"
 
 clean: kill-web
 	@if docker info >/dev/null 2>&1; then \

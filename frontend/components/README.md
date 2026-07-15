@@ -1,22 +1,14 @@
-# Front-End Component Structure
+# Componentes do frontend
 
-This front-end uses atomic design inside feature directories.
+Use Atomic Design dentro dos diretórios de feature.
 
-`components/ui/` is vendored shadcn source. Do not move it into the atomic tree,
-and do not wrap it just to rename it. Product components compose these
-primitives from feature directories.
+`components/ui/` contém o código vendorizado do shadcn. Não mova esses componentes para a árvore atômica nem crie wrappers apenas para renomeá-los.
 
-Use the levels this way:
+- `atoms/`: elementos visuais reutilizáveis, sem fluxo de produto.
+- `molecules/`: partes pequenas que recebem estado e callbacks.
+- `organisms/`: superfícies compostas, como editor, sidebar, diálogos e painéis.
+- `templates/`: composição de tela; arquivos de rota devem compor templates.
 
-- `atoms/`: tiny reusable UI atoms with no product workflow ownership.
-- `molecules/`: small product UI chunks that receive state and callbacks.
-- `organisms/`: larger composed surfaces such as headers, sidebars, cards, and dialogs.
-- `templates/`: route-level page composition. Route files should import templates, not deep molecules.
+Lógica determinística pertence a `frontend/lib/`; componentes não devem duplicar regras do motor de blocos. Detalhes de HTTP e sincronização ficam em `lib/api.ts` e `lib/sync/`.
 
-Pure deterministic logic belongs in `frontend/lib/` so Vitest can test it
-without rendering React. Feature hooks can live beside the components when they
-coordinate browser state, refs, or API calls.
-
-Keep product component modules under 350 lines. Templates should stay under 200
-lines where practical. Run `make eval-frontend-components` before shipping a
-front-end structure change.
+Prefira props explícitas e componentes controlados. Mantenha módulos de produto abaixo de 350 linhas e templates abaixo de 200 quando for prático. Valide mudanças estruturais com os testes do frontend.

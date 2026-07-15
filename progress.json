@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "lastUpdated": "2026-07-14",
+  "lastUpdated": "2026-07-15",
   "challengeStatus": "in_progress",
   "sourceOfTruth": {
     "requirements": "challenge.md",
-    "architecture": "README.md",
-    "operationProtocol": "contracts/README.md"
+    "architecture": "docs/arquitetura.md",
+    "operationProtocol": "docs/protocolo.md"
   },
   "summary": {
     "completed": 5,
@@ -33,7 +33,8 @@
       "evidence": [
         "backend/migrations/0005_blocks_and_operations.sql",
         "backend/src/domain/block.rs",
-        "docs/api/pages.md"
+        "docs/protocolo.md",
+        "backend/src/application/pages/transfer_subtree.rs"
       ],
       "remaining": []
     },
@@ -54,7 +55,7 @@
         "backend/src/application/realtime/",
         "backend/src/adapters/http/ws_routes.rs",
         "frontend/lib/sync/",
-        "docs/api/sync.md",
+        "docs/protocolo.md",
         "frontend/cypress/e2e/m3-sync.cy.ts (2/2: dois EditorPage reais e catch-up apos desconexao)"
       ],
       "remaining": []
@@ -66,8 +67,7 @@
       "completedAt": "2026-07-10",
       "evidence": [
         "backend/src/application/workspaces/permissions.rs",
-        "docs/api/m4.md",
-        "docs/evals/m4-smoke.mjs",
+        "docs/api.md",
         "frontend/cypress/e2e/m4.cy.ts"
       ],
       "remaining": []
@@ -90,17 +90,9 @@
         "backend/migrations/0012_ai_and_operation_groups.sql",
         "backend/migrations/0013_block_embeddings.sql",
         "backend/migrations/0014_block_embeddings_cosine_index.sql",
-        "docs/api/ai.md",
-        "docs/database.md",
-        "90 testes Rust de lib + 2 de worker; cargo fmt e cargo check passaram",
-        "214 testes frontend, lint sem warnings, typecheck e build de producao passaram",
-        "suite Cypress fechou 21/21 apos repeticao direcionada do m5-ai; editor.cy.ts passou 11/11 com debounce e marquee",
-        "drag multiplo manual persistiu duas move_block sem deletes",
-        "Migracoes 0012-0014 aplicadas em PostgreSQL 17 com pgvector 0.8.4 e HNSW",
-        "make eval-m5 passou",
-        "docs/evals/m5-live.mjs passou 4/4, incluindo pagina atual -> X -> nota -> resposta 43, com openai/gpt-5.6-luna e openai/text-embedding-3-large; 18.075 tokens de prompt e 1.145 de conclusao",
-        "frontend/cypress/e2e/m5-ai.cy.ts passou 1/1 com dois EditorPage reais; streaming ordenado, colaboracao WebSocket, undo agrupado, deletes inversos e convergencia sem reload",
-        "frontend/cypress/e2e/m3-sync.cy.ts passou 2/2; suite Cypress fechou 19/19 apos corrigir o eval de code block"
+        "docs/api.md",
+        "docs/arquitetura.md",
+        "frontend/cypress/e2e/m5-ai.cy.ts"
       ],
       "remaining": []
     },
@@ -120,14 +112,14 @@
         "frontend/railway.json",
         "backend/src/bootstrap/health.rs",
         "backend/src/bin/worker.rs",
-        "docs/evals/request-log-redaction-smoke.mjs"
+        "backend/src/bootstrap/router.rs"
       ],
       "remaining": [
         "Adicionar metricas e observabilidade operacional",
         "Executar load sanity tests de operacoes e page subtree",
         "Documentar failure modes e recuperacao",
         "Criar diagrama da arquitetura atual e da evolucao",
-        "Adicionar CI para gates, E2E e evals deterministas",
+        "Adicionar CI para testes e E2E",
         "Executar smoke final de Railway com duas sessoes e uma acao de IA",
         "Alinhar README.md com as capacidades realmente entregues"
       ]

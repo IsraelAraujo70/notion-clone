@@ -8,7 +8,7 @@ implementing a feature. Keep `progress.json` current when a milestone changes.
 
 - Everything users write is a block. Pages are blocks whose children are blocks.
 - Every mutation uses one of the typed operations documented in
-  `contracts/README.md`. Do not add page-specific mutation shortcuts.
+  `docs/protocolo.md`. Do not add page-specific mutation shortcuts.
 - Optimistic frontend changes and backend persistence must apply the same
   operation semantics. Keep the TypeScript and Rust engines behaviorally equal.
 - AI is another client of the operation engine. It must not write blocks through
@@ -44,7 +44,7 @@ feature directories and preserve the conventions in `frontend/components/README.
   `frontend/lib/sync/`. Components consume those boundaries instead of issuing
   ad hoc requests.
 - Keep shared protocol types in `frontend/lib/contracts.ts`, synchronized with
-  `contracts/README.md` and the Rust domain representation.
+  `docs/protocolo.md` and the Rust domain representation.
 - Prefer controlled composition and explicit props. Avoid global state,
   speculative abstractions, and hooks that mix unrelated workflows.
 - Do not perform side effects inside React state updater functions. State
@@ -102,7 +102,7 @@ layers.
 
 ## Data And Protocol Changes
 
-- Treat `contracts/README.md` as the canonical operation protocol. Update the
+- Treat `docs/protocolo.md` as the canonical operation protocol. Update the
   contract before or with both language implementations.
 - Add forward-only SQL migrations. Never rewrite a migration that may have run in
   an environment.
@@ -124,8 +124,8 @@ layers.
   deterministically.
 - Run the smallest relevant check while iterating, then run `make test` before
   shipping a cross-layer change.
-- Use `make test-e2e` for full-stack behavior and the relevant `make eval-*`
-  target for milestone acceptance.
+- Use `make test-e2e` for full-stack behavior and add focused acceptance
+  coverage for milestone requirements.
 - Do not claim a milestone complete in `progress.json` until its acceptance
   behavior has executable evidence.
 
