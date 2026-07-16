@@ -316,48 +316,30 @@ export function BlockEditor({
   const visibleIds = useMemo(() => rows.map((row) => row.block.id), [rows])
   const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds])
 
-  const isActiveBlock = useCallback(
-    (blockId: string) => {
-      let current = tree.blocks.get(blockId)
-      const visited = new Set<string>()
-      while (current) {
-        if (current.trashedAt || visited.has(current.id)) return false
-        visited.add(current.id)
-        if (!current.parentId) return true
-        current = tree.blocks.get(current.parentId)
-      }
-      return false
-    },
-    [tree]
-  )
-
   useEffect(() => {
     let active = true
     queueMicrotask(() => {
       if (!active) return
-      if (focusedBlockId && !isActiveBlock(focusedBlockId)) {
+      if (focusedBlockId && !visibleIdSet.has(focusedBlockId)) {
         setFocusedBlockId(null)
       }
-      if (selectedBlockId && !isActiveBlock(selectedBlockId)) {
+      if (selectedBlockId && !visibleIdSet.has(selectedBlockId)) {
         onSelectedBlockChange(null)
       }
       const nextSelection = new Set(
-        [...selectionRef.current].filter(
-          (id) => isActiveBlock(id) && visibleIdSet.has(id)
-        )
+        [...selectionRef.current].filter((id) => visibleIdSet.has(id))
       )
       if (nextSelection.size !== selectionRef.current.size) {
         selectionRef.current = nextSelection
         setSelection(nextSelection)
       }
-      if (slash && !isActiveBlock(slash.blockId)) setSlash(null)
+      if (slash && !visibleIdSet.has(slash.blockId)) setSlash(null)
     })
     return () => {
       active = false
     }
   }, [
     focusedBlockId,
-    isActiveBlock,
     onSelectedBlockChange,
     selectedBlockId,
     slash,
@@ -2052,6 +2034,9 @@ export function BlockEditor({
                       onBlur={() => {
                         setFocusedBlockId((current) =>
                           current === block.id ? null : current
+                        )
+                        setSlash((current) =>
+                          current?.blockId === block.id ? null : current
                         )
                         dispatchBatch([], { breakCoalescing: true })
                       }}

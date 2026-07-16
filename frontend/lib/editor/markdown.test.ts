@@ -136,6 +136,7 @@ const answer = 43
 
 describe("slashQuery", () => {
   it("returns the query after the active slash", () => {
+    expect(slashQuery("/", 1)).toBe("")
     expect(slashQuery("/hea", 4)).toBe("hea")
     expect(slashQuery("hello /code", 11)).toBe("code")
   })
@@ -144,6 +145,10 @@ describe("slashQuery", () => {
     expect(removeSlashQuery("hello /code world", 11)).toEqual({
       text: "hello  world",
       slashIndex: 6,
+    })
+    expect(removeSlashQuery("before/kept /title after", 18)).toEqual({
+      text: "before/kept  after",
+      slashIndex: 12,
     })
   })
 
