@@ -23,7 +23,7 @@ import type {
   AiCitation,
   AiConversation,
   AiMessage,
-} from "@/lib/ai/contracts"
+} from "@reason/core/ai/contracts"
 import { activePageMention, insertPageMention } from "@/lib/ai/page-mentions"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import { AiActionControls } from "../molecules/ai-action-controls"

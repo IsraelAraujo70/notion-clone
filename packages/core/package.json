@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./ai/contracts": "./src/ai/contracts.ts",
+    "./ai/sse": "./src/ai/sse.ts",
     "./contracts": "./src/contracts.ts",
     "./id": "./src/id.ts",
     "./engine/tree": "./src/engine/tree.ts",

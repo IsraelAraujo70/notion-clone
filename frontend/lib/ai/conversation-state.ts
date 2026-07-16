@@ -1,4 +1,4 @@
-import type { AiConversation, AiMessage } from "./contracts"
+import type { AiConversation, AiMessage } from "@reason/core/ai/contracts"
 
 export function sortConversations(conversations: AiConversation[]) {
   return [...conversations].sort((a, b) =>

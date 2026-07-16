@@ -51,6 +51,10 @@ export default function AppLayout() {
         options={{ title: "Paginas" }}
       />
       <Stack.Screen
+        name="workspaces/[workspaceId]/chat"
+        options={{ title: "Reason" }}
+      />
+      <Stack.Screen
         name="workspaces/[workspaceId]/pages/[pageId]"
         options={{ title: "Pagina" }}
       />

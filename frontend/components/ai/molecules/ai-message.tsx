@@ -1,6 +1,9 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import type { AiCitation, AiMessage as Message } from "@/lib/ai/contracts"
+import type {
+  AiCitation,
+  AiMessage as Message,
+} from "@reason/core/ai/contracts"
 import { AiCitation as CitationButton } from "../atoms/ai-citation"
 
 const markdownComponents = {

@@ -1,6 +1,6 @@
 import { ExternalLinkIcon } from "lucide-react"
 
-import type { AiCitation as Citation } from "@/lib/ai/contracts"
+import type { AiCitation as Citation } from "@reason/core/ai/contracts"
 
 export function AiCitation({
   citation,

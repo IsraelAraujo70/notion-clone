@@ -24,6 +24,8 @@ O editor mantém uma árvore local e aplica cada operação antes da resposta da
 
 A navegação principal usa uma stack nativa plana para lista e editor. Fluxos transitórios, como aparência, usam `formSheet` no iOS e uma tela regular no Android. Componentes de domínio ficam em `mobile/features/`; o menu aberto por long press é uma superfície global sobre o editor e não altera a rota ativa da página.
 
+O chat mobile usa as mesmas conversas e ações `workspace_agent` da web. `expo/fetch` mantém o SSE incremental; contratos e parser vivem em `packages/core/src/ai/`. O feed aplica eco otimista, preserva a posição quando o usuário consulta mensagens anteriores, acompanha deltas somente próximo ao fim e apresenta ferramentas como atividade compacta. O draft é persistido localmente por workspace e citações navegam para o bloco de origem.
+
 `packages/core/` contém contratos, aplicação determinística de operações, undo e fila compartilhados entre web e mobile. Componentes visuais não são compartilhados: o editor web usa DOM, enquanto o mobile usa controles e gestos nativos que emitem as mesmas operações. O mobile reproduz as nove paletas light/dark da web e usa as mesmas famílias tipográficas Inter, Bricolage Grotesque e IBM Plex Mono.
 
 ## Backend

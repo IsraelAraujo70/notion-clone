@@ -6,8 +6,8 @@ import type {
   AiRun,
   AiRunEvent,
   SendAiMessageInput,
-} from "./contracts"
-import { parseSseStream } from "./sse"
+} from "@reason/core/ai/contracts"
+import { parseSseStream } from "@reason/core/ai/sse"
 
 async function aiRequest<T>(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`${API_BASE_URL}${path}`, {

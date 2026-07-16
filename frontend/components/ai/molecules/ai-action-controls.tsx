@@ -1,7 +1,7 @@
 import { FileTextIcon, ListRestartIcon, WandSparklesIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import type { AiAction } from "@/lib/ai/contracts"
+import type { AiAction } from "@reason/core/ai/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function AiActionControls({

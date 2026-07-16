@@ -57,7 +57,7 @@ import { ShareDialog } from "@/components/pages/share-dialog"
 import { useSearchResultHighlight } from "@/components/editor/use-search-result-highlight"
 import { OperationGroupCoordinator } from "@/lib/ai/group-coordinator"
 import { AiAssistant } from "@/components/ai/organisms/ai-assistant"
-import type { AiAction } from "@/lib/ai/contracts"
+import type { AiAction } from "@reason/core/ai/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import type { Message } from "@/lib/i18n/messages"
 

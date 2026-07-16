@@ -22,7 +22,7 @@ import type {
   AiCitation,
   AiConversation,
   AiMessage,
-} from "@/lib/ai/contracts"
+} from "@reason/core/ai/contracts"
 import {
   appendAssistantDelta,
   reconcilePersistedMessage,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { SseParser } from "./sse"
+import { SseParser } from "@reason/core/ai/sse"
 
 describe("SseParser", () => {
   it("parses fragmented named events and multiline data", () => {

@@ -1,5 +1,10 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons"
-import { router, useLocalSearchParams, useNavigation } from "expo-router"
+import {
+  router,
+  useLocalSearchParams,
+  useNavigation,
+  type Href,
+} from "expo-router"
 import { useEffect, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 
@@ -22,8 +27,35 @@ export default function PagesScreen() {
   const [error, setError] = useState("")
 
   useEffect(() => {
-    navigation.setOptions({ title: name ?? "Paginas" })
-  }, [name, navigation])
+    navigation.setOptions({
+      title: name ?? "Paginas",
+      headerRight: data
+        ? () => (
+            <Pressable
+              accessibilityLabel="Conversar com o Reason"
+              onPress={() =>
+                router.push({
+                  pathname: "/(app)/workspaces/[workspaceId]/chat",
+                  params: {
+                    workspaceId,
+                    contextPageId: data.pages[0]?.id ?? data.root_page_id,
+                    role,
+                    name,
+                  },
+                } as Href)
+              }
+              style={[styles.chatButton, { backgroundColor: tokens.muted }]}
+            >
+              <MaterialCommunityIcons
+                name="creation"
+                size={19}
+                color={tokens.ring}
+              />
+            </Pressable>
+          )
+        : undefined,
+    })
+  }, [data, name, navigation, role, tokens, workspaceId])
 
   useEffect(() => {
     if (!token || !workspaceId) return
@@ -144,4 +176,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   title: { flex: 1, fontFamily: fonts.sansMedium, fontSize: 16 },
+  chatButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+  },
 })
