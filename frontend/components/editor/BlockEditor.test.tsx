@@ -274,13 +274,16 @@ describe("BlockEditor block selection", () => {
       />
     )
     const editor = container.firstElementChild as HTMLElement
+    const setPointerCapture = vi.fn()
     Object.assign(editor, {
-      setPointerCapture: vi.fn(),
+      setPointerCapture,
       releasePointerCapture: vi.fn(),
       hasPointerCapture: () => true,
     })
     const rows = ["select-a", "select-b", "select-c"].map((id, index) => {
-      const row = container.querySelector<HTMLElement>(`[data-block-id="${id}"]`)!
+      const row = container.querySelector<HTMLElement>(
+        `[data-block-id="${id}"]`
+      )!
       vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
         x: 100,
         y: 100 + index * 40,
@@ -294,16 +297,42 @@ describe("BlockEditor block selection", () => {
       })
       return row
     })
+    const editable = rows[0].querySelector<HTMLElement>(
+      '[contenteditable="true"]'
+    )!
+    expect(editable).toHaveClass("inline-block", "max-w-full")
+    expect(editable).not.toHaveClass("w-full")
 
-    fireEvent.pointerDown(editor, {
+    fireEvent.pointerDown(editable, {
       pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 120,
+      clientY: 110,
+    })
+    fireEvent.pointerMove(editor, {
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 300,
+      clientY: 150,
+    })
+    expect(setPointerCapture).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
+
+    // A linha continua ocupando a largura disponível, mas o whitespace à direita
+    // do texto tem a própria linha como alvo, não o contenteditable.
+    fireEvent.pointerDown(rows[0], {
+      pointerId: 2,
       pointerType: "mouse",
       button: 0,
       clientX: 80,
       clientY: 90,
     })
     fireEvent.pointerMove(editor, {
-      pointerId: 1,
+      pointerId: 2,
       pointerType: "mouse",
       buttons: 1,
       clientX: 520,
@@ -316,10 +345,15 @@ describe("BlockEditor block selection", () => {
         "select-b",
       ])
     )
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeTruthy()
+    expect(setPointerCapture).toHaveBeenCalledWith(2)
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeTruthy()
     expect(rows[0]).toHaveClass("bg-primary/15")
-    fireEvent.pointerUp(editor, { pointerId: 1, pointerType: "mouse" })
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeNull()
+    fireEvent.pointerUp(editor, { pointerId: 2, pointerType: "mouse" })
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
   })
 
   it("copies a block selection with structured clipboard data", () => {
