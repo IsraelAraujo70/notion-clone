@@ -290,6 +290,10 @@ export function BlockEditor({
   )
   const selectionRef = useRef<ReadonlySet<string>>(new Set())
   const menuTargetIdsRef = useRef<string[]>([])
+  const menuRestoreFocusRef = useRef<HTMLElement | null>(null)
+  const preserveMenuSelectionRef = useRef(false)
+  const nativeTextContextBlockRef = useRef<string | null>(null)
+  const preserveSelectionOnFocusRef = useRef(false)
   const selectionAnchorRef = useRef<string | null>(null)
   const marqueeRef = useRef<MarqueeGesture | null>(null)
   const marqueeFrameRef = useRef<number | null>(null)
@@ -1133,6 +1137,21 @@ export function BlockEditor({
     [selectedRoots, setSelectionBoth]
   )
 
+  const preserveSelectionOnNextFocus = useCallback(() => {
+    preserveSelectionOnFocusRef.current = true
+    queueMicrotask(() => {
+      preserveSelectionOnFocusRef.current = false
+    })
+  }, [])
+
+  const restoreBlockMenuFocus = useCallback((event: Event) => {
+    const target = menuRestoreFocusRef.current
+    menuRestoreFocusRef.current = null
+    if (!target?.isConnected) return
+    event.preventDefault()
+    target.focus()
+  }, [])
+
   useEffect(() => {
     onSelectedBlockIdsChange?.(selectedRoots(selection))
   }, [onSelectedBlockIdsChange, selectedRoots, selection])
@@ -1336,6 +1355,7 @@ export function BlockEditor({
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || event.pointerType === "touch") return
       const target = event.target as HTMLElement
+      if (!event.currentTarget.contains(target)) return
       if (
         target.closest('[contenteditable="true"]') ||
         target.closest(".cm-editor") ||
@@ -1545,6 +1565,7 @@ export function BlockEditor({
           <ContextMenu
             onOpenChange={(open) => {
               if (!open) return
+              preserveMenuSelectionRef.current = true
               prepareBlockMenu(block.id)
           }}
         >
@@ -1558,6 +1579,21 @@ export function BlockEditor({
               onPointerDown={(event) =>
                 handleBlockSelectionPointerDown(event, block.id)
               }
+              onPointerDownCapture={(event) => {
+                if (
+                  event.button !== 2 ||
+                  (event.target as HTMLElement).closest('[contenteditable="true"]')
+                )
+                  return
+                prepareBlockMenu(block.id)
+                menuRestoreFocusRef.current =
+                  (event.target as HTMLElement).closest<HTMLElement>(
+                    '[data-block-handle="true"]'
+                  ) ??
+                  event.currentTarget.querySelector<HTMLElement>(
+                    '[contenteditable="true"],button,[tabindex]'
+                  )
+              }}
               className={`group relative rounded py-1.5 pr-3 pl-9 transition-colors ${
                 draggingIds.has(block.id)
                   ? "opacity-40"
@@ -1915,8 +1951,31 @@ export function BlockEditor({
                     <div
                       ref={(element) => setRef(block.id, element)}
                       contentEditable={!readOnly}
-                      onContextMenuCapture={(event) => {
+                      onPointerDownCapture={(event) => {
+                        if (event.button === 0) {
+                          if (preserveMenuSelectionRef.current) {
+                            preserveMenuSelectionRef.current = false
+                            clearSelection()
+                          }
+                          return
+                        }
+                        if (event.button !== 2) return
                         if (hasNativeTextSelection(event.currentTarget)) {
+                          nativeTextContextBlockRef.current = block.id
+                          menuRestoreFocusRef.current = null
+                          return
+                        }
+                        nativeTextContextBlockRef.current = null
+                        prepareBlockMenu(block.id)
+                        menuRestoreFocusRef.current = event.currentTarget
+                        preserveSelectionOnNextFocus()
+                      }}
+                      onContextMenuCapture={(event) => {
+                        const useNativeMenu =
+                          nativeTextContextBlockRef.current === block.id ||
+                          hasNativeTextSelection(event.currentTarget)
+                        nativeTextContextBlockRef.current = null
+                        if (useNativeMenu) {
                           event.stopPropagation()
                         }
                       }}
@@ -1926,9 +1985,13 @@ export function BlockEditor({
                         checked ? "text-muted-foreground line-through" : ""
                       }`}
                       onFocus={() => {
+                        const preserveSelection =
+                          preserveSelectionOnFocusRef.current ||
+                          preserveMenuSelectionRef.current
+                        preserveSelectionOnFocusRef.current = false
                         setFocusedBlockId(block.id)
                         onSelectedBlockChange(block.id)
-                        clearSelection()
+                        if (!preserveSelection) clearSelection()
                       }}
                       onBlur={() => {
                         setFocusedBlockId((current) =>
@@ -1936,9 +1999,11 @@ export function BlockEditor({
                         )
                         dispatchBatch([], { breakCoalescing: true })
                       }}
-                      onInput={(event: FormEvent<HTMLElement>) =>
+                      onInput={(event: FormEvent<HTMLElement>) => {
+                        preserveMenuSelectionRef.current = false
+                        clearSelection()
                         handleInput(block, event.currentTarget)
-                      }
+                      }}
                       onPaste={(event) =>
                         handleTextPaste(block, event.currentTarget, event)
                       }
@@ -1964,6 +2029,7 @@ export function BlockEditor({
             canWrite={!readOnly}
             canContinue={!readOnly && selectedRootIds.length === 1}
             canPaste={clipboardReady}
+            onCloseAutoFocus={restoreBlockMenuFocus}
             onAction={(action) => runOptionsAction(action, block.id)}
             onTurnInto={turnSelectedInto}
           />

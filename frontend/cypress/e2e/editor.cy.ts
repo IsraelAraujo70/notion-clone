@@ -15,6 +15,25 @@ describe("block editor", () => {
       .should("have.attr", "data-state", "saved")
   }
 
+  function openBlockContextMenu(editable: HTMLElement) {
+    editable.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerId: 9,
+        pointerType: "mouse",
+        button: 2,
+      })
+    )
+    editable.focus()
+    editable.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+      })
+    )
+  }
+
   beforeEach(() => {
     const id = Date.now()
     cy.visit("/signup")
@@ -169,15 +188,8 @@ describe("block editor", () => {
         row.classList.contains("bg-primary/15")
       )
       expect(selected).to.have.length(2)
-      const rect = selected[0].getBoundingClientRect()
-      selected[0].dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          button: 2,
-          clientX: rect.left + 20,
-          clientY: rect.top + 10,
-        })
+      openBlockContextMenu(
+        selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
       )
     })
     cy.contains("2 blocos selecionados").should("be.visible")

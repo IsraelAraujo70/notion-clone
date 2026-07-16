@@ -365,7 +365,7 @@ describe("BlockEditor block selection", () => {
     expect(screen.getByText("Transformar em")).toBeVisible()
   })
 
-  it("preserves a multi-selection when right-clicking one selected block", async () => {
+  it("preserves a multi-selection after cancelling and copying from the context menu", async () => {
     const user = userEvent.setup()
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
@@ -377,17 +377,27 @@ describe("BlockEditor block selection", () => {
       )
     }
 
-    const selected = container.querySelector('[data-block-id="select-a"]')!
-    await user.pointer({ keys: "[MouseRight]", target: selected })
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    await user.pointer({ keys: "[MouseRight]", target: editable })
 
     expect(
       (await screen.findAllByText("2 blocos selecionados")).some(
         (element) => !element.classList.contains("sr-only")
       )
     ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    await user.click(await screen.findByText("Copiar"))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
   })
 
-  it("leaves native copy untouched while text is selected", () => {
+  it("keeps the native menu when pointerdown starts with selected text", () => {
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -405,9 +415,13 @@ describe("BlockEditor block selection", () => {
     selection.addRange(range)
     const setData = vi.fn()
 
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    selection.removeAllRanges()
+    editable.focus()
     expect(fireEvent.contextMenu(editable)).toBe(true)
     expect(document.querySelector('[data-cy="block-context-menu"]')).toBeNull()
 
+    selection.addRange(range)
     const event = new Event("copy", { bubbles: true, cancelable: true })
     Object.defineProperty(event, "clipboardData", {
       value: { setData, getData: () => "", files: [] },
