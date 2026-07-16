@@ -1,6 +1,6 @@
 "use client"
 
-import type { Operation } from "@/lib/contracts"
+import type { Operation } from "@reason/core/contracts"
 import {
   Fragment,
   useCallback,
@@ -37,14 +37,14 @@ import {
   stampPropVersions,
   treeFromBlocks,
   type BlockTree,
-} from "@/lib/engine/tree"
+} from "@reason/core/engine/tree"
 import {
   createOpQueue,
   type OpQueue,
   type SaveState,
-} from "@/lib/engine/op-queue"
-import { UndoManager } from "@/lib/engine/undo"
-import { createId } from "@/lib/id"
+} from "@reason/core/engine/op-queue"
+import { UndoManager } from "@reason/core/engine/undo"
+import { createId } from "@reason/core/id"
 import { useWorkspacePresence } from "@/lib/sync/use-presence"
 import {
   catchUpOperations,

@@ -4,13 +4,13 @@ import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
-import type { Operation } from "@/lib/contracts"
+import type { Operation } from "@reason/core/contracts"
 import {
   applyOperation,
   createPageTree,
   newBlock,
   type BlockTree,
-} from "@/lib/engine/tree"
+} from "@reason/core/engine/tree"
 import { BLOCK_CLIPBOARD_MIME } from "@/lib/editor/block-clipboard"
 
 function createTree(): BlockTree {

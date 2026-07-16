@@ -6,6 +6,7 @@ Reason é um monorepo com frontend Next.js, API Rust e PostgreSQL com pgvector. 
 
 ```text
 Navegador ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgvector
+App Expo ─── HTTP / WebSocket / SSE ──────┤
 Cliente MCP ── Streamable HTTP ────────────┤  │
      │                                      ├── armazenamento S3
      └── token com escopos e grants         └── worker: mídia e embeddings
@@ -13,9 +14,17 @@ Cliente MCP ── Streamable HTTP ────────────┤  │
 
 ## Frontend
 
-`frontend/app/` contém rotas e limites do Next.js. Componentes de produto ficam nas respectivas features; `components/ui/` contém o código vendorizado do shadcn. As transformações da árvore vivem em `frontend/lib/engine/`, o transporte HTTP em `lib/api.ts` e a sincronização em `lib/sync/`.
+`frontend/app/` contém rotas e limites do Next.js. Componentes de produto ficam nas respectivas features; `components/ui/` contém o código vendorizado do shadcn. As transformações da árvore e contratos compartilhados vivem em `packages/core/`, o transporte HTTP em `frontend/lib/api.ts` e a sincronização em `frontend/lib/sync/`.
 
 O editor mantém uma árvore local e aplica cada operação antes da resposta da rede. A fila envia operações em ordem e pode agrupar atualizações textuais pendentes. Alterações estruturais, undo e navegação preservam a ordem. O cliente ignora o próprio eco por `opId` e aplica eventos remotos pelo `seq` do workspace.
+
+## Mobile
+
+`mobile/` contém o cliente Expo/React Native, inicialmente direcionado ao Android. Sessões ficam no SecureStore e snapshots de workspaces e páginas ficam em SQLite para leitura sem conexão. A primeira versão é online-first: operações de escrita não são aceitas offline até existir uma fila persistente com reconciliação explícita. O editor nativo aplica texto, título, checklist, inserção, duplicação, transformação, movimento hierárquico e exclusão otimisticamente pela mesma fila de operações da web.
+
+A navegação principal usa uma stack nativa plana para lista e editor. Fluxos transitórios, como aparência, usam `formSheet` no iOS e uma tela regular no Android. Componentes de domínio ficam em `mobile/features/`; o menu aberto por long press é uma superfície global sobre o editor e não altera a rota ativa da página.
+
+`packages/core/` contém contratos, aplicação determinística de operações, undo e fila compartilhados entre web e mobile. Componentes visuais não são compartilhados: o editor web usa DOM, enquanto o mobile usa controles e gestos nativos que emitem as mesmas operações. O mobile reproduz as nove paletas light/dark da web e usa as mesmas famílias tipográficas Inter, Bricolage Grotesque e IBM Plex Mono.
 
 ## Backend
 

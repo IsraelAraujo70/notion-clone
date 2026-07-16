@@ -1,4 +1,4 @@
-// Contrato compartilhado frontend/backend: modelo de bloco e operações tipadas.
+// Contrato compartilhado entre clientes e backend para blocos e operações.
 // O backend Rust espelha estes tipos; este arquivo é a fonte da verdade.
 
 export const BLOCK_TYPES = [

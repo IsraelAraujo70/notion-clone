@@ -1,15 +1,19 @@
 COMPOSE ?= docker compose
 BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker
 WEB_DIR ?= frontend
+MOBILE_DIR ?= mobile
+CORE_DIR ?= packages/core
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
+EXPO_PUBLIC_API_BASE_URL ?= https://api.reason.israeldeveloper.com.br
 DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help docker-ready backend dev watch up down restart logs ps test test-api test-web test-e2e clean kill-web
+.PHONY: help docker-ready backend dev mobile watch up down restart logs ps test test-api test-core test-web test-mobile test-e2e clean kill-web
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make dev                       Start Postgres+MinIO+API in Docker, Next via npm run dev' \
+		'  make mobile                    Start the Expo mobile client' \
 		'  make backend                   Start Postgres+MinIO+API containers' \
 		'  make watch                     Backend with Docker Compose Watch' \
 		'  make up                        Same as backend (background)' \
@@ -55,6 +59,9 @@ backend: docker-ready
 dev: backend
 	cd $(WEB_DIR) && NEXT_PUBLIC_API_BASE_URL=$(NEXT_PUBLIC_API_BASE_URL) npm run dev
 
+mobile:
+	cd $(MOBILE_DIR) && EXPO_PUBLIC_API_BASE_URL=$(EXPO_PUBLIC_API_BASE_URL) npm start
+
 watch: docker-ready
 	$(COMPOSE) up --watch --build $(BACKEND_SERVICES)
 
@@ -84,13 +91,19 @@ logs: docker-ready
 ps: docker-ready
 	$(COMPOSE) ps
 
-test: test-api test-web
+test: test-api test-core test-web test-mobile
 
 test-api:
 	cd backend && cargo test --lib --bins
 
+test-core:
+	cd $(CORE_DIR) && npm run typecheck
+
 test-web:
 	cd $(WEB_DIR) && npm test
+
+test-mobile:
+	cd $(MOBILE_DIR) && npm run typecheck
 
 test-e2e: docker-ready
 	$(COMPOSE) --profile e2e up -d --build api-e2e worker-e2e web-e2e

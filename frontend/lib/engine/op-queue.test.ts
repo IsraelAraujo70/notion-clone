@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/lib/api"
-import type { Operation } from "@/lib/contracts"
-import { createOpQueue, type SaveState } from "./op-queue"
+import type { Operation } from "@reason/core/contracts"
+import {
+  createOpQueue,
+  type SaveState,
+} from "@reason/core/engine/op-queue"
 
 const noSleep = () => Promise.resolve()
 

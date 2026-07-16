@@ -1,5 +1,9 @@
-import type { BlockProperties, BlockType, Operation } from "@/lib/contracts"
-import { newBlock, type BlockTree } from "@/lib/engine/tree"
+import type {
+  BlockProperties,
+  BlockType,
+  Operation,
+} from "@reason/core/contracts"
+import { newBlock, type BlockTree } from "@reason/core/engine/tree"
 import { blockText } from "@/lib/editor/tree-view"
 
 export const BLOCK_CLIPBOARD_MIME = "application/x-reason-blocks+json"
@@ -34,9 +38,13 @@ export interface BlockClipboardPayload {
   blocks: ClipboardBlock[]
 }
 
-let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null = null
+let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null =
+  null
 
-function serializeBlock(tree: BlockTree, blockId: string): ClipboardBlock | null {
+function serializeBlock(
+  tree: BlockTree,
+  blockId: string
+): ClipboardBlock | null {
   const block = tree.blocks.get(blockId)
   if (!block || block.trashedAt) return null
   return {
@@ -48,7 +56,10 @@ function serializeBlock(tree: BlockTree, blockId: string): ClipboardBlock | null
   }
 }
 
-export function serializeBlocks(tree: BlockTree, rootIds: string[]): BlockClipboardPayload {
+export function serializeBlocks(
+  tree: BlockTree,
+  rootIds: string[]
+): BlockClipboardPayload {
   return {
     version: 1,
     blocks: rootIds
@@ -64,7 +75,9 @@ function clipboardBlockText(block: ClipboardBlock): string {
       : typeof block.properties.title === "string"
         ? block.properties.title
         : ""
-  return [own, ...block.children.map(clipboardBlockText)].filter(Boolean).join("\n")
+  return [own, ...block.children.map(clipboardBlockText)]
+    .filter(Boolean)
+    .join("\n")
 }
 
 export function clipboardPlainText(payload: BlockClipboardPayload) {
@@ -108,7 +121,10 @@ function parsePayload(value: string): BlockClipboardPayload | null {
     const parsed = JSON.parse(value) as BlockClipboardPayload
     if (parsed.version !== 1 || !Array.isArray(parsed.blocks)) return null
     let count = 0
-    const validBlock = (block: unknown, depth: number): block is ClipboardBlock => {
+    const validBlock = (
+      block: unknown,
+      depth: number
+    ): block is ClipboardBlock => {
       if (
         depth > MAX_CLIPBOARD_DEPTH ||
         typeof block !== "object" ||
@@ -172,7 +188,8 @@ export async function currentFallbackBlockClipboard() {
 function payloadBlockCount(payload: BlockClipboardPayload) {
   let count = 0
   const visit = (block: ClipboardBlock, depth: number): boolean => {
-    if (depth > MAX_CLIPBOARD_DEPTH || count >= MAX_CLIPBOARD_BLOCKS) return false
+    if (depth > MAX_CLIPBOARD_DEPTH || count >= MAX_CLIPBOARD_BLOCKS)
+      return false
     count += 1
     return block.children.every((child) => visit(child, depth + 1))
   }
@@ -205,7 +222,9 @@ export function createClipboardInsertOperations(
     block.children.forEach((child, childIndex) => append(child, id, childIndex))
   }
 
-  payload.blocks.forEach((block, offset) => append(block, parentId, index + offset))
+  payload.blocks.forEach((block, offset) =>
+    append(block, parentId, index + offset)
+  )
   return operations
 }
 

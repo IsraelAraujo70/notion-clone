@@ -1,4 +1,4 @@
-import type { OperationGroupMetadata } from "@/lib/contracts"
+import type { OperationGroupMetadata } from "@reason/core/contracts"
 
 type GroupOp = {
   opId: string

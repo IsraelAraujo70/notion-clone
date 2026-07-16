@@ -1,8 +1,7 @@
 # Agent Guidelines
 
-These instructions apply to every agent that changes this repository. Read
-`challenge.md`, `progress.json`, and the relevant protocol documentation before
-implementing a feature. Keep `progress.json` current when a milestone changes.
+These instructions apply to every agent that changes this repository. Read the
+relevant protocol documentation before implementing a feature.
 
 ## Product Invariants
 
@@ -38,12 +37,12 @@ feature directories and preserve the conventions in `frontend/components/README.
   organisms but should not contain domain algorithms.
 - Keep feature-specific components in their feature directory. Promote a
   component to a shared level only after it has a real second consumer.
-- Put deterministic state transformations in `frontend/lib/`, especially editor
-  behavior in `frontend/lib/engine/`. React components must not duplicate them.
+- Put deterministic cross-client state transformations in `packages/core/`.
+  React components must not duplicate them.
 - Keep transport details in `frontend/lib/api.ts` and real-time behavior in
   `frontend/lib/sync/`. Components consume those boundaries instead of issuing
   ad hoc requests.
-- Keep shared protocol types in `frontend/lib/contracts.ts`, synchronized with
+- Keep shared protocol types in `packages/core/src/contracts.ts`, synchronized with
   `docs/protocolo.md` and the Rust domain representation.
 - Prefer controlled composition and explicit props. Avoid global state,
   speculative abstractions, and hooks that mix unrelated workflows.
@@ -126,18 +125,18 @@ layers.
   shipping a cross-layer change.
 - Use `make test-e2e` for full-stack behavior and add focused acceptance
   coverage for milestone requirements.
-- Do not claim a milestone complete in `progress.json` until its acceptance
-  behavior has executable evidence.
 
 ## Change Discipline
 
 - Make the smallest change that satisfies the requirement.
 - Follow existing names and module boundaries before introducing abstractions or
   dependencies.
+- Never create modules that only re-export another module or preserve an old
+  import path. Migrate consumers to the real module and remove the old path.
 - Do not create parallel write paths, duplicate contracts, generic repositories,
   or speculative extension points.
 - Never weaken authorization, workspace scoping, operation invariants, or test
   coverage to simplify an implementation.
-- Update `README.md`, API docs, contracts, and `progress.json` when behavior or
-  project status changes. Describe planned architecture explicitly as planned,
+- Update `README.md`, API docs, and contracts when behavior or project status
+  changes. Describe planned architecture explicitly as planned,
   never as already shipped.

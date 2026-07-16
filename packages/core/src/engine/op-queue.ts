@@ -1,5 +1,4 @@
-import type { Operation } from "@/lib/contracts"
-import { ApiError } from "@/lib/api"
+import type { Operation } from "../contracts"
 
 // Fila sequencial de operações. O editor aplica localmente e empurra aqui; a
 // ordem de envio é a ordem de aplicação, porque uma `move` depois de uma
@@ -15,7 +14,15 @@ const MAX_ATTEMPTS = 6
 export const OP_DEBOUNCE_MS = 300
 
 function isTransient(error: unknown): boolean {
-  return !(error instanceof ApiError) || error.status >= 500
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status >= 500
+  }
+  return true
 }
 
 const realSleep = (ms: number) =>

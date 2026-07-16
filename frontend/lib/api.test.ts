@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { Operation } from "@/lib/contracts"
+import type { Operation } from "@reason/core/contracts"
 import { AUTH_UNAUTHORIZED_EVENT, ApiError, api, API_BASE_URL } from "./api"
 
 function jsonResponse(status: number, body: unknown) {

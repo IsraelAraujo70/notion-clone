@@ -1,5 +1,9 @@
-import type { Operation } from "@/lib/contracts"
-import { applyOperation, getBlock, type BlockTree } from "@/lib/engine/tree"
+import type { Operation } from "@reason/core/contracts"
+import {
+  applyOperation,
+  getBlock,
+  type BlockTree,
+} from "@reason/core/engine/tree"
 import { isDescendantOf } from "@/lib/editor/tree-view"
 
 export interface SelectionRect {
@@ -44,7 +48,10 @@ export function rangeSelection(
   const anchor = visibleIds.indexOf(anchorId)
   const target = visibleIds.indexOf(targetId)
   if (anchor === -1 || target === -1) return []
-  return visibleIds.slice(Math.min(anchor, target), Math.max(anchor, target) + 1)
+  return visibleIds.slice(
+    Math.min(anchor, target),
+    Math.max(anchor, target) + 1
+  )
 }
 
 export function intersectsSelectionRect(
@@ -61,11 +68,17 @@ export function intersectsSelectionRect(
 
 export function hasNativeTextSelection(container: HTMLElement | null) {
   const selection = window.getSelection()
-  if (!container || !selection || selection.isCollapsed || selection.rangeCount === 0)
+  if (
+    !container ||
+    !selection ||
+    selection.isCollapsed ||
+    selection.rangeCount === 0
+  )
     return false
   const range = selection.getRangeAt(0)
   return (
-    container.contains(range.startContainer) && container.contains(range.endContainer)
+    container.contains(range.startContainer) &&
+    container.contains(range.endContainer)
   )
 }
 
@@ -98,7 +111,9 @@ export function planMultiBlockMove(
         ? targetParent.content.indexOf(blockId)
         : -1
     const targetAfterRemoval =
-      rootIndex !== -1 && rootIndex < targetIndex ? targetIndex - 1 : targetIndex
+      rootIndex !== -1 && rootIndex < targetIndex
+        ? targetIndex - 1
+        : targetIndex
     const operation: Operation = {
       type: "move_block",
       opId: createOperationId(),

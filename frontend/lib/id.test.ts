@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { createId } from "@/lib/id"
+import { createId } from "@reason/core/id"
 
 describe("createId", () => {
   it("uses native randomUUID when available", () => {

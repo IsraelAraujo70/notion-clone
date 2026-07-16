@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Block, Operation } from "@/lib/contracts"
+import type { Block, Operation } from "@reason/core/contracts"
 import {
   applyAll,
   applyOperation,
@@ -12,7 +12,7 @@ import {
   treeFromBlocks,
   visibleTree,
   type BlockTree,
-} from "./tree"
+} from "@reason/core/engine/tree"
 
 const oid = () => crypto.randomUUID()
 

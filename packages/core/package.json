@@ -1,0 +1,19 @@
+{
+  "name": "@reason/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contracts": "./src/contracts.ts",
+    "./id": "./src/id.ts",
+    "./engine/tree": "./src/engine/tree.ts",
+    "./engine/undo": "./src/engine/undo.ts",
+    "./engine/op-queue": "./src/engine/op-queue.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

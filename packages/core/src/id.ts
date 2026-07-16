@@ -1,6 +1,6 @@
 type CryptoLike = {
-  getRandomValues?: Crypto["getRandomValues"]
-  randomUUID?: Crypto["randomUUID"]
+  getRandomValues?: (array: Uint8Array) => Uint8Array
+  randomUUID?: () => `${string}-${string}-${string}-${string}-${string}`
 }
 
 function uuidFromBytes(bytes: Uint8Array) {

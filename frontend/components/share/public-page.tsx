@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, ApiError, type PublicPageResponse } from "@/lib/api"
-import { getBlock, treeFromBlocks } from "@/lib/engine/tree"
+import { getBlock, treeFromBlocks } from "@reason/core/engine/tree"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 
 const EMPTY_COLLAPSED_BLOCKS: ReadonlySet<string> = new Set()

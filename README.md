@@ -1,6 +1,6 @@
 # Reason
 
-Reason é um workspace colaborativo para escrever e organizar documentos em blocos. Páginas, textos, listas, imagens e subpáginas formam uma árvore; cada alteração vira uma operação persistida e sincronizada.
+Reason é um workspace colaborativo para escrever e organizar documentos em blocos. Páginas, textos, listas, imagens e subpáginas formam uma árvore; cada alteração vira uma operação persistida e sincronizada. O produto possui clientes web e mobile Android em desenvolvimento sobre o mesmo protocolo.
 
 **Produção:** [reason.israeldeveloper.com.br](https://reason.israeldeveloper.com.br)
 
@@ -51,10 +51,23 @@ make dev
 
 Use `make backend` quando não precisar do frontend.
 
+### Mobile
+
+O cliente Expo em `mobile/` usa a API de produção por padrão. Para apontar para outra API:
+
+```bash
+cd mobile
+cp .env.example .env
+npm install
+npm start
+```
+
+Em um aparelho Android, uma API local precisa usar o IP acessível da máquina, não `localhost`. Para gerar um APK interno, configure o EAS e execute `eas build --profile preview --platform android`.
+
 ## Verificação
 
 ```bash
-make test       # Rust + Vitest
+make test       # Rust + core compartilhado + Vitest + typecheck mobile
 make test-e2e   # Cypress com a stack completa
 make down       # encerra o ambiente local
 ```
@@ -68,5 +81,3 @@ Veja [docs/testes.md](docs/testes.md) para saber o que cada gate cobre.
 - [API](docs/api.md)
 - [MCP](docs/mcp.md)
 - [Testes e gates](docs/testes.md)
-- [Requisitos do desafio](challenge.md)
-- [Status e evidências](progress.json)

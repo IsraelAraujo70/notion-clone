@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Operation } from "@/lib/contracts"
+import type { Operation } from "@reason/core/contracts"
 import {
   applyOperation,
   createPageTree,
@@ -7,8 +7,8 @@ import {
   newBlock,
   visibleTree,
   type BlockTree,
-} from "./tree"
-import { UndoManager } from "./undo"
+} from "@reason/core/engine/tree"
+import { UndoManager } from "@reason/core/engine/undo"
 
 const oid = () => crypto.randomUUID()
 

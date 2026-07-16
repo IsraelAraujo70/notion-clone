@@ -1,4 +1,4 @@
-import type { Operation, OperationGroupMetadata } from "@/lib/contracts"
+import type { Operation, OperationGroupMetadata } from "@reason/core/contracts"
 import { api, type LoggedOperation, type PresencePeer } from "@/lib/api"
 
 export type AppliedOpEvent = {

@@ -3,7 +3,7 @@ import type {
   BlockType,
   Operation,
   OperationGroupMetadata,
-} from "@/lib/contracts"
+} from "@reason/core/contracts"
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080"
@@ -82,10 +82,7 @@ export type WorkspaceInvitePreview = {
 }
 
 export type McpScope =
-  | "content:read"
-  | "content:write"
-  | "search:read"
-  | "media:read"
+  "content:read" | "content:write" | "search:read" | "media:read"
 
 export type McpIntegrationToken = {
   id: string

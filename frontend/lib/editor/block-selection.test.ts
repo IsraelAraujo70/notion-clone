@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { applyOperation, createPageTree, newBlock } from "@/lib/engine/tree"
+import {
+  applyOperation,
+  createPageTree,
+  newBlock,
+} from "@reason/core/engine/tree"
 import {
   intersectsSelectionRect,
   normalizeSelectedRoots,
@@ -32,13 +36,11 @@ describe("block selection", () => {
   it("normalizes selected descendants to their selected roots", () => {
     const tree = treeWithBlocks()
     expect(
-      normalizeSelectedRoots(tree, ["child", "c", "b"], [
-        "a",
-        "b",
-        "child",
-        "c",
-        "d",
-      ])
+      normalizeSelectedRoots(
+        tree,
+        ["child", "c", "b"],
+        ["a", "b", "child", "c", "d"]
+      )
     ).toEqual(["b", "c"])
   })
 
@@ -73,7 +75,8 @@ describe("block selection", () => {
       () => crypto.randomUUID()
     )
     let belowTree = treeWithBlocks()
-    for (const operation of below) belowTree = applyOperation(belowTree, operation).tree
+    for (const operation of below)
+      belowTree = applyOperation(belowTree, operation).tree
     expect(belowTree.blocks.get("root")?.content).toEqual(["b", "a", "c", "d"])
 
     const above = planMultiBlockMove(
@@ -85,7 +88,8 @@ describe("block selection", () => {
       () => crypto.randomUUID()
     )
     let aboveTree = treeWithBlocks()
-    for (const operation of above) aboveTree = applyOperation(aboveTree, operation).tree
+    for (const operation of above)
+      aboveTree = applyOperation(aboveTree, operation).tree
     expect(aboveTree.blocks.get("root")?.content).toEqual(["b", "a", "c", "d"])
   })
 

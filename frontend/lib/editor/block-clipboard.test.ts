@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { applyOperation, createPageTree, newBlock } from "@/lib/engine/tree"
+import {
+  applyOperation,
+  createPageTree,
+  newBlock,
+} from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
   createClipboardInsertOperations,
@@ -29,7 +33,9 @@ describe("block clipboard", () => {
     expect(payload.blocks[0]).toMatchObject({
       type: "toggle",
       properties: { text: "Parent" },
-      children: [{ type: "to_do", properties: { text: "Child", checked: true } }],
+      children: [
+        { type: "to_do", properties: { text: "Child", checked: true } },
+      ],
     })
 
     let nextId = 0

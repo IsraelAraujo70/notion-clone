@@ -1,6 +1,6 @@
 "use client"
 
-import type { BlockType } from "@/lib/contracts"
+import type { BlockType } from "@reason/core/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import type { Message } from "@/lib/i18n/messages"
 
@@ -133,7 +133,9 @@ export function SlashMenu({
               node.scrollIntoView({ block: "nearest" })
           }}
           className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm ${
-            index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+            index === activeIndex
+              ? "bg-accent text-accent-foreground"
+              : "hover:bg-accent/50"
           }`}
           onMouseEnter={() => onHover(index)}
           onMouseDown={(event) => {

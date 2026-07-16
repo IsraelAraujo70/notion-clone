@@ -20,9 +20,9 @@ import {
   type TrashEntry,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import type { Operation } from "@/lib/contracts"
-import { newBlock } from "@/lib/engine/tree"
-import { createId } from "@/lib/id"
+import type { Operation } from "@reason/core/contracts"
+import { newBlock } from "@reason/core/engine/tree"
+import { createId } from "@reason/core/id"
 
 type PageContextValue = {
   pages: PageSummary[]

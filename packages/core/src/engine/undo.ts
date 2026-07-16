@@ -1,4 +1,4 @@
-import type { Operation } from "@/lib/contracts"
+import type { Operation } from "../contracts"
 import { applyAll, type BlockTree } from "./tree"
 
 // Undo por ops inversas. O editor registra a inversa de cada op aplicada;

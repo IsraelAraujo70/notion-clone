@@ -1,6 +1,6 @@
 # Protocolo de blocos e operações
 
-Este documento é o contrato canônico do protocolo. As representações tipadas ficam em [`frontend/lib/contracts.ts`](../frontend/lib/contracts.ts) e [`backend/src/domain/block.rs`](../backend/src/domain/block.rs). Mudanças devem manter os dois motores equivalentes.
+Este documento é o contrato canônico do protocolo. As representações tipadas ficam em [`packages/core/src/contracts.ts`](../packages/core/src/contracts.ts) e [`backend/src/domain/block.rs`](../backend/src/domain/block.rs). Mudanças devem manter os dois motores equivalentes.
 
 ## Modelo e invariantes
 

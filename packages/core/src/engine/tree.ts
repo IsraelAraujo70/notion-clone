@@ -5,9 +5,9 @@ import type {
   JsonValue,
   Operation,
   UpdateBlockOp,
-} from "@/lib/contracts"
-import { TYPE_PROP_VERSION_KEY } from "@/lib/contracts"
-import { createId } from "@/lib/id"
+} from "../contracts"
+import { TYPE_PROP_VERSION_KEY } from "../contracts"
+import { createId } from "../id"
 
 // Engine puro: aplica as operações numa árvore em memória e devolve
 // a árvore nova + as ops inversas (base do undo). O servidor reimplementa

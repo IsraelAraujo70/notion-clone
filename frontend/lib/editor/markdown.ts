@@ -1,4 +1,4 @@
-import type { BlockProperties, BlockType } from "@/lib/contracts"
+import type { BlockProperties, BlockType } from "@reason/core/contracts"
 
 export interface MarkdownShortcut {
   blockType: BlockType

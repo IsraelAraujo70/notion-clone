@@ -1,6 +1,6 @@
 "use client"
 
-import type { BlockType } from "@/lib/contracts"
+import type { BlockType } from "@reason/core/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import {
   ClipboardPasteIcon,
@@ -76,9 +76,7 @@ export function BlockContextOptionsContent(props: Props) {
       className="min-w-60"
       onCloseAutoFocus={props.onCloseAutoFocus}
     >
-      <ContextMenuLabel>
-        {selectionLabel}
-      </ContextMenuLabel>
+      <ContextMenuLabel>{selectionLabel}</ContextMenuLabel>
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem
@@ -103,20 +101,23 @@ export function BlockContextOptionsContent(props: Props) {
           onSelect={() => props.onAction("undo")}
           disabled={!props.canWrite}
         >
-          <Undo2Icon /> {t("Undo")} <ContextMenuShortcut>⌘Z</ContextMenuShortcut>
+          <Undo2Icon /> {t("Undo")}{" "}
+          <ContextMenuShortcut>⌘Z</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("redo")}
           disabled={!props.canWrite}
         >
-          <Redo2Icon /> {t("Redo")} <ContextMenuShortcut>⇧⌘Z</ContextMenuShortcut>
+          <Redo2Icon /> {t("Redo")}{" "}
+          <ContextMenuShortcut>⇧⌘Z</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("cut")}
           disabled={!props.canWrite}
           data-cy="block-menu-cut"
         >
-          <ScissorsIcon /> {t("Cut")} <ContextMenuShortcut>⌘X</ContextMenuShortcut>
+          <ScissorsIcon /> {t("Cut")}{" "}
+          <ContextMenuShortcut>⌘X</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("copy")}
@@ -187,9 +188,7 @@ export function BlockDropdownOptionsContent(props: Props) {
 
   return (
     <DropdownMenuContent align="start" className="min-w-60">
-      <DropdownMenuLabel>
-        {selectionLabel}
-      </DropdownMenuLabel>
+      <DropdownMenuLabel>{selectionLabel}</DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         <DropdownMenuItem
@@ -210,22 +209,26 @@ export function BlockDropdownOptionsContent(props: Props) {
           onSelect={() => props.onAction("undo")}
           disabled={!props.canWrite}
         >
-          <Undo2Icon /> {t("Undo")} <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
+          <Undo2Icon /> {t("Undo")}{" "}
+          <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => props.onAction("redo")}
           disabled={!props.canWrite}
         >
-          <Redo2Icon /> {t("Redo")} <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
+          <Redo2Icon /> {t("Redo")}{" "}
+          <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => props.onAction("cut")}
           disabled={!props.canWrite}
         >
-          <ScissorsIcon /> {t("Cut")} <DropdownMenuShortcut>⌘X</DropdownMenuShortcut>
+          <ScissorsIcon /> {t("Cut")}{" "}
+          <DropdownMenuShortcut>⌘X</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => props.onAction("copy")}>
-          <CopyIcon /> {t("Copy")} <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
+          <CopyIcon /> {t("Copy")}{" "}
+          <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => props.onAction("paste")}

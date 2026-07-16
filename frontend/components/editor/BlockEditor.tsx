@@ -1,6 +1,6 @@
 "use client"
 
-import type { Block, BlockType, Operation } from "@/lib/contracts"
+import type { Block, BlockType, Operation } from "@reason/core/contracts"
 import {
   KeyboardEvent,
   useCallback,
@@ -14,7 +14,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react"
-import { getBlock, newBlock, type BlockTree } from "@/lib/engine/tree"
+import { getBlock, newBlock, type BlockTree } from "@reason/core/engine/tree"
 import {
   blockText,
   isDescendantOf,
@@ -30,7 +30,7 @@ import {
   removeSlashQuery,
   slashQuery,
 } from "@/lib/editor/markdown"
-import { createId } from "@/lib/id"
+import { createId } from "@reason/core/id"
 import type { PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
 import { filteredSlashItems, SlashMenu, useSlashItems } from "./SlashMenu"
@@ -941,8 +941,8 @@ export function BlockEditor({
         if (event.key === "Enter" && itemCount > 0) {
           event.preventDefault()
           selectSlashType(
-            filteredSlashItems(slash.query, slashItems)[slash.activeIndex]?.type ??
-              "paragraph"
+            filteredSlashItems(slash.query, slashItems)[slash.activeIndex]
+              ?.type ?? "paragraph"
           )
           return
         }
@@ -1230,7 +1230,10 @@ export function BlockEditor({
 
   const pasteSelectedBlocks = useCallback(async () => {
     const payload = await currentFallbackBlockClipboard()
-    const anchorId = selectedRoots(menuTargetIdsRef.current).at(-1) ?? selectedBlockId ?? focusedBlockId
+    const anchorId =
+      selectedRoots(menuTargetIdsRef.current).at(-1) ??
+      selectedBlockId ??
+      focusedBlockId
     const anchor = anchorId ? tree.blocks.get(anchorId) : undefined
     if (!payload || !anchor?.parentId) return
     const parent = getBlock(tree, anchor.parentId)
@@ -1253,32 +1256,34 @@ export function BlockEditor({
 
   const turnSelectedInto = useCallback(
     (blockType: BlockType) => {
-      const operations = selectedRoots(menuTargetIdsRef.current).flatMap((id) => {
-        const block = tree.blocks.get(id)
-        if (!block || ["page", "image", "divider"].includes(block.type))
-          return []
-        return [
-          {
-            type: "update_block" as const,
-            opId: opId(),
-            blockId: id,
-            blockType,
-            properties: {
-              text: blockText(block),
-              checked:
-                blockType === "to_do"
-                  ? block.properties.checked === true
-                  : null,
-              language:
-                blockType === "code"
-                  ? typeof block.properties.language === "string"
-                    ? block.properties.language
-                    : "plaintext"
-                  : null,
+      const operations = selectedRoots(menuTargetIdsRef.current).flatMap(
+        (id) => {
+          const block = tree.blocks.get(id)
+          if (!block || ["page", "image", "divider"].includes(block.type))
+            return []
+          return [
+            {
+              type: "update_block" as const,
+              opId: opId(),
+              blockId: id,
+              blockType,
+              properties: {
+                text: blockText(block),
+                checked:
+                  blockType === "to_do"
+                    ? block.properties.checked === true
+                    : null,
+                language:
+                  blockType === "code"
+                    ? typeof block.properties.language === "string"
+                      ? block.properties.language
+                      : "plaintext"
+                    : null,
+              },
             },
-          },
-        ]
-      })
+          ]
+        }
+      )
       if (operations.length)
         dispatchBatch(operations, { breakCoalescing: true })
     },
@@ -1628,7 +1633,9 @@ export function BlockEditor({
               onPointerDownCapture={(event) => {
                 if (
                   event.button !== 2 ||
-                  (event.target as HTMLElement).closest('[contenteditable="true"]')
+                  (event.target as HTMLElement).closest(
+                    '[contenteditable="true"]'
+                  )
                 )
                   return
                 pendingContextMenuBlockRef.current = block.id
