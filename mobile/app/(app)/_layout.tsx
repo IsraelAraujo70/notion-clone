@@ -52,7 +52,12 @@ export default function AppLayout() {
       />
       <Stack.Screen
         name="workspaces/[workspaceId]/chat"
-        options={{ title: "Reason" }}
+        options={{
+          title: "Reason",
+          headerTransparent: false,
+          headerBlurEffect: undefined,
+          headerStyle: { backgroundColor: tokens.card },
+        }}
       />
       <Stack.Screen
         name="workspaces/[workspaceId]/pages/[pageId]"

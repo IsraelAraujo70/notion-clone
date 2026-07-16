@@ -95,7 +95,7 @@ export default function WorkspaceChatScreen() {
     : chat.messages
 
   useEffect(() => {
-    if (!nearEndRef.current) return
+    if (!nearEndRef.current || feed.length === 0) return
     const frame = requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated: chat.busy })
     })
@@ -137,15 +137,19 @@ export default function WorkspaceChatScreen() {
         )}
         contentContainerStyle={[
           styles.feed,
-          feed.length === 0 && styles.emptyFeed,
+          feed.length === 0 ? styles.emptyFeed : styles.filledFeed,
         ]}
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        automaticallyAdjustsScrollIndicatorInsets={false}
+        alwaysBounceVertical={false}
+        bounces={false}
+        overScrollMode="never"
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onScroll={handleScroll}
         onContentSizeChange={() => {
-          if (nearEndRef.current) {
+          if (nearEndRef.current && feed.length > 0) {
             listRef.current?.scrollToEnd({ animated: false })
           }
         }}
@@ -263,7 +267,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   feed: { flexGrow: 1, gap: 22, paddingHorizontal: 18, paddingVertical: 18 },
-  emptyFeed: { justifyContent: "center" },
+  filledFeed: { justifyContent: "flex-end" },
+  emptyFeed: { paddingTop: 64 },
   emptyState: { alignItems: "center", paddingHorizontal: 8 },
   emptyTitle: {
     fontFamily: fonts.heading,
