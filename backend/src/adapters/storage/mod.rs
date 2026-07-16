@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use chrono::Utc;
+use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
 use crate::application::ports::StorageError;
-use crate::application::ports::storage::{ObjectStorage, PresignedUpload};
+use crate::application::ports::storage::{ObjectStorage, PresignedUpload, StoredObject};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -57,6 +58,57 @@ impl S3ObjectStorage {
         } else {
             format!("/{encoded_key}")
         }
+    }
+
+    fn presigned_get_url(&self, key: &str, public: bool) -> String {
+        let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = &amz_date[..8];
+        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, self.config.region);
+        let credential = format!("{}/{}", self.config.access_key, credential_scope);
+        let endpoint = if public {
+            &self.config.public_endpoint
+        } else {
+            &self.config.endpoint
+        };
+        let endpoint_host = Self::endpoint_host(endpoint);
+        let host = if self.config.force_path_style {
+            endpoint_host
+        } else {
+            format!("{}.{}", self.config.bucket, endpoint_host)
+        };
+        let canonical_uri = self.object_uri(key);
+        let signed_headers = "host";
+        let algorithm = "AWS4-HMAC-SHA256";
+        let expires = "300";
+        let canonical_query = format!(
+            "X-Amz-Algorithm={}&X-Amz-Credential={}&X-Amz-Date={}&X-Amz-Expires={}&X-Amz-SignedHeaders={}",
+            algorithm,
+            uri_encode(&credential),
+            amz_date,
+            expires,
+            uri_encode(signed_headers),
+        );
+        let canonical_headers = format!("host:{host}\n");
+        let canonical_request = format!(
+            "GET\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\nUNSIGNED-PAYLOAD"
+        );
+        let string_to_sign = format!(
+            "{algorithm}\n{amz_date}\n{credential_scope}\n{}",
+            hex_sha256(&canonical_request)
+        );
+        let signing_key = derive_signing_key(
+            &self.config.secret_key,
+            date_stamp,
+            &self.config.region,
+            "s3",
+        );
+        let signature = hex_hmac(&signing_key, string_to_sign.as_bytes());
+        let scheme = if endpoint.starts_with("https") {
+            "https"
+        } else {
+            "http"
+        };
+        format!("{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}")
     }
 }
 
@@ -144,56 +196,44 @@ impl ObjectStorage for S3ObjectStorage {
     }
 
     async fn presign_get(&self, key: &str) -> Result<String, StorageError> {
-        let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-        let date_stamp = &amz_date[..8];
-        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, self.config.region);
-        let credential = format!("{}/{}", self.config.access_key, credential_scope);
+        Ok(self.presigned_get_url(key, true))
+    }
 
-        let host = if self.config.force_path_style {
-            self.public_host()
-        } else {
-            format!("{}.{}", self.config.bucket, self.public_host())
-        };
-        let canonical_uri = if self.config.force_path_style {
-            format!("/{}/{}", self.config.bucket, key)
-        } else {
-            format!("/{key}")
-        };
-        let signed_headers = "host";
-        let algorithm = "AWS4-HMAC-SHA256";
-        let expires = "300";
-        let canonical_query = format!(
-            "X-Amz-Algorithm={}&X-Amz-Credential={}&X-Amz-Date={}&X-Amz-Expires={}&X-Amz-SignedHeaders={}",
-            algorithm,
-            uri_encode(&credential),
-            amz_date,
-            expires,
-            uri_encode(signed_headers),
+    async fn get_object(&self, key: &str, max_bytes: u64) -> Result<StoredObject, StorageError> {
+        let url = self.presigned_get_url(key, false);
+        let response = reqwest::Client::new()
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| StorageError::Unexpected)?;
+        if !response.status().is_success()
+            || response
+                .content_length()
+                .is_some_and(|size| size > max_bytes)
+        {
+            return Err(StorageError::Unexpected);
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let mut bytes = Vec::with_capacity(
+            response.content_length().unwrap_or_default().min(max_bytes) as usize,
         );
-        let canonical_headers = format!("host:{host}\n");
-        let canonical_request = format!(
-            "GET\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\nUNSIGNED-PAYLOAD"
-        );
-        let string_to_sign = format!(
-            "{algorithm}\n{amz_date}\n{credential_scope}\n{}",
-            hex_sha256(&canonical_request)
-        );
-        let signing_key = derive_signing_key(
-            &self.config.secret_key,
-            date_stamp,
-            &self.config.region,
-            "s3",
-        );
-        let signature = hex_hmac(&signing_key, string_to_sign.as_bytes());
-        let scheme = if self.config.public_endpoint.starts_with("https") {
-            "https"
-        } else {
-            "http"
-        };
-
-        Ok(format!(
-            "{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
-        ))
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| StorageError::Unexpected)?;
+            if bytes.len().saturating_add(chunk.len()) as u64 > max_bytes {
+                return Err(StorageError::Unexpected);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(StoredObject {
+            bytes,
+            content_type,
+        })
     }
 
     async fn delete_object(&self, key: &str) -> Result<(), StorageError> {
@@ -279,6 +319,10 @@ impl ObjectStorage for NoopObjectStorage {
         Err(StorageError::NotConfigured)
     }
 
+    async fn get_object(&self, _key: &str, _max_bytes: u64) -> Result<StoredObject, StorageError> {
+        Err(StorageError::NotConfigured)
+    }
+
     async fn delete_object(&self, _key: &str) -> Result<(), StorageError> {
         Ok(())
     }
@@ -326,7 +370,13 @@ fn uri_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, extract::Request, http::StatusCode, routing::delete};
+    use axum::{
+        Router,
+        body::{Body, Bytes},
+        extract::Request,
+        http::StatusCode,
+        routing::{delete, get},
+    };
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use uuid::Uuid;
@@ -423,5 +473,56 @@ mod tests {
             storage.delete_object("failure.png").await,
             Err(StorageError::Unexpected)
         );
+    }
+
+    #[test]
+    fn backend_download_uses_internal_endpoint_while_presign_uses_public_endpoint() {
+        let storage = S3ObjectStorage::new(S3Config {
+            endpoint: "http://minio:9000".to_string(),
+            public_endpoint: "https://objects.example.com".to_string(),
+            region: "us-east-1".to_string(),
+            bucket: "media".to_string(),
+            access_key: "access".to_string(),
+            secret_key: "secret".to_string(),
+            public_base_url: "https://objects.example.com/media".to_string(),
+            force_path_style: true,
+        });
+
+        let public = storage.presigned_get_url("images/image one.png", true);
+        let internal = storage.presigned_get_url("images/image one.png", false);
+        assert!(public.starts_with("https://objects.example.com/media/"));
+        assert!(internal.starts_with("http://minio:9000/media/"));
+        assert!(public.contains("image%20one.png"));
+    }
+
+    #[tokio::test]
+    async fn object_download_stops_when_a_chunked_response_exceeds_the_limit() {
+        let app = Router::new().route(
+            "/{*path}",
+            get(|| async {
+                Body::from_stream(futures_util::stream::iter([
+                    Ok::<_, std::io::Error>(Bytes::from_static(b"abc")),
+                    Ok(Bytes::from_static(b"def")),
+                ]))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let storage = S3ObjectStorage::new(S3Config {
+            endpoint: format!("http://{address}"),
+            public_endpoint: "http://browser.invalid".to_string(),
+            region: "us-east-1".to_string(),
+            bucket: "media".to_string(),
+            access_key: "access".to_string(),
+            secret_key: "secret".to_string(),
+            public_base_url: "http://browser.invalid/media".to_string(),
+            force_path_style: true,
+        });
+
+        assert!(matches!(
+            storage.get_object("oversized.png", 4).await,
+            Err(StorageError::Unexpected)
+        ));
     }
 }

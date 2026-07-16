@@ -6,9 +6,9 @@ Reason é um monorepo com frontend Next.js, API Rust e PostgreSQL com pgvector. 
 
 ```text
 Navegador ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgvector
-     │                                      │
-     └── estado otimista                    ├── armazenamento S3
-                                            └── worker: mídia e embeddings
+Cliente MCP ── Streamable HTTP ────────────┤  │
+     │                                      ├── armazenamento S3
+     └── token com escopos e grants         └── worker: mídia e embeddings
 ```
 
 ## Frontend
@@ -42,6 +42,12 @@ O hub WebSocket fica em memória e atende uma instância da API. O log durável 
 A IA é cliente do motor de operações. Ações de escrita validam o escopo e chamam o mesmo caso de uso usado pelo editor. O grupo registra `source: "ai"`; `actor_id` continua sendo o usuário que autorizou a ação. Q&A é somente leitura.
 
 Conversas, execuções e uso são privados por usuário e workspace. O contexto e a busca semântica respeitam membership e lixeira. Embeddings ficam no PostgreSQL; uma outbox agrupa atualizações e o worker as processa com lease e retry. Não existe banco vetorial nem caminho de escrita exclusivo para IA.
+
+## MCP
+
+O MCP é um adapter stateless montado em `/mcp`. Tokens de integração são separados das sessões do navegador, armazenados por hash e limitados por escopo, expiração e grants de workspace. As ferramentas reusam os casos de uso de páginas, embeddings e operações; uma remoção de membership ou mudança de papel vale imediatamente.
+
+Leituras de imagem partem de um `block_id` autorizado, não de uma chave S3 fornecida livremente. Escritas MCP passam pelo mesmo apply atômico, log, cursor e broadcast do editor e da IA; o `actor_id` permanece o usuário dono do token.
 
 ## Persistência e segurança
 

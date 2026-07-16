@@ -105,14 +105,18 @@
         "Health check com PostgreSQL e pgvector",
         "Worker de limpeza permanente de objetos com retry",
         "Heartbeat WebSocket",
-        "Redacao de tokens nos logs HTTP"
+        "Redacao de tokens nos logs HTTP",
+        "MCP stateless com tokens revogaveis, grants, busca semantica, imagens e operacoes"
       ],
       "evidence": [
         "backend/railway.json",
         "frontend/railway.json",
         "backend/src/bootstrap/health.rs",
         "backend/src/bin/worker.rs",
-        "backend/src/bootstrap/router.rs"
+        "backend/src/bootstrap/router.rs",
+        "backend/src/adapters/mcp/",
+        "backend/migrations/0015_mcp_integration_tokens.sql",
+        "docs/mcp.md"
       ],
       "remaining": [
         "Adicionar metricas e observabilidade operacional",

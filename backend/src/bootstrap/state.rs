@@ -7,7 +7,7 @@ use crate::adapters::email::noop::NoopEmailSender;
 use crate::adapters::email::resend::ResendEmailSender;
 use crate::adapters::postgres::{
     PostgresAiRepository, PostgresAuthRepository, PostgresEmbeddingRepository,
-    PostgresPageRepository, PostgresWorkspaceRepository,
+    PostgresIntegrationRepository, PostgresPageRepository, PostgresWorkspaceRepository,
 };
 use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
 use crate::application::ai::AiUseCases;
@@ -17,16 +17,18 @@ use crate::application::auth::{
     UpdateProfileUseCase,
 };
 use crate::application::embeddings::{DEFAULT_EMBEDDING_MODEL, SemanticSearchUseCase};
+use crate::application::integrations::IntegrationUseCases;
 use crate::application::pages::{
-    ApplyOperationUseCase, GetPageUseCase, ListOperationsUseCase, ListPagesUseCase,
-    ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase, PublicLinksUseCase,
-    SearchPagesUseCase, TransferSubtreeUseCase,
+    ApplyOperationUseCase, GetImageUseCase, GetPageUseCase, ListOperationsUseCase,
+    ListPagesUseCase, ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase,
+    PublicLinksUseCase, SearchPagesUseCase, TransferSubtreeUseCase,
 };
 use crate::application::ports::ai::{AiProvider, AiRepository, SemanticSearch};
 use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
 use crate::application::ports::embedding::SemanticEmbeddingRepository;
+use crate::application::ports::integration::IntegrationRepository;
 use crate::application::ports::page::PageRepository;
 use crate::application::ports::storage::ObjectStorage;
 use crate::application::ports::workspace::WorkspaceRepository;
@@ -63,6 +65,7 @@ pub struct AppState {
     pub accept_invite: AcceptInviteUseCase,
     pub list_pages: ListPagesUseCase,
     pub get_page: GetPageUseCase,
+    pub get_image: GetImageUseCase,
     pub apply_operation: ApplyOperationUseCase,
     pub list_operations: ListOperationsUseCase,
     pub list_trash: ListTrashUseCase,
@@ -71,6 +74,8 @@ pub struct AppState {
     pub public_links: PublicLinksUseCase,
     pub permanently_delete: PermanentlyDeleteUseCase,
     pub transfer_subtree: TransferSubtreeUseCase,
+    pub semantic_search: SemanticSearchUseCase,
+    pub integrations: IntegrationUseCases,
     pub ai: AiUseCases,
 }
 
@@ -113,12 +118,14 @@ impl AppState {
         };
         let semantic_repository: Arc<dyn SemanticEmbeddingRepository> =
             Arc::new(PostgresEmbeddingRepository::new(pool.clone()));
+        let integration_repository: Arc<dyn IntegrationRepository> =
+            Arc::new(PostgresIntegrationRepository::new(pool.clone()));
         let embedding_model =
             std::env::var("AI_EMBEDDING_MODEL").unwrap_or_else(|_| DEFAULT_EMBEDDING_MODEL.into());
-        let semantic: Arc<dyn SemanticSearch> = Arc::new(
+        let semantic_search =
             SemanticSearchUseCase::new(ai_provider.clone(), semantic_repository, embedding_model)
-                .expect("AI_EMBEDDING_MODEL must match the fixed embedding schema"),
-        );
+                .expect("AI_EMBEDDING_MODEL must match the fixed embedding schema");
+        let semantic: Arc<dyn SemanticSearch> = Arc::new(semantic_search.clone());
         let chat_model = std::env::var("AI_CHAT_MODEL")
             .unwrap_or_else(|_| crate::bootstrap::config::DEFAULT_AI_CHAT_MODEL.into());
         let title_model = std::env::var("AI_TITLE_MODEL")
@@ -184,6 +191,11 @@ impl AppState {
                 workspace_repository.clone(),
             ),
             get_page: GetPageUseCase::new(page_repository.clone(), workspace_repository.clone()),
+            get_image: GetImageUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+                storage.clone(),
+            ),
             apply_operation,
             list_operations: ListOperationsUseCase::new(
                 page_repository.clone(),
@@ -203,10 +215,16 @@ impl AppState {
             ),
             permanently_delete: PermanentlyDeleteUseCase::new(
                 page_repository,
+                workspace_repository.clone(),
+                clock.clone(),
+            ),
+            transfer_subtree,
+            semantic_search,
+            integrations: IntegrationUseCases::new(
+                integration_repository,
                 workspace_repository,
                 clock,
             ),
-            transfer_subtree,
             ai,
         }
     }

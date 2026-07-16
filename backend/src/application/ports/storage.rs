@@ -11,6 +11,12 @@ pub struct PresignedUpload {
     pub headers: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoredObject {
+    pub bytes: Vec<u8>,
+    pub content_type: String,
+}
+
 #[async_trait]
 pub trait ObjectStorage: Send + Sync {
     fn public_url(&self, key: &str) -> Option<String>;
@@ -34,6 +40,8 @@ pub trait ObjectStorage: Send + Sync {
     ) -> Result<PresignedUpload, StorageError>;
 
     async fn presign_get(&self, key: &str) -> Result<String, StorageError>;
+
+    async fn get_object(&self, key: &str, max_bytes: u64) -> Result<StoredObject, StorageError>;
 
     /// Permanently removes an object. Implementations must treat a missing object as success so
     /// retrying an outbox job remains idempotent.

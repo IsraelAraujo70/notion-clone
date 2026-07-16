@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod auth;
 pub mod embeddings;
+pub mod integrations;
 pub mod pages;
 pub mod ports;
 pub mod realtime;

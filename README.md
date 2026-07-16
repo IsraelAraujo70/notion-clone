@@ -12,6 +12,7 @@ Reason é um workspace colaborativo para escrever e organizar documentos em bloc
 - Alterações otimistas, colaboração por WebSocket e recuperação por cursor após desconexão.
 - Busca textual isolada por workspace.
 - IA para continuar, resumir e transformar conteúdo, além de Q&A com busca semântica e citações.
+- MCP autenticado para agentes lerem, pesquisarem e editarem blocos, além de receberem imagens.
 
 Não fazem parte da versão atual: databases no estilo Notion, cliente desktop/offline e permissões por página.
 
@@ -65,6 +66,7 @@ Veja [docs/testes.md](docs/testes.md) para saber o que cada gate cobre.
 - [Arquitetura](docs/arquitetura.md)
 - [Protocolo de blocos e operações](docs/protocolo.md)
 - [API](docs/api.md)
+- [MCP](docs/mcp.md)
 - [Testes e gates](docs/testes.md)
 - [Requisitos do desafio](challenge.md)
 - [Status e evidências](progress.json)

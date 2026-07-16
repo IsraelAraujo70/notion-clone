@@ -5,7 +5,8 @@ use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
 use crate::adapters::http::{
-    ai_routes, app_routes, auth_routes, media_routes, page_routes, workspace_routes, ws_routes,
+    ai_routes, app_routes, auth_routes, integration_routes, media_routes, page_routes,
+    workspace_routes, ws_routes,
 };
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
@@ -35,6 +36,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route("/", get(root))
         .route("/health", get(health))
         .route("/media/{*key}", get(media_routes::get_media))
+        .route(
+            "/mcp",
+            post(crate::adapters::mcp::handle).layer(DefaultBodyLimit::max(1024 * 1024)),
+        )
         .route("/search", get(page_routes::search))
         .route("/public/pages/{token}", get(page_routes::get_public_page))
         .route("/auth/signup", post(auth_routes::signup))
@@ -51,6 +56,14 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             get(auth_routes::me).patch(auth_routes::update_profile),
         )
         .route("/auth/me/avatar/presign", post(auth_routes::presign_avatar))
+        .route(
+            "/integrations/mcp/tokens",
+            get(integration_routes::list_tokens).post(integration_routes::create_token),
+        )
+        .route(
+            "/integrations/mcp/tokens/{token_id}",
+            delete(integration_routes::revoke_token),
+        )
         .route(
             "/workspaces",
             get(workspace_routes::list).post(workspace_routes::create),

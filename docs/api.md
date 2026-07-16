@@ -17,6 +17,8 @@ Página privada ausente, em lixeira ou de outro workspace responde `404`. Links 
 | GET/PATCH | `/auth/me` | Consulta ou altera nome e avatar. |
 | POST | `/auth/me/avatar/presign` | Gera URL de upload para JPEG, PNG ou WebP. |
 | GET | `/app/summary` | Dados iniciais do shell autenticado. |
+| GET/POST | `/integrations/mcp/tokens` | Lista ou cria tokens MCP. |
+| DELETE | `/integrations/mcp/tokens/{token_id}` | Revoga um token MCP. |
 
 Para alterar o avatar: peça o presign, envie o arquivo para a URL retornada e grave a chave com `PATCH /auth/me`.
 
@@ -84,3 +86,9 @@ Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão perm
 `action` aceita `continue_writing`, `summarize_page`, `transform_selection` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo.
 
 O stream SSE envia `run`, `text`, `tool`, `usage`, `completion` ou `run_failed`, além de keep-alive.
+
+## MCP
+
+`POST /mcp` implementa o transporte MCP stateless. Diferentemente das outras rotas privadas, usa um bearer token com prefixo `rsn_mcp_`, grants de workspace e escopos próprios. O endpoint oferece leitura de páginas, busca semântica, imagens multimodais e escrita pelo motor de operações.
+
+O contrato, os escopos e a configuração dos clientes estão em [mcp.md](mcp.md).
