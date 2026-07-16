@@ -366,6 +366,7 @@ describe("BlockEditor block selection", () => {
   })
 
   it("preserves a multi-selection when right-clicking one selected block", async () => {
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -377,13 +378,7 @@ describe("BlockEditor block selection", () => {
     }
 
     const selected = container.querySelector('[data-block-id="select-a"]')!
-    fireEvent.pointerDown(selected, {
-      pointerId: 9,
-      pointerType: "mouse",
-      button: 2,
-      ctrlKey: true,
-    })
-    fireEvent.contextMenu(selected)
+    await user.pointer({ keys: "[MouseRight]", target: selected })
 
     expect(
       (await screen.findAllByText("2 blocos selecionados")).some(
@@ -595,8 +590,9 @@ describe("BlockEditor Markdown paste", () => {
 })
 
 describe("BlockEditor block context menu", () => {
-  it("right-clicking the drag handle opens copy/cut/delete for that block", async () => {
+  it("deletes the focused block through the Radix context menu", async () => {
     const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor
         {...editorProps(createTree(), new Set())}
@@ -604,10 +600,11 @@ describe("BlockEditor block context menu", () => {
       />
     )
 
-    const handle = container.querySelector(
-      '[data-cy="block-handle-numbered-item"]'
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
     )!
-    fireEvent.contextMenu(handle)
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
 
     await waitFor(() =>
       expect(
@@ -621,7 +618,7 @@ describe("BlockEditor block context menu", () => {
       document.querySelector('[data-cy="block-menu-cut"]')
     ).toBeInTheDocument()
 
-    fireEvent.click(document.querySelector('[data-cy="block-menu-delete"]')!)
+    await user.click(document.querySelector('[data-cy="block-menu-delete"]')!)
 
     expect(dispatchBatch).toHaveBeenCalledWith(
       [

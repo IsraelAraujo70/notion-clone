@@ -289,6 +289,7 @@ export function BlockEditor({
     () => new Set()
   )
   const selectionRef = useRef<ReadonlySet<string>>(new Set())
+  const menuTargetIdsRef = useRef<string[]>([])
   const selectionAnchorRef = useRef<string | null>(null)
   const marqueeRef = useRef<MarqueeGesture | null>(null)
   const marqueeFrameRef = useRef<number | null>(null)
@@ -1121,6 +1122,17 @@ export function BlockEditor({
     [selection, tree, visibleIds]
   )
 
+  const prepareBlockMenu = useCallback(
+    (blockId: string) => {
+      const current = selectionRef.current
+      const target =
+        current.size > 0 && current.has(blockId) ? current : new Set([blockId])
+      menuTargetIdsRef.current = selectedRoots(target)
+      if (target !== current) setSelectionBoth(target)
+    },
+    [selectedRoots, setSelectionBoth]
+  )
+
   useEffect(() => {
     onSelectedBlockIdsChange?.(selectedRoots(selection))
   }, [onSelectedBlockIdsChange, selectedRoots, selection])
@@ -1162,7 +1174,7 @@ export function BlockEditor({
   )
 
   const duplicateSelectedBlocks = useCallback(() => {
-    const roots = selectedRoots()
+    const roots = selectedRoots(menuTargetIdsRef.current)
     const operations: Operation[] = []
     for (const id of [...roots].reverse()) {
       const block = tree.blocks.get(id)
@@ -1183,7 +1195,7 @@ export function BlockEditor({
 
   const pasteSelectedBlocks = useCallback(async () => {
     const payload = await currentFallbackBlockClipboard()
-    const anchorId = selectedRoots().at(-1) ?? selectedBlockId ?? focusedBlockId
+    const anchorId = selectedRoots(menuTargetIdsRef.current).at(-1) ?? selectedBlockId ?? focusedBlockId
     const anchor = anchorId ? tree.blocks.get(anchorId) : undefined
     if (!payload || !anchor?.parentId) return
     const parent = getBlock(tree, anchor.parentId)
@@ -1199,7 +1211,7 @@ export function BlockEditor({
 
   const turnSelectedInto = useCallback(
     (blockType: BlockType) => {
-      const operations = selectedRoots().flatMap((id) => {
+      const operations = selectedRoots(menuTargetIdsRef.current).flatMap((id) => {
         const block = tree.blocks.get(id)
         if (!block || ["page", "image", "divider"].includes(block.type)) return []
         return [
@@ -1229,7 +1241,7 @@ export function BlockEditor({
 
   const runOptionsAction = useCallback(
     (action: BlockMenuAction, blockId: string) => {
-      const ids = selectedRoots()
+      const ids = menuTargetIdsRef.current
       switch (action) {
         case "ai_transform":
           onAiAction?.("transform_selection", ids)
@@ -1264,7 +1276,6 @@ export function BlockEditor({
       pasteSelectedBlocks,
       redo,
       runBlockMenu,
-      selectedRoots,
       setSelectionBoth,
       undo,
       visibleIds,
@@ -1534,10 +1545,7 @@ export function BlockEditor({
           <ContextMenu
             onOpenChange={(open) => {
               if (!open) return
-              const current = selectionRef.current
-            if (!(current.size > 0 && current.has(block.id))) {
-              setSelectionBoth(new Set([block.id]))
-            }
+              prepareBlockMenu(block.id)
           }}
         >
           <ContextMenuTrigger asChild>
@@ -1585,17 +1593,13 @@ export function BlockEditor({
                   data-cy={`block-handle-${block.id}`}
                   onMouseDown={(event) => event.stopPropagation()}
                   onClick={() => {
-                    if (!selectionRef.current.has(block.id)) {
-                      setSelectionBoth(new Set([block.id]))
-                    }
+                    prepareBlockMenu(block.id)
                     setOpenHandleMenuId(block.id)
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return
                     event.preventDefault()
-                    if (!selectionRef.current.has(block.id)) {
-                      setSelectionBoth(new Set([block.id]))
-                    }
+                    prepareBlockMenu(block.id)
                     setOpenHandleMenuId(block.id)
                   }}
                   className={`pointer-events-none absolute top-1/2 left-0.5 z-10 flex h-8 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-[background,color,opacity] select-none group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-muted hover:text-muted-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100 ${
