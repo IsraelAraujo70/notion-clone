@@ -290,10 +290,12 @@ export function BlockEditor({
   )
   const selectionRef = useRef<ReadonlySet<string>>(new Set())
   const menuTargetIdsRef = useRef<string[]>([])
+  const [menuTargetCount, setMenuTargetCount] = useState(0)
+  const menuSelectionRef = useRef<ReadonlySet<string>>(new Set())
+  const pendingContextMenuBlockRef = useRef<string | null>(null)
   const menuRestoreFocusRef = useRef<HTMLElement | null>(null)
   const preserveMenuSelectionRef = useRef(false)
   const nativeTextContextBlockRef = useRef<string | null>(null)
-  const preserveSelectionOnFocusRef = useRef(false)
   const selectionAnchorRef = useRef<string | null>(null)
   const marqueeRef = useRef<MarqueeGesture | null>(null)
   const marqueeFrameRef = useRef<number | null>(null)
@@ -1131,18 +1133,14 @@ export function BlockEditor({
       const current = selectionRef.current
       const target =
         current.size > 0 && current.has(blockId) ? current : new Set([blockId])
-      menuTargetIdsRef.current = selectedRoots(target)
+      menuSelectionRef.current = target
+      const roots = selectedRoots(target)
+      menuTargetIdsRef.current = roots
+      setMenuTargetCount(roots.length)
       if (target !== current) setSelectionBoth(target)
     },
     [selectedRoots, setSelectionBoth]
   )
-
-  const preserveSelectionOnNextFocus = useCallback(() => {
-    preserveSelectionOnFocusRef.current = true
-    queueMicrotask(() => {
-      preserveSelectionOnFocusRef.current = false
-    })
-  }, [])
 
   const restoreBlockMenuFocus = useCallback((event: Event) => {
     const target = menuRestoreFocusRef.current
@@ -1151,6 +1149,26 @@ export function BlockEditor({
     event.preventDefault()
     target.focus()
   }, [])
+
+  const prepareTextBlockMenu = useCallback(
+    (blockId: string, element: HTMLElement) => {
+      const useNativeMenu =
+        nativeTextContextBlockRef.current === blockId ||
+        hasNativeTextSelection(element)
+      if (useNativeMenu) {
+        nativeTextContextBlockRef.current = blockId
+        pendingContextMenuBlockRef.current = null
+        menuRestoreFocusRef.current = null
+        return
+      }
+      nativeTextContextBlockRef.current = null
+      preserveMenuSelectionRef.current = true
+      pendingContextMenuBlockRef.current = blockId
+      prepareBlockMenu(blockId)
+      menuRestoreFocusRef.current = element
+    },
+    [prepareBlockMenu]
+  )
 
   useEffect(() => {
     onSelectedBlockIdsChange?.(selectedRoots(selection))
@@ -1566,7 +1584,12 @@ export function BlockEditor({
             onOpenChange={(open) => {
               if (!open) return
               preserveMenuSelectionRef.current = true
-              prepareBlockMenu(block.id)
+              if (pendingContextMenuBlockRef.current === block.id) {
+                pendingContextMenuBlockRef.current = null
+                setSelectionBoth(new Set(menuSelectionRef.current))
+              } else {
+                prepareBlockMenu(block.id)
+              }
           }}
         >
           <ContextMenuTrigger asChild>
@@ -1585,6 +1608,7 @@ export function BlockEditor({
                   (event.target as HTMLElement).closest('[contenteditable="true"]')
                 )
                   return
+                pendingContextMenuBlockRef.current = block.id
                 prepareBlockMenu(block.id)
                 menuRestoreFocusRef.current =
                   (event.target as HTMLElement).closest<HTMLElement>(
@@ -1960,15 +1984,12 @@ export function BlockEditor({
                           return
                         }
                         if (event.button !== 2) return
-                        if (hasNativeTextSelection(event.currentTarget)) {
-                          nativeTextContextBlockRef.current = block.id
-                          menuRestoreFocusRef.current = null
-                          return
+                        prepareTextBlockMenu(block.id, event.currentTarget)
+                      }}
+                      onMouseDownCapture={(event) => {
+                        if (event.button === 2) {
+                          prepareTextBlockMenu(block.id, event.currentTarget)
                         }
-                        nativeTextContextBlockRef.current = null
-                        prepareBlockMenu(block.id)
-                        menuRestoreFocusRef.current = event.currentTarget
-                        preserveSelectionOnNextFocus()
                       }}
                       onContextMenuCapture={(event) => {
                         const useNativeMenu =
@@ -1976,6 +1997,7 @@ export function BlockEditor({
                           hasNativeTextSelection(event.currentTarget)
                         nativeTextContextBlockRef.current = null
                         if (useNativeMenu) {
+                          pendingContextMenuBlockRef.current = null
                           event.stopPropagation()
                         }
                       }}
@@ -1985,13 +2007,9 @@ export function BlockEditor({
                         checked ? "text-muted-foreground line-through" : ""
                       }`}
                       onFocus={() => {
-                        const preserveSelection =
-                          preserveSelectionOnFocusRef.current ||
-                          preserveMenuSelectionRef.current
-                        preserveSelectionOnFocusRef.current = false
                         setFocusedBlockId(block.id)
                         onSelectedBlockChange(block.id)
-                        if (!preserveSelection) clearSelection()
+                        if (!preserveMenuSelectionRef.current) clearSelection()
                       }}
                       onBlur={() => {
                         setFocusedBlockId((current) =>
@@ -2025,9 +2043,9 @@ export function BlockEditor({
             </div>
           </ContextMenuTrigger>
           <BlockContextOptionsContent
-            count={Math.max(1, selectedRootIds.length)}
+            count={Math.max(1, menuTargetCount)}
             canWrite={!readOnly}
-            canContinue={!readOnly && selectedRootIds.length === 1}
+            canContinue={!readOnly && menuTargetCount === 1}
             canPaste={clipboardReady}
             onCloseAutoFocus={restoreBlockMenuFocus}
             onAction={(action) => runOptionsAction(action, block.id)}

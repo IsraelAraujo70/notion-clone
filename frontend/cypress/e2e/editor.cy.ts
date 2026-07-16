@@ -16,22 +16,21 @@ describe("block editor", () => {
   }
 
   function openBlockContextMenu(editable: HTMLElement) {
-    editable.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        bubbles: true,
-        pointerId: 9,
-        pointerType: "mouse",
-        button: 2,
+    editable.ownerDocument.getSelection()?.removeAllRanges()
+    return cy
+      .wrap(editable)
+      .then(($editable) => {
+        $editable[0].dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 9,
+            pointerType: "mouse",
+            button: 2,
+            buttons: 2,
+          })
+        )
       })
-    )
-    editable.focus()
-    editable.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        button: 2,
-      })
-    )
+      .rightclick()
   }
 
   beforeEach(() => {
@@ -138,7 +137,7 @@ describe("block editor", () => {
     })
   })
 
-  it("draws a marquee and keeps a multi-selection in the custom menu", () => {
+  it("keeps a marquee selection through Chromium focus and duplicates both blocks", () => {
     firstBlock().click().type("Alpha{enter}Bravo{enter}Charlie")
     saved()
 
@@ -188,13 +187,23 @@ describe("block editor", () => {
         row.classList.contains("bg-primary/15")
       )
       expect(selected).to.have.length(2)
-      openBlockContextMenu(
+      return openBlockContextMenu(
         selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
       )
     })
     cy.contains("2 blocos selecionados").should("be.visible")
     cy.contains("Duplicar").should("be.visible")
     cy.contains("Transformar em").should("be.visible")
+    cy.contains("Duplicar").click()
+    cy.get('[data-block-id] [contenteditable="true"]').should(($editables) => {
+      expect([...$editables].map((editable) => editable.textContent)).to.deep.equal([
+        "Alpha",
+        "Alpha",
+        "Bravo",
+        "Bravo",
+        "Charlie",
+      ])
+    })
   })
 
   it("creates a nested page, navigates by breadcrumb, and persists its content", () => {

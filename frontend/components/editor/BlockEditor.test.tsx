@@ -380,7 +380,10 @@ describe("BlockEditor block selection", () => {
     const editable = container.querySelector<HTMLElement>(
       '[data-block-id="select-a"] [contenteditable]'
     )!
-    await user.pointer({ keys: "[MouseRight]", target: editable })
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
 
     expect(
       (await screen.findAllByText("2 blocos selecionados")).some(
@@ -391,7 +394,10 @@ describe("BlockEditor block selection", () => {
     await user.keyboard("{Escape}")
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
 
-    await user.pointer({ keys: "[MouseRight]", target: editable })
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
     await user.click(await screen.findByText("Copiar"))
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
