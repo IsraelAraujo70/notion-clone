@@ -1,22 +1,31 @@
 import { describe, expect, it } from "vitest"
 
 import { filteredSlashItems, SLASH_ITEMS } from "./SlashMenu"
+import { editorPt } from "@/lib/i18n/locales/pt/editor"
 
 describe("filteredSlashItems", () => {
   it("returns every block type for an empty query", () => {
     expect(filteredSlashItems("")).toEqual(SLASH_ITEMS)
   })
 
-  it.each(["title", "titulo"])(
-    "finds every heading with the %s alias",
-    (query) => {
-      expect(filteredSlashItems(query).map((item) => item.type)).toEqual([
-        "heading1",
-        "heading2",
-        "heading3",
-      ])
-    }
-  )
+  it("finds every heading by its English alias", () => {
+    expect(filteredSlashItems("title").map((item) => item.type)).toEqual([
+      "heading1",
+      "heading2",
+      "heading3",
+    ])
+  })
+
+  it("finds every heading by its Portuguese alias without accents", () => {
+    const portugueseItems = SLASH_ITEMS.map((item) => ({
+      ...item,
+      label: editorPt[item.label],
+      keywords: editorPt[item.keywords],
+    }))
+    expect(
+      filteredSlashItems("titulo", portugueseItems).map((item) => item.type)
+    ).toEqual(["heading1", "heading2", "heading3"])
+  })
 
   it.each(["block", "bloco"])(
     "returns the complete selector for the generic %s query",

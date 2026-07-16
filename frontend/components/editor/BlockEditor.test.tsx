@@ -164,11 +164,11 @@ describe("BlockEditor slash menu", () => {
     editable.focus()
     setEditableText(editable, "/")
 
-    expect(screen.getByRole("button", { name: /Texto$/ })).toBeVisible()
-    expect(screen.getByRole("button", { name: /Imagem$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Text$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Image$/ })).toBeVisible()
 
     fireEvent.keyDown(editable, { key: "Escape" })
-    expect(screen.queryByRole("button", { name: /Texto$/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Text$/ })).toBeNull()
     expect(editable).toHaveTextContent("/")
   })
 
@@ -187,8 +187,8 @@ describe("BlockEditor slash menu", () => {
     editable.focus()
     setEditableText(editable, "/title")
 
-    expect(screen.getByRole("button", { name: /Título 1$/ })).toBeVisible()
-    expect(screen.getByRole("button", { name: /Título 3$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Heading 1$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Heading 3$/ })).toBeVisible()
     fireEvent.keyDown(editable, { key: "ArrowDown" })
     fireEvent.keyDown(editable, { key: "Enter" })
 
@@ -220,9 +220,9 @@ describe("BlockEditor slash menu", () => {
     editable.focus()
     setEditableText(editable, "/block")
 
-    expect(screen.getByRole("button", { name: /Texto$/ })).toBeVisible()
-    expect(screen.getByRole("button", { name: /Imagem$/ })).toBeVisible()
-    fireEvent.mouseDown(screen.getByRole("button", { name: /Citação$/ }))
+    expect(screen.getByRole("button", { name: /Text$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Image$/ })).toBeVisible()
+    fireEvent.mouseDown(screen.getByRole("button", { name: /Quote$/ }))
 
     expect(dispatchBatch).toHaveBeenLastCalledWith(
       [
@@ -251,13 +251,13 @@ describe("BlockEditor slash menu", () => {
 
     editable.focus()
     setEditableText(editable, "/title")
-    expect(screen.getByRole("button", { name: /Título 1$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Heading 1$/ })).toBeVisible()
 
     const outside = screen.getByRole("button", { name: "Outside" })
     fireEvent.blur(editable, { relatedTarget: outside })
     fireEvent.focus(outside)
 
-    expect(screen.queryByRole("button", { name: /Título 1$/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Heading 1$/ })).toBeNull()
   })
 })
 
@@ -715,7 +715,7 @@ describe("BlockEditor block selection", () => {
     editable.focus()
     fireEvent.contextMenu(editable)
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
-    await user.click(await screen.findByText("Copiar"))
+    await user.click(await screen.findByText("Copy"))
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
   })
 
@@ -743,7 +743,7 @@ describe("BlockEditor block selection", () => {
     fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
     fireEvent.contextMenu(editable)
     expect(
-      (await screen.findAllByText("2 blocos selecionados")).some(
+      (await screen.findAllByText("2 blocks selected")).some(
         (element) => !element.classList.contains("sr-only")
       )
     ).toBe(true)

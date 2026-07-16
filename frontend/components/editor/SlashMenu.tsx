@@ -87,12 +87,17 @@ export function filteredSlashItems(
   query: string,
   items: readonly SlashItem[] = SLASH_ITEMS
 ): SlashItem[] {
-  const normalized = query.trim().toLowerCase()
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+  const normalized = normalize(query.trim())
   if (!normalized || normalized === "block" || normalized === "bloco") {
     return [...items]
   }
   return items.filter((item) =>
-    `${item.label} ${item.keywords}`.toLowerCase().includes(normalized)
+    normalize(`${item.label} ${item.keywords}`).includes(normalized)
   )
 }
 
