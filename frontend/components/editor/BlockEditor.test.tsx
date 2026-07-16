@@ -323,6 +323,14 @@ function treeWithThreeBlocks() {
   return tree
 }
 
+function treeWithMissingRootParent() {
+  const tree = treeWithThreeBlocks()
+  const root = tree.blocks.get(tree.rootId)!
+  const blocks = new Map(tree.blocks)
+  blocks.set(root.id, { ...root, parentId: "missing-container" })
+  return { ...tree, blocks }
+}
+
 describe("BlockEditor block selection", () => {
   it("draws a geometric marquee and selects intersecting rows", async () => {
     const onSelectedBlockIdsChange = vi.fn()
@@ -430,7 +438,8 @@ describe("BlockEditor block selection", () => {
     expect(screen.getByText("Transformar em")).toBeVisible()
   })
 
-  it("preserves a multi-selection when right-clicking one selected block", async () => {
+  it("preserves a multi-selection after cancelling and copying from the context menu", async () => {
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -441,23 +450,77 @@ describe("BlockEditor block selection", () => {
       )
     }
 
-    const selected = container.querySelector('[data-block-id="select-a"]')!
-    fireEvent.pointerDown(selected, {
-      pointerId: 9,
-      pointerType: "mouse",
-      button: 2,
-      ctrlKey: true,
-    })
-    fireEvent.contextMenu(selected)
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
 
     expect(
       (await screen.findAllByText("2 blocos selecionados")).some(
         (element) => !element.classList.contains("sr-only")
       )
     ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    await waitFor(() =>
+      expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    )
+
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    await user.click(await screen.findByText("Copiar"))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
   })
 
-  it("leaves native copy untouched while text is selected", () => {
+  it("restores menu focus without revalidating selection through a missing parent", async () => {
+    const user = userEvent.setup()
+    const onSelectedBlockChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithMissingRootParent(), new Set())}
+        onSelectedBlockChange={onSelectedBlockChange}
+      />
+    )
+    await Promise.resolve()
+    for (const id of ["select-a", "select-b"]) {
+      fireEvent.pointerDown(
+        container.querySelector(`[data-block-id="${id}"]`)!,
+        { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+      )
+    }
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    fireEvent.contextMenu(editable)
+    expect(
+      (await screen.findAllByText("2 blocos selecionados")).some(
+        (element) => !element.classList.contains("sr-only")
+      )
+    ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(document.activeElement).toBe(editable))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const third = container.querySelector<HTMLElement>(
+      '[data-block-id="select-c"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(third, { button: 0, pointerType: "mouse" })
+    third.focus()
+    expect(onSelectedBlockChange).toHaveBeenLastCalledWith("select-c")
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(0)
+  })
+
+  it("keeps the native menu when pointerdown starts with selected text", () => {
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -475,9 +538,13 @@ describe("BlockEditor block selection", () => {
     selection.addRange(range)
     const setData = vi.fn()
 
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    selection.removeAllRanges()
+    editable.focus()
     expect(fireEvent.contextMenu(editable)).toBe(true)
     expect(document.querySelector('[data-cy="block-context-menu"]')).toBeNull()
 
+    selection.addRange(range)
     const event = new Event("copy", { bubbles: true, cancelable: true })
     Object.defineProperty(event, "clipboardData", {
       value: { setData, getData: () => "", files: [] },
@@ -660,8 +727,9 @@ describe("BlockEditor Markdown paste", () => {
 })
 
 describe("BlockEditor block context menu", () => {
-  it("right-clicking the drag handle opens copy/cut/delete for that block", async () => {
+  it("deletes the focused block through the Radix context menu", async () => {
     const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor
         {...editorProps(createTree(), new Set())}
@@ -669,10 +737,11 @@ describe("BlockEditor block context menu", () => {
       />
     )
 
-    const handle = container.querySelector(
-      '[data-cy="block-handle-numbered-item"]'
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
     )!
-    fireEvent.contextMenu(handle)
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
 
     await waitFor(() =>
       expect(
@@ -686,7 +755,7 @@ describe("BlockEditor block context menu", () => {
       document.querySelector('[data-cy="block-menu-cut"]')
     ).toBeInTheDocument()
 
-    fireEvent.click(document.querySelector('[data-cy="block-menu-delete"]')!)
+    await user.click(document.querySelector('[data-cy="block-menu-delete"]')!)
 
     expect(dispatchBatch).toHaveBeenCalledWith(
       [

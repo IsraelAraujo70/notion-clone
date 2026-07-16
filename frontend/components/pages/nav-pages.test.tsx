@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { NavPages, buildPageTree } from "@/components/pages/nav-pages"
-import { SidebarProvider } from "@/components/ui/sidebar"
+import { Sidebar, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { PageSummary } from "@/lib/api"
 
@@ -56,11 +56,13 @@ function page(
   }
 }
 
-function renderNavPages() {
+function renderNavPages({ collapsed = false } = {}) {
   return render(
     <TooltipProvider>
-      <SidebarProvider>
-        <NavPages />
+      <SidebarProvider defaultOpen={!collapsed}>
+        <Sidebar collapsible="icon">
+          <NavPages />
+        </Sidebar>
       </SidebarProvider>
     </TooltipProvider>
   )
@@ -98,7 +100,7 @@ describe("NavPages", () => {
     renderNavPages()
 
     const toggle = getByDataCy("nav-page-toggle-root")
-    const emoji = getByDataCy("nav-page-leading-root")
+    const emoji = toggle.querySelector("span")
 
     expect(toggle).toHaveAttribute("aria-expanded", "true")
     expect(getByDataCy("nav-page-root")).toHaveStyle({
@@ -115,6 +117,49 @@ describe("NavPages", () => {
     expect(
       document.querySelector('[data-cy="nav-page-title-child"]')
     ).toBeNull()
+  })
+
+  it("shows only top-level page emojis when the sidebar is collapsed", () => {
+    mocks.pages = [
+      { ...page("parent", null, "Planejamento"), icon: "📌" },
+      { ...page("child", "parent", "Detalhes"), icon: "📝" },
+      { ...page("leaf", null, "Referências"), icon: "📚" },
+    ]
+    mocks.canWrite = true
+    renderNavPages({ collapsed: true })
+
+    expect(
+      document.querySelector('[data-slot="sidebar"][data-state]')
+    ).toHaveAttribute("data-state", "collapsed")
+    expect(getByDataCy("nav-page-leading-parent")).toHaveTextContent("📌")
+    expect(getByDataCy("nav-page-leading-parent")).toHaveClass(
+      "hidden",
+      "group-data-[collapsible=icon]:flex"
+    )
+    expect(getByDataCy("nav-page-leading-leaf")).toHaveTextContent("📚")
+    expect(getByDataCy("nav-page-title-parent")).toHaveClass(
+      "group-data-[collapsible=icon]:hidden"
+    )
+    expect(getByDataCy("nav-page-title-leaf")).toHaveClass(
+      "group-data-[collapsible=icon]:hidden"
+    )
+    expect(getByDataCy("nav-page-parent")).toHaveAttribute(
+      "aria-label",
+      "Planejamento"
+    )
+    expect(getByDataCy("nav-page-parent")).toHaveAttribute(
+      "title",
+      "Planejamento"
+    )
+    expect(getByDataCy("nav-page-toggle-parent")).toHaveClass(
+      "group-data-[collapsible=icon]:hidden"
+    )
+    expect(getByDataCy("nav-page-plus-parent")).toHaveClass(
+      "group-data-[collapsible=icon]:hidden"
+    )
+    expect(getByDataCy("nav-page-leading-child").closest("ul")).toHaveClass(
+      "group-data-[collapsible=icon]:hidden"
+    )
   })
 
   it("caps recursive indentation at four levels and preserves the full title", () => {

@@ -31,6 +31,8 @@ describe("editor and sidebar UX eval", () => {
   })
 
   it("proves highlighted multiline code, a persisted rail, and legible deep titles", () => {
+    currentPageId().as("rootPageId")
+
     cy.get('[data-block-type="paragraph"] [contenteditable="true"]')
       .first()
       .click()
@@ -80,6 +82,24 @@ describe("editor and sidebar UX eval", () => {
 
     currentPageId().then((deepestPageId) => {
       cy.get(`[data-cy="nav-page-${deepestPageId}"]`).should("have.attr", "aria-label", "Sem título")
+    })
+
+    cy.get('[data-cy="sidebar-rail"]').click()
+    cy.get('[data-slot="sidebar"][data-state]').should(
+      "have.attr",
+      "data-state",
+      "collapsed"
+    )
+    cy.get("@rootPageId").then((rootPageId) => {
+      cy.get(`[data-cy="nav-page-leading-${rootPageId}"]`).should("be.visible")
+      cy.get(`[data-cy="nav-page-title-${rootPageId}"]`).should("not.be.visible")
+      cy.get(`[data-cy="nav-page-toggle-${rootPageId}"]`).should("not.be.visible")
+      cy.get(`[data-cy="nav-page-plus-${rootPageId}"]`).should("not.be.visible")
+    })
+    currentPageId().then((deepestPageId) => {
+      cy.get(`[data-cy="nav-page-title-${deepestPageId}"]`).should(
+        "not.be.visible"
+      )
     })
 
     cy.get("body").click(1100, 780).type("d")
