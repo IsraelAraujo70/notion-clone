@@ -54,7 +54,6 @@ interface Props {
   canContinue: boolean
   canPaste: boolean
   onCloseAutoFocus?: (event: Event) => void
-  onEscapeKeyDown?: (event: KeyboardEvent) => void
   onAction: (action: BlockMenuAction) => void
   onTurnInto: (blockType: BlockType) => void
 }
@@ -70,7 +69,6 @@ export function BlockContextOptionsContent(props: Props) {
       aria-label="Opções dos blocos"
       className="min-w-60"
       onCloseAutoFocus={props.onCloseAutoFocus}
-      onEscapeKeyDown={props.onEscapeKeyDown}
     >
       <ContextMenuLabel>
         {props.count === 1 ? "1 bloco selecionado" : `${props.count} blocos selecionados`}

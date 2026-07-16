@@ -264,6 +264,14 @@ function treeWithThreeBlocks() {
   return tree
 }
 
+function treeWithMissingRootParent() {
+  const tree = treeWithThreeBlocks()
+  const root = tree.blocks.get(tree.rootId)!
+  const blocks = new Map(tree.blocks)
+  blocks.set(root.id, { ...root, parentId: "missing-container" })
+  return { ...tree, blocks }
+}
+
 describe("BlockEditor block selection", () => {
   it("draws a geometric marquee and selects intersecting rows", async () => {
     const onSelectedBlockIdsChange = vi.fn()
@@ -403,6 +411,48 @@ describe("BlockEditor block selection", () => {
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
     await user.click(await screen.findByText("Copiar"))
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+  })
+
+  it("restores menu focus without revalidating selection through a missing parent", async () => {
+    const user = userEvent.setup()
+    const onSelectedBlockChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithMissingRootParent(), new Set())}
+        onSelectedBlockChange={onSelectedBlockChange}
+      />
+    )
+    await Promise.resolve()
+    for (const id of ["select-a", "select-b"]) {
+      fireEvent.pointerDown(
+        container.querySelector(`[data-block-id="${id}"]`)!,
+        { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+      )
+    }
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    fireEvent.contextMenu(editable)
+    expect(
+      (await screen.findAllByText("2 blocos selecionados")).some(
+        (element) => !element.classList.contains("sr-only")
+      )
+    ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(document.activeElement).toBe(editable))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const third = container.querySelector<HTMLElement>(
+      '[data-block-id="select-c"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(third, { button: 0, pointerType: "mouse" })
+    third.focus()
+    expect(onSelectedBlockChange).toHaveBeenLastCalledWith("select-c")
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(0)
   })
 
   it("keeps the native menu when pointerdown starts with selected text", () => {
