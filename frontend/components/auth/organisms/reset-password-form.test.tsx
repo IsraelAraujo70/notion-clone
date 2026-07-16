@@ -23,13 +23,13 @@ describe("ResetPasswordForm", () => {
   it("rejects missing reset tokens", async () => {
     render(<ResetPasswordForm token="" />)
 
-    await userEvent.type(screen.getByLabelText("Nova senha"), "Password123!")
+    await userEvent.type(screen.getByLabelText("New password"), "Password123!")
     await userEvent.type(
-      screen.getByLabelText("Confirmar senha"),
+      screen.getByLabelText("Confirm password"),
       "Password123!"
     )
     await userEvent.click(
-      screen.getByRole("button", { name: "Salvar nova senha" })
+      screen.getByRole("button", { name: "Save new password" })
     )
 
     expect(mocks.resetPassword).not.toHaveBeenCalled()
@@ -39,13 +39,13 @@ describe("ResetPasswordForm", () => {
     mocks.resetPassword.mockResolvedValue(undefined)
     render(<ResetPasswordForm token="reset-token" />)
 
-    await userEvent.type(screen.getByLabelText("Nova senha"), "Password123!")
+    await userEvent.type(screen.getByLabelText("New password"), "Password123!")
     await userEvent.type(
-      screen.getByLabelText("Confirmar senha"),
+      screen.getByLabelText("Confirm password"),
       "Password123!"
     )
     await userEvent.click(
-      screen.getByRole("button", { name: "Salvar nova senha" })
+      screen.getByRole("button", { name: "Save new password" })
     )
 
     expect(mocks.resetPassword).toHaveBeenCalledWith({
@@ -53,7 +53,7 @@ describe("ResetPasswordForm", () => {
       password: "Password123!",
     })
     expect(
-      screen.getByText("Senha alterada. Entre com a nova senha.")
+      screen.getByText("Password changed. Sign in with your new password.")
     ).toBeInTheDocument()
   })
 })

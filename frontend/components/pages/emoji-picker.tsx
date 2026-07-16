@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 // ponytail: grade curada, não o Unicode inteiro. Cobre o uso real (ícone de
 // página) sem uma dependência de picker. Se pedirem busca/skin tones, troque o
@@ -27,7 +28,7 @@ export function EmojiPicker({
   onSelect,
   disabled,
   className,
-  label = "Escolher ícone da página",
+  label,
 }: {
   value: string
   onSelect: (emoji: string | null) => void
@@ -35,6 +36,7 @@ export function EmojiPicker({
   className?: string
   label?: string
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
 
   const choose = (emoji: string | null) => {
@@ -48,7 +50,7 @@ export function EmojiPicker({
         <button
           type="button"
           disabled={disabled}
-          aria-label={label}
+          aria-label={label ?? t("Choose page icon")}
           data-cy="page-icon-trigger"
           className={`grid size-12 place-items-center rounded-md text-[36px] leading-none transition-colors hover:bg-muted disabled:pointer-events-none ${className ?? ""}`}
         >
@@ -77,7 +79,7 @@ export function EmojiPicker({
           data-cy="page-icon-remove"
           onClick={() => choose(null)}
         >
-          Remover ícone
+          {t("Remove icon")}
         </Button>
       </PopoverContent>
     </Popover>

@@ -25,10 +25,12 @@ import { PasswordInput } from "@/components/auth/molecules/password-input"
 import { Spinner } from "@/components/ui/spinner"
 import { ApiError, api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { isStrongPassword } from "@/lib/passwordStrength"
 
 export function SignupForm({ inviteToken }: { inviteToken?: string }) {
   const { signup } = useAuth()
+  const { t } = useI18n()
   const router = useRouter()
   const [displayName, setDisplayName] = useState("")
   const [email, setEmail] = useState("")
@@ -44,11 +46,11 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
     event.preventDefault()
     setError(null)
     if (!passwordReady) {
-      setError("Use uma senha mais forte antes de criar sua conta.")
+      setError(t("Use a stronger password before creating your account."))
       return
     }
     if (password !== confirmPassword) {
-      setError("As senhas não conferem.")
+      setError(t("Passwords do not match."))
       return
     }
     setPending(true)
@@ -66,7 +68,7 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível falar com o servidor. Tente novamente."
+          : t("Could not reach the server. Try again.")
       )
       setPending(false)
     }
@@ -76,9 +78,11 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
     <form onSubmit={handleSubmit} className="w-full max-w-sm">
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading text-2xl">Criar conta</CardTitle>
+          <CardTitle className="font-heading text-2xl">
+            {t("Create account")}
+          </CardTitle>
           <CardDescription>
-            Entre no workspace protegido do reason.
+            {t("Join reason's protected workspace.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -89,7 +93,7 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
           )}
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="name">Nome</FieldLabel>
+              <FieldLabel htmlFor="name">{t("Name")}</FieldLabel>
               <Input
                 id="name"
                 data-cy="signup-display-name"
@@ -102,7 +106,7 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <FieldLabel htmlFor="email">{t("Email")}</FieldLabel>
               <Input
                 id="email"
                 data-cy="signup-email"
@@ -114,7 +118,7 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
               />
             </Field>
             <Field data-invalid={!passwordReady && password.length > 0}>
-              <FieldLabel htmlFor="password">Senha</FieldLabel>
+              <FieldLabel htmlFor="password">{t("Password")}</FieldLabel>
               <PasswordInput
                 id="password"
                 data-cy="signup-password"
@@ -130,7 +134,7 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
             </Field>
             <Field data-invalid={passwordsMismatch}>
               <FieldLabel htmlFor="confirm-password">
-                Confirmar senha
+                {t("Confirm password")}
               </FieldLabel>
               <PasswordInput
                 id="confirm-password"
@@ -144,7 +148,9 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
               {passwordsMismatch && (
-                <FieldDescription>As senhas não conferem.</FieldDescription>
+                <FieldDescription>
+                  {t("Passwords do not match.")}
+                </FieldDescription>
               )}
             </Field>
           </FieldGroup>
@@ -157,15 +163,15 @@ export function SignupForm({ inviteToken }: { inviteToken?: string }) {
             disabled={pending || !passwordReady || password !== confirmPassword}
           >
             {pending && <Spinner data-icon="inline-start" />}
-            {pending ? "Criando conta..." : "Criar conta"}
+            {pending ? t("Creating account...") : t("Create account")}
           </Button>
           <p className="text-sm text-muted-foreground">
-            Já tem conta?{" "}
+            {t("Already have an account?")}{" "}
             <Link
               href={inviteToken ? `/login?invite=${inviteToken}` : "/login"}
               className="text-primary hover:underline"
             >
-              Entrar
+              {t("Sign in")}
             </Link>
           </p>
         </CardFooter>

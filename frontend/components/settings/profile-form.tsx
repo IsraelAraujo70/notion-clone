@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function initials(displayName: string) {
   return displayName
@@ -20,6 +21,7 @@ function initials(displayName: string) {
 
 export function ProfileForm() {
   const { user, token, refreshUser } = useAuth()
+  const { t } = useI18n()
   const [displayName, setDisplayName] = useState(user?.display_name ?? "")
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     user?.avatar_url ?? null
@@ -42,7 +44,7 @@ export function ProfileForm() {
       setSaved(true)
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Não foi possível salvar o nome"
+        err instanceof ApiError ? err.message : t("Could not save the name.")
       )
     } finally {
       setSaving(false)
@@ -66,7 +68,7 @@ export function ProfileForm() {
         body: file,
       })
       if (!put.ok) {
-        throw new Error("Upload falhou")
+        throw new Error("Upload failed")
       }
       await api.updateProfile(token, { avatar_key: presign.key })
       setPreviewUrl(presign.public_url)
@@ -76,7 +78,7 @@ export function ProfileForm() {
       setError(
         err instanceof ApiError
           ? err.message
-          : "Não foi possível enviar a foto (verifique o MinIO/S3)"
+          : t("Could not upload the photo (check MinIO/S3).")
       )
     } finally {
       setUploading(false)
@@ -88,7 +90,9 @@ export function ProfileForm() {
     <div className="flex flex-col gap-4" data-cy="profile-form">
       <div className="flex items-center gap-4">
         <Avatar className="size-16 rounded-full">
-          {previewUrl ? <AvatarImage src={previewUrl} alt={displayName} /> : null}
+          {previewUrl ? (
+            <AvatarImage src={previewUrl} alt={displayName} />
+          ) : null}
           <AvatarFallback className="text-base">
             {initials(displayName || user.display_name)}
           </AvatarFallback>
@@ -110,14 +114,16 @@ export function ProfileForm() {
             data-cy="avatar-upload-button"
             onClick={() => fileRef.current?.click()}
           >
-            {uploading ? "Enviando…" : "Trocar foto"}
+            {uploading ? t("Uploading…") : t("Change photo")}
           </Button>
-          <p className="text-xs text-muted-foreground">JPEG, PNG ou WebP · até 2 MB</p>
+          <p className="text-xs text-muted-foreground">
+            {t("JPEG, PNG, or WebP · up to 2 MB")}
+          </p>
         </div>
       </div>
 
       <div className="grid gap-2">
-        <Label htmlFor="profile-display-name">Nome de exibição</Label>
+        <Label htmlFor="profile-display-name">{t("Display name")}</Label>
         <Input
           id="profile-display-name"
           data-cy="profile-display-name"
@@ -134,11 +140,14 @@ export function ProfileForm() {
           disabled={saving || !displayName.trim()}
           onClick={() => void onSaveName()}
         >
-          {saving ? "Salvando…" : "Salvar nome"}
+          {saving ? t("Saving…") : t("Save name")}
         </Button>
         {saved ? (
-          <span className="text-xs text-muted-foreground" data-cy="profile-saved">
-            Salvo
+          <span
+            className="text-xs text-muted-foreground"
+            data-cy="profile-saved"
+          >
+            {t("Saved")}
           </span>
         ) : null}
       </div>

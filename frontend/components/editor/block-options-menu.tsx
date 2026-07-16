@@ -1,6 +1,7 @@
 "use client"
 
 import type { BlockType } from "@/lib/contracts"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import {
   ClipboardPasteIcon,
   CopyIcon,
@@ -34,7 +35,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
-import { SLASH_ITEMS } from "./SlashMenu"
+import { useSlashItems } from "./SlashMenu"
 
 export type BlockMenuAction =
   | "ai_transform"
@@ -58,20 +59,25 @@ interface Props {
   onTurnInto: (blockType: BlockType) => void
 }
 
-const TURN_INTO_ITEMS = SLASH_ITEMS.filter(
-  (item) => !["image", "divider"].includes(item.type)
-)
-
 export function BlockContextOptionsContent(props: Props) {
+  const { t } = useI18n()
+  const turnIntoItems = useSlashItems().filter(
+    (item) => !["image", "divider"].includes(item.type)
+  )
+  const selectionLabel = t(
+    props.count === 1 ? "{count} block selected" : "{count} blocks selected",
+    { count: props.count }
+  )
+
   return (
     <ContextMenuContent
       data-cy="block-context-menu"
-      aria-label="Opções dos blocos"
+      aria-label={t("Block options")}
       className="min-w-60"
       onCloseAutoFocus={props.onCloseAutoFocus}
     >
       <ContextMenuLabel>
-        {props.count === 1 ? "1 bloco selecionado" : `${props.count} blocos selecionados`}
+        {selectionLabel}
       </ContextMenuLabel>
       <ContextMenuSeparator />
       <ContextMenuGroup>
@@ -80,56 +86,70 @@ export function BlockContextOptionsContent(props: Props) {
           onSelect={() => props.onAction("ai_transform")}
           data-cy="block-menu-ai-transform"
         >
-          <SparklesIcon /> Editar com AI
+          <SparklesIcon /> {t("Edit with AI")}
         </ContextMenuItem>
         {props.canContinue ? (
           <ContextMenuItem
             data-cy="block-menu-ai-continue"
             onSelect={() => props.onAction("ai_continue")}
           >
-            <SparklesIcon /> Continuar escrevendo
+            <SparklesIcon /> {t("Continue writing")}
           </ContextMenuItem>
         ) : null}
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
-        <ContextMenuItem onSelect={() => props.onAction("undo")} disabled={!props.canWrite}>
-          <Undo2Icon /> Desfazer <ContextMenuShortcut>⌘Z</ContextMenuShortcut>
+        <ContextMenuItem
+          onSelect={() => props.onAction("undo")}
+          disabled={!props.canWrite}
+        >
+          <Undo2Icon /> {t("Undo")} <ContextMenuShortcut>⌘Z</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => props.onAction("redo")} disabled={!props.canWrite}>
-          <Redo2Icon /> Refazer <ContextMenuShortcut>⇧⌘Z</ContextMenuShortcut>
+        <ContextMenuItem
+          onSelect={() => props.onAction("redo")}
+          disabled={!props.canWrite}
+        >
+          <Redo2Icon /> {t("Redo")} <ContextMenuShortcut>⇧⌘Z</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("cut")}
           disabled={!props.canWrite}
           data-cy="block-menu-cut"
         >
-          <ScissorsIcon /> Recortar <ContextMenuShortcut>⌘X</ContextMenuShortcut>
+          <ScissorsIcon /> {t("Cut")} <ContextMenuShortcut>⌘X</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => props.onAction("copy")} data-cy="block-menu-copy">
-          <CopyIcon /> Copiar <ContextMenuShortcut>⌘C</ContextMenuShortcut>
+        <ContextMenuItem
+          onSelect={() => props.onAction("copy")}
+          data-cy="block-menu-copy"
+        >
+          <CopyIcon /> {t("Copy")} <ContextMenuShortcut>⌘C</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("paste")}
           disabled={!props.canWrite || !props.canPaste}
         >
-          <ClipboardPasteIcon /> Colar <ContextMenuShortcut>⌘V</ContextMenuShortcut>
+          <ClipboardPasteIcon /> {t("Paste")}{" "}
+          <ContextMenuShortcut>⌘V</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => props.onAction("duplicate")}
           disabled={!props.canWrite}
         >
-          <CopyPlusIcon /> Duplicar <ContextMenuShortcut>⌘D</ContextMenuShortcut>
+          <CopyPlusIcon /> {t("Duplicate")}{" "}
+          <ContextMenuShortcut>⌘D</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuSub>
         <ContextMenuSubTrigger disabled={!props.canWrite}>
-          <ListTreeIcon /> Transformar em
+          <ListTreeIcon /> {t("Turn into")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="max-h-72 overflow-y-auto">
-          {TURN_INTO_ITEMS.map((item) => (
-            <ContextMenuItem key={item.type} onSelect={() => props.onTurnInto(item.type)}>
+          {turnIntoItems.map((item) => (
+            <ContextMenuItem
+              key={item.type}
+              onSelect={() => props.onTurnInto(item.type)}
+            >
               <span aria-hidden="true" className="w-5 text-center text-xs">
                 {item.icon}
               </span>
@@ -139,7 +159,7 @@ export function BlockContextOptionsContent(props: Props) {
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuItem onSelect={() => props.onAction("select_all")}>
-        Selecionar todos <ContextMenuShortcut>⌘A</ContextMenuShortcut>
+        {t("Select all")} <ContextMenuShortcut>⌘A</ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem
@@ -148,17 +168,27 @@ export function BlockContextOptionsContent(props: Props) {
         onSelect={() => props.onAction("delete")}
         data-cy="block-menu-delete"
       >
-        <Trash2Icon /> Apagar{props.count > 1 ? ` (${props.count})` : ""}
+        <Trash2Icon /> {t("Delete")}
+        {props.count > 1 ? ` (${props.count})` : ""}
       </ContextMenuItem>
     </ContextMenuContent>
   )
 }
 
 export function BlockDropdownOptionsContent(props: Props) {
+  const { t } = useI18n()
+  const turnIntoItems = useSlashItems().filter(
+    (item) => !["image", "divider"].includes(item.type)
+  )
+  const selectionLabel = t(
+    props.count === 1 ? "{count} block selected" : "{count} blocks selected",
+    { count: props.count }
+  )
+
   return (
     <DropdownMenuContent align="start" className="min-w-60">
       <DropdownMenuLabel>
-        {props.count === 1 ? "1 bloco selecionado" : `${props.count} blocos selecionados`}
+        {selectionLabel}
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
@@ -166,46 +196,63 @@ export function BlockDropdownOptionsContent(props: Props) {
           disabled={!props.canWrite}
           onSelect={() => props.onAction("ai_transform")}
         >
-          <SparklesIcon /> Editar com AI
+          <SparklesIcon /> {t("Edit with AI")}
         </DropdownMenuItem>
         {props.canContinue ? (
           <DropdownMenuItem onSelect={() => props.onAction("ai_continue")}>
-            <SparklesIcon /> Continuar escrevendo
+            <SparklesIcon /> {t("Continue writing")}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
-        <DropdownMenuItem onSelect={() => props.onAction("undo")} disabled={!props.canWrite}>
-          <Undo2Icon /> Desfazer <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
+        <DropdownMenuItem
+          onSelect={() => props.onAction("undo")}
+          disabled={!props.canWrite}
+        >
+          <Undo2Icon /> {t("Undo")} <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => props.onAction("redo")} disabled={!props.canWrite}>
-          <Redo2Icon /> Refazer <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
+        <DropdownMenuItem
+          onSelect={() => props.onAction("redo")}
+          disabled={!props.canWrite}
+        >
+          <Redo2Icon /> {t("Redo")} <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => props.onAction("cut")} disabled={!props.canWrite}>
-          <ScissorsIcon /> Recortar <DropdownMenuShortcut>⌘X</DropdownMenuShortcut>
+        <DropdownMenuItem
+          onSelect={() => props.onAction("cut")}
+          disabled={!props.canWrite}
+        >
+          <ScissorsIcon /> {t("Cut")} <DropdownMenuShortcut>⌘X</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => props.onAction("copy")}>
-          <CopyIcon /> Copiar <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
+          <CopyIcon /> {t("Copy")} <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => props.onAction("paste")}
           disabled={!props.canWrite || !props.canPaste}
         >
-          <ClipboardPasteIcon /> Colar <DropdownMenuShortcut>⌘V</DropdownMenuShortcut>
+          <ClipboardPasteIcon /> {t("Paste")}{" "}
+          <DropdownMenuShortcut>⌘V</DropdownMenuShortcut>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => props.onAction("duplicate")} disabled={!props.canWrite}>
-          <CopyPlusIcon /> Duplicar <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
+        <DropdownMenuItem
+          onSelect={() => props.onAction("duplicate")}
+          disabled={!props.canWrite}
+        >
+          <CopyPlusIcon /> {t("Duplicate")}{" "}
+          <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={!props.canWrite}>
-          <ListTreeIcon /> Transformar em
+          <ListTreeIcon /> {t("Turn into")}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
-          {TURN_INTO_ITEMS.map((item) => (
-            <DropdownMenuItem key={item.type} onSelect={() => props.onTurnInto(item.type)}>
+          {turnIntoItems.map((item) => (
+            <DropdownMenuItem
+              key={item.type}
+              onSelect={() => props.onTurnInto(item.type)}
+            >
               <span aria-hidden="true" className="w-5 text-center text-xs">
                 {item.icon}
               </span>
@@ -215,7 +262,7 @@ export function BlockDropdownOptionsContent(props: Props) {
         </DropdownMenuSubContent>
       </DropdownMenuSub>
       <DropdownMenuItem onSelect={() => props.onAction("select_all")}>
-        Selecionar todos <DropdownMenuShortcut>⌘A</DropdownMenuShortcut>
+        {t("Select all")} <DropdownMenuShortcut>⌘A</DropdownMenuShortcut>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem
@@ -223,7 +270,8 @@ export function BlockDropdownOptionsContent(props: Props) {
         disabled={!props.canWrite}
         onSelect={() => props.onAction("delete")}
       >
-        <Trash2Icon /> Apagar{props.count > 1 ? ` (${props.count})` : ""}
+        <Trash2Icon /> {t("Delete")}
+        {props.count > 1 ? ` (${props.count})` : ""}
       </DropdownMenuItem>
     </DropdownMenuContent>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useEffectEvent, useState, type FormEvent } from "react"
 import { CopyIcon, KeyRoundIcon } from "lucide-react"
 
 import { McpTokenList } from "@/components/settings/mcp-token-list"
@@ -48,36 +48,39 @@ import {
   type McpScope,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
+import type { Message } from "@/lib/i18n/messages"
 
 const scopeOptions: Array<{
   value: McpScope
-  label: string
-  description: string
+  label: Message
+  description: Message
 }> = [
   {
     value: "content:read",
-    label: "Ler notas",
-    description: "Lista páginas e lê árvores de blocos.",
+    label: "Read notes",
+    description: "Lists pages and reads block trees.",
   },
   {
     value: "content:write",
-    label: "Editar notas",
-    description: "Aplica operações quando seu papel permitir escrita.",
+    label: "Edit notes",
+    description: "Applies operations when your role allows writing.",
   },
   {
     value: "search:read",
-    label: "Pesquisar",
-    description: "Usa a busca semântica do workspace.",
+    label: "Search",
+    description: "Uses the workspace's semantic search.",
   },
   {
     value: "media:read",
-    label: "Ver imagens",
-    description: "Retorna blocos de imagem autorizados.",
+    label: "View images",
+    description: "Returns authorized image blocks.",
   },
 ]
 
 export function McpIntegrationsPanel() {
   const { token } = useAuth()
+  const { t } = useI18n()
   const { activeWorkspace, workspaces } = useWorkspace()
   const [integrations, setIntegrations] = useState<McpIntegrationToken[]>([])
   const [name, setName] = useState("")
@@ -88,11 +91,19 @@ export function McpIntegrationsPanel() {
     scopeOptions.map((scope) => scope.value)
   )
   const [expiresInDays, setExpiresInDays] = useState("30")
-  const [created, setCreated] =
-    useState<CreatedMcpIntegrationToken | null>(null)
+  const [created, setCreated] = useState<CreatedMcpIntegrationToken | null>(
+    null
+  )
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const reportLoadError = useEffectEvent((caught: unknown) => {
+    setError(
+      caught instanceof ApiError
+        ? caught.message
+        : t("Could not load integrations.")
+    )
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -105,11 +116,7 @@ export function McpIntegrationsPanel() {
         })
         .catch((caught) => {
           if (!cancelled) {
-            setError(
-              caught instanceof ApiError
-                ? caught.message
-                : "Não foi possível carregar as integrações."
-            )
+            reportLoadError(caught)
           }
         })
     })
@@ -155,7 +162,7 @@ export function McpIntegrationsPanel() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível criar o token."
+          : t("Could not create the token.")
       )
     } finally {
       setPending(false)
@@ -185,7 +192,7 @@ export function McpIntegrationsPanel() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível revogar o token."
+          : t("Could not revoke the token.")
       )
     } finally {
       setPending(false)
@@ -198,41 +205,46 @@ export function McpIntegrationsPanel() {
     <div className="flex flex-col gap-5">
       <Card>
         <CardHeader>
-          <CardTitle>Conectar um agente</CardTitle>
+          <CardTitle>{t("Connect an agent")}</CardTitle>
           <CardDescription>
-            Crie uma credencial limitada para OpenCode, Claude ou outro cliente
-            MCP acessar o Reason.
+            {t(
+              "Create a limited credential for OpenCode, Claude, or another MCP client to access Reason."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="flex flex-col gap-5">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="mcp-token-name">Nome da integração</FieldLabel>
+                <FieldLabel htmlFor="mcp-token-name">
+                  {t("Integration name")}
+                </FieldLabel>
                 <Input
                   id="mcp-token-name"
-                  placeholder="Ex.: OpenCode no MacBook"
+                  placeholder={t("E.g. OpenCode on MacBook")}
                   maxLength={100}
                   required
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
                 <FieldDescription>
-                  Use um nome que identifique onde o token será usado.
+                  {t(
+                    "Use a name that identifies where the token will be used."
+                  )}
                 </FieldDescription>
               </Field>
               <Field>
-                <FieldLabel>Validade</FieldLabel>
+                <FieldLabel>{t("Expiration")}</FieldLabel>
                 <Select value={expiresInDays} onValueChange={setExpiresInDays}>
                   <SelectTrigger className="w-full sm:w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="7">7 dias</SelectItem>
-                      <SelectItem value="30">30 dias</SelectItem>
-                      <SelectItem value="90">90 dias</SelectItem>
-                      <SelectItem value="365">1 ano</SelectItem>
+                      <SelectItem value="7">{t("7 days")}</SelectItem>
+                      <SelectItem value="30">{t("30 days")}</SelectItem>
+                      <SelectItem value="90">{t("90 days")}</SelectItem>
+                      <SelectItem value="365">{t("1 year")}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -240,12 +252,16 @@ export function McpIntegrationsPanel() {
             </FieldGroup>
 
             <FieldSet>
-              <FieldLegend>Workspaces liberados</FieldLegend>
+              <FieldLegend>{t("Allowed workspaces")}</FieldLegend>
               <FieldDescription>
-                O agente só acessa os workspaces selecionados enquanto você
-                continuar como membro.
+                {t(
+                  "The agent can only access selected workspaces while you remain a member."
+                )}
               </FieldDescription>
-              <FieldGroup data-slot="checkbox-group" className="grid sm:grid-cols-2">
+              <FieldGroup
+                data-slot="checkbox-group"
+                className="grid sm:grid-cols-2"
+              >
                 {workspaces.map((workspace) => (
                   <Field key={workspace.id} orientation="horizontal">
                     <Checkbox
@@ -259,7 +275,13 @@ export function McpIntegrationsPanel() {
                       <FieldLabel htmlFor={`mcp-workspace-${workspace.id}`}>
                         {workspace.name}
                       </FieldLabel>
-                      <FieldDescription>{workspace.role}</FieldDescription>
+                      <FieldDescription>
+                        {workspace.role === "owner"
+                          ? t("Owner")
+                          : workspace.role === "editor"
+                            ? t("Editor")
+                            : t("Viewer")}
+                      </FieldDescription>
                     </FieldContent>
                   </Field>
                 ))}
@@ -267,11 +289,14 @@ export function McpIntegrationsPanel() {
             </FieldSet>
 
             <FieldSet>
-              <FieldLegend>Permissões</FieldLegend>
+              <FieldLegend>{t("Permissions")}</FieldLegend>
               <FieldDescription>
-                Você pode revogar o token a qualquer momento.
+                {t("You can revoke the token at any time.")}
               </FieldDescription>
-              <FieldGroup data-slot="checkbox-group" className="grid sm:grid-cols-2">
+              <FieldGroup
+                data-slot="checkbox-group"
+                className="grid sm:grid-cols-2"
+              >
                 {scopeOptions.map((scope) => (
                   <Field key={scope.value} orientation="horizontal">
                     <Checkbox
@@ -283,22 +308,28 @@ export function McpIntegrationsPanel() {
                     />
                     <FieldContent>
                       <FieldLabel htmlFor={`mcp-scope-${scope.value}`}>
-                        {scope.label}
+                        {t(scope.label)}
                       </FieldLabel>
-                      <FieldDescription>{scope.description}</FieldDescription>
+                      <FieldDescription>
+                        {t(scope.description)}
+                      </FieldDescription>
                     </FieldContent>
                   </Field>
                 ))}
               </FieldGroup>
             </FieldSet>
 
-            <Button type="submit" className="w-fit" disabled={pending || !ready}>
+            <Button
+              type="submit"
+              className="w-fit"
+              disabled={pending || !ready}
+            >
               {pending ? (
                 <Spinner data-icon="inline-start" />
               ) : (
                 <KeyRoundIcon data-icon="inline-start" />
               )}
-              Criar token
+              {t("Create token")}
             </Button>
           </form>
         </CardContent>
@@ -313,12 +344,12 @@ export function McpIntegrationsPanel() {
       {created && (
         <Alert>
           <KeyRoundIcon />
-          <AlertTitle>Token criado. Guarde agora.</AlertTitle>
+          <AlertTitle>{t("Token created. Save it now.")}</AlertTitle>
           <AlertDescription className="flex flex-col gap-3">
-            <p>Por segurança, este valor não será exibido novamente.</p>
+            <p>{t("For security, this value will not be shown again.")}</p>
             <InputGroup>
               <InputGroupInput
-                aria-label="Token MCP criado"
+                aria-label={t("Created MCP token")}
                 readOnly
                 value={created.token}
                 className="font-mono"
@@ -326,7 +357,7 @@ export function McpIntegrationsPanel() {
               <InputGroupAddon align="inline-end">
                 <InputGroupButton onClick={() => void handleCopy()}>
                   <CopyIcon data-icon="inline-start" />
-                  {copied ? "Copiado" : "Copiar"}
+                  {copied ? t("Copied") : t("Copy")}
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
@@ -337,7 +368,7 @@ export function McpIntegrationsPanel() {
               className="w-fit"
               onClick={() => setCreated(null)}
             >
-              Já guardei o token
+              {t("I have saved the token")}
             </Button>
           </AlertDescription>
         </Alert>

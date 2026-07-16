@@ -23,15 +23,17 @@ import { SettingsDialog } from "@/components/settings/settings-dialog"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function NavUser() {
   const router = useRouter()
   const { isMobile } = useSidebar()
   const { user, logout } = useAuth()
+  const { t } = useI18n()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false)
-  const displayName = user?.display_name || "Usuario"
-  const email = user?.email || "Sessao ativa"
+  const displayName = user?.display_name || t("User")
+  const email = user?.email || t("Active session")
   const initials = displayName
     .split(" ")
     .map((part) => part[0])
@@ -96,7 +98,7 @@ export function NavUser() {
                 onSelect={() => setSettingsOpen(true)}
               >
                 <SettingsIcon />
-                Configurações
+                {t("Settings")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -104,7 +106,7 @@ export function NavUser() {
                 onSelect={() => logout().then(() => router.replace("/"))}
               >
                 <LogOutIcon />
-                Sair
+                {t("Log out")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

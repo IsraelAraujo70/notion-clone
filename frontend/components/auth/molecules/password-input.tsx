@@ -10,6 +10,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { Progress } from "@/components/ui/progress"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { getPasswordStrength } from "@/lib/passwordStrength"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +28,7 @@ export function PasswordInput({
   ...props
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false)
+  const { t } = useI18n()
   const generatedId = useId()
   const password = typeof value === "string" ? value : ""
   const strength = getPasswordStrength(password)
@@ -47,7 +49,7 @@ export function PasswordInput({
         <InputGroupAddon align="inline-end">
           <InputGroupButton
             size="icon-xs"
-            aria-label={visible ? "Hide password" : "Show password"}
+            aria-label={visible ? t("Hide password") : t("Show password")}
             aria-pressed={visible}
             onClick={() => setVisible((current) => !current)}
           >
@@ -59,9 +61,12 @@ export function PasswordInput({
       {showStrength && (
         <div id={meterId} className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <Progress value={strength.percent} aria-label="Password strength" />
+            <Progress
+              value={strength.percent}
+              aria-label={t("Password strength")}
+            />
             <span className="min-w-16 text-right text-xs font-medium text-muted-foreground">
-              {strength.label}
+              {t(strength.label)}
             </span>
           </div>
           <ul className="grid gap-1 text-xs text-muted-foreground">
@@ -78,7 +83,7 @@ export function PasswordInput({
                   {check.met ? <CheckIcon /> : <XIcon />}
                 </span>
                 <span className={check.met ? "text-foreground" : undefined}>
-                  {check.label}
+                  {t(check.label)}
                 </span>
               </li>
             ))}

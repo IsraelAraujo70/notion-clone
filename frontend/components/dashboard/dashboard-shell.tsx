@@ -30,10 +30,12 @@ import { Spinner } from "@/components/ui/spinner"
 import { WorkspaceProvider } from "@/components/workspace/workspace-provider"
 import { isUnauthorizedApiError } from "@/lib/api"
 import { RequireAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function EmptyWorkspace() {
   const router = useRouter()
   const { canWrite, createTopLevelPage } = usePages()
+  const { t } = useI18n()
   const [creating, setCreating] = useState(false)
 
   return (
@@ -41,15 +43,18 @@ function EmptyWorkspace() {
       className="relative grid min-h-svh place-items-center"
       data-cy="workspace-empty"
     >
-      <SidebarTrigger className="absolute top-2 left-2 md:hidden" />
+      <SidebarTrigger
+        className="absolute top-2 left-2 md:hidden"
+        aria-label={t("Toggle sidebar")}
+      />
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <FileTextIcon />
           </EmptyMedia>
-          <EmptyTitle>Nenhuma página</EmptyTitle>
+          <EmptyTitle>{t("No pages")}</EmptyTitle>
           <EmptyDescription>
-            Este workspace ainda não tem páginas. Crie a primeira.
+            {t("This workspace has no pages yet. Create the first one.")}
           </EmptyDescription>
         </EmptyHeader>
         {canWrite ? (
@@ -71,7 +76,7 @@ function EmptyWorkspace() {
               }}
             >
               <PlusIcon />
-              Nova página
+              {t("New page")}
             </Button>
           </EmptyContent>
         ) : null}

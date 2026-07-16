@@ -2,9 +2,10 @@ import type { Metadata } from "next"
 
 import { LoginForm } from "@/components/auth/organisms/login-form"
 import { AuthPageShell } from "@/components/auth/templates/auth-page-shell"
+import { LocalizedDocumentTitle } from "@/components/localized-document-title"
 
 export const metadata: Metadata = {
-  title: "Entrar · reason",
+  title: "Sign in · reason",
 }
 
 export default async function LoginPage({
@@ -16,6 +17,7 @@ export default async function LoginPage({
 
   return (
     <AuthPageShell>
+      <LocalizedDocumentTitle title="Sign in" />
       <LoginForm inviteToken={invite} />
     </AuthPageShell>
   )

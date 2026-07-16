@@ -31,7 +31,7 @@ describe("settings and workspace", () => {
     cy.get('[data-cy="user-settings"]').click()
     cy.get('[data-cy="settings-dialog"]').should("be.visible")
 
-    cy.contains("button", "Aparência").click()
+    cy.contains("button", "Appearance").click()
     cy.get('[data-cy="theme-github"]').click()
     cy.document().its("documentElement.dataset.theme").should("eq", "github")
     cy.document().its("documentElement.dataset.themeMode").should("eq", "light")

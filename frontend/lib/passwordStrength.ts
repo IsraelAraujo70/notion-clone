@@ -1,16 +1,24 @@
 export type PasswordStrength = {
   score: number
-  label: "Too short" | "Weak" | "Okay" | "Strong"
+  label: PasswordStrengthLabel
   percent: number
   checks: {
     id: "length" | "lowerUpper" | "number" | "symbol"
-    label: string
+    label: PasswordRequirement
     met: boolean
   }[]
 }
 
+export type PasswordStrengthLabel = "Too short" | "Weak" | "Okay" | "Strong"
+
+export type PasswordRequirement =
+  | "At least 8 characters"
+  | "Upper and lowercase letters"
+  | "At least one number"
+  | "At least one symbol"
+
 export function getPasswordStrength(password: string): PasswordStrength {
-  const checks = [
+  const checks: PasswordStrength["checks"] = [
     {
       id: "length" as const,
       label: "At least 8 characters",

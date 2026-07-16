@@ -1,3 +1,5 @@
+"use client"
+
 import Link from "next/link"
 import {
   ArrowRightIcon,
@@ -22,9 +24,11 @@ import {
 } from "lucide-react"
 
 import { Brand } from "@/components/atoms/brand"
+import { LanguageSelector } from "@/components/atoms/language-selector"
 import { ThemeToggleButton } from "@/components/atoms/theme-toggle-button"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 const productPillars = [
   {
@@ -42,7 +46,7 @@ const productPillars = [
     text: "A keyboard-first shell with command search, page navigation, and account actions.",
     icon: CommandIcon,
   },
-]
+] as const
 
 const editorBlocks = [
   {
@@ -65,7 +69,7 @@ const editorBlocks = [
     label: "Code",
     content: "apply(operation)",
   },
-]
+] as const
 
 const architectureItems = [
   {
@@ -88,7 +92,7 @@ const architectureItems = [
     icon: SparklesIcon,
     text: "AI writes through blocks",
   },
-]
+] as const
 
 const miniFaces = [
   "bg-[#e8f1ff] text-[#1459a8]",
@@ -117,15 +121,17 @@ function MiniFaces() {
 }
 
 function EditorPreview() {
+  const { t } = useI18n()
+
   return (
     <div className="relative mx-auto w-full max-w-5xl">
       <div className="absolute -top-8 left-3 hidden rotate-[-12deg] items-center gap-2 rounded-full border bg-[#fff3bf] px-3 py-2 text-sm font-medium text-[#443100] shadow-sm sm:flex">
         <MousePointer2Icon className="size-4" aria-hidden="true" />
-        drag blocks
+        {t("drag blocks")}
       </div>
       <div className="absolute -top-7 right-4 hidden rotate-[8deg] items-center gap-2 rounded-full border bg-[#e8f1ff] px-3 py-2 text-sm font-medium text-[#124d91] shadow-sm sm:flex">
         <CommandIcon className="size-4" aria-hidden="true" />
-        Slash commands
+        {t("Slash commands")}
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-card shadow-[0_24px_80px_rgba(15,15,15,0.10)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -137,30 +143,30 @@ function EditorPreview() {
           </div>
           <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
             <FileTextIcon className="size-3.5" aria-hidden="true" />
-            Workspace page
+            {t("Workspace page")}
           </div>
           <div className="text-xs font-medium text-muted-foreground">
-            Blocks
+            {t("Blocks")}
           </div>
         </div>
 
         <div className="grid min-h-[420px] bg-card md:grid-cols-[180px_1fr]">
           <aside className="hidden border-r bg-muted/45 p-4 md:block">
             <div className="mb-5 text-xs font-medium text-muted-foreground">
-              Workspace
+              {t("Workspace")}
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2 rounded-md bg-background px-2 py-1.5 font-medium shadow-sm">
                 <FileTextIcon className="size-4" aria-hidden="true" />
-                Home
+                {t("Home")}
               </div>
               <div className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground">
                 <SquarePenIcon className="size-4" aria-hidden="true" />
-                Drafts
+                {t("Drafts")}
               </div>
               <div className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground">
                 <CommandIcon className="size-4" aria-hidden="true" />
-                Commands
+                {t("Commands")}
               </div>
             </div>
           </aside>
@@ -172,24 +178,26 @@ function EditorPreview() {
                   <FileTextIcon aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold">reason workspace</p>
+                  <p className="truncate font-semibold">
+                    {t("reason workspace")}
+                  </p>
                   <p className="truncate text-sm text-muted-foreground">
-                    A block-native writing surface.
+                    {t("A block-native writing surface.")}
                   </p>
                 </div>
               </div>
               <Button variant="outline" size="sm" className="hidden sm:flex">
-                Commands
+                {t("Commands")}
                 <ChevronDownIcon data-icon="inline-end" />
               </Button>
             </div>
 
             <div className="mx-auto max-w-2xl">
               <h2 className="mb-3 font-heading text-4xl font-semibold">
-                Untitled
+                {t("Untitled")}
               </h2>
               <p className="mb-7 leading-7 text-muted-foreground">
-                Write, reorder, and reshape ideas one block at a time.
+                {t("Write, reorder, and reshape ideas one block at a time.")}
               </p>
 
               <div className="space-y-3">
@@ -207,9 +215,11 @@ function EditorPreview() {
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm text-muted-foreground">
-                        {block.label}
+                        {t(block.label)}
                       </p>
-                      <p className="font-medium break-words">{block.content}</p>
+                      <p className="font-medium break-words">
+                        {t(block.content)}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -223,38 +233,41 @@ function EditorPreview() {
 }
 
 export function LandingPage() {
+  const { t } = useI18n()
+
   return (
     <main className="min-h-svh overflow-hidden bg-background text-foreground">
       <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
         <Brand />
         <nav
-          aria-label="Primary navigation"
+          aria-label={t("Primary navigation")}
           className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex"
         >
           <a
             href="#editor"
             className="rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Editor
+            {t("Editor")}
           </a>
           <a
             href="#product"
             className="rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Product
+            {t("Product")}
           </a>
           <a
             href="#architecture"
             className="rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Architecture
+            {t("Architecture")}
           </a>
         </nav>
         <div className="flex items-center gap-2">
+          <LanguageSelector compact />
           <ThemeToggleButton />
           <Button asChild>
             <Link href="/signup">
-              Start
+              {t("Start")}
               <ArrowRightIcon data-icon="inline-end" />
             </Link>
           </Button>
@@ -264,29 +277,29 @@ export function LandingPage() {
       <section className="mx-auto flex w-full max-w-7xl flex-col items-center px-5 pt-10 pb-14 text-center sm:px-8">
         <MiniFaces />
         <p className="mt-7 rounded-full border bg-card px-3 py-1 text-sm font-medium text-muted-foreground">
-          A workspace shaped by blocks
+          {t("A workspace shaped by blocks")}
         </p>
         <h1 className="mt-7 max-w-5xl text-5xl font-semibold text-balance sm:text-6xl">
-          Where every idea can{" "}
+          {t("Where every idea can")}{" "}
           <span className="inline-flex rounded-full bg-[#cdf4d6] px-4 py-1 text-[#0f7b2d] dark:bg-[#204b2b] dark:text-[#a6efb6]">
-            become
+            {t("become")}
           </span>{" "}
-          a page.
+          {t("a page.")}
         </h1>
         <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
-          Reason is a block-first workspace for writing, arranging pages,
-          protecting private work, and building toward real-time sync without
-          treating the editor as a costume.
+          {t(
+            "Reason is a block-first workspace for writing, arranging pages, protecting private work, and building toward real-time sync without treating the editor as a costume."
+          )}
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           <Button asChild size="lg">
             <Link href="/signup">
-              Create account
+              {t("Create account")}
               <ArrowRightIcon data-icon="inline-end" />
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <Link href="/login">Sign in</Link>
+            <Link href="/login">{t("Sign in")}</Link>
           </Button>
         </div>
       </section>
@@ -309,8 +322,12 @@ export function LandingPage() {
             <div className="mb-5 grid size-10 place-items-center rounded-lg bg-secondary text-foreground">
               <item.icon aria-hidden="true" />
             </div>
-            <h2 className="font-heading text-xl font-semibold">{item.label}</h2>
-            <p className="mt-3 leading-7 text-muted-foreground">{item.text}</p>
+            <h2 className="font-heading text-xl font-semibold">
+              {t(item.label)}
+            </h2>
+            <p className="mt-3 leading-7 text-muted-foreground">
+              {t(item.text)}
+            </p>
           </article>
         ))}
       </section>
@@ -319,10 +336,10 @@ export function LandingPage() {
         <div className="mx-auto grid w-full max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>
             <p className="mb-4 text-sm font-semibold text-muted-foreground">
-              Architecture
+              {t("Architecture")}
             </p>
             <h2 className="font-heading text-4xl font-semibold text-balance">
-              Built around the same path for people, sync, and AI.
+              {t("Built around the same path for people, sync, and AI.")}
             </h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -334,7 +351,7 @@ export function LandingPage() {
                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#e8f1ff] text-[#1459a8] dark:bg-[#26374f] dark:text-[#9fcaff]">
                   <item.icon className="size-4" aria-hidden="true" />
                 </span>
-                <span className="font-medium">{item.text}</span>
+                <span className="font-medium">{t(item.text)}</span>
               </div>
             ))}
           </div>
@@ -344,20 +361,20 @@ export function LandingPage() {
       <footer className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div className="flex items-center gap-2">
           <CheckIcon className="size-4" aria-hidden="true" />
-          Private by default
+          {t("Private by default")}
         </div>
         <div className="flex gap-4">
           <Link
             href="/login"
             className="rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Sign in
+            {t("Sign in")}
           </Link>
           <Link
             href="/signup"
             className="rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            Create account
+            {t("Create account")}
           </Link>
         </div>
       </footer>

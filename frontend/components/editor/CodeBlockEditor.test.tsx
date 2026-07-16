@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest"
 
 import { CodeBlockEditor } from "@/components/editor/CodeBlockEditor"
 
-function props(overrides: Partial<React.ComponentProps<typeof CodeBlockEditor>> = {}) {
+function props(
+  overrides: Partial<React.ComponentProps<typeof CodeBlockEditor>> = {}
+) {
   return {
     blockId: "code-1",
     value: "const answer = 42\nreturn answer",
@@ -30,13 +32,15 @@ describe("CodeBlockEditor", () => {
     render(<CodeBlockEditor {...props({ onLanguageChange })} />)
 
     await waitFor(() =>
-      expect(document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')).toHaveLength(2)
+      expect(
+        document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')
+      ).toHaveLength(2)
     )
     expect(
       document.querySelector('[data-cy="code-editor-code-1"] .cm-line span')
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole("combobox", { name: "Linguagem do código" }))
+    await user.click(screen.getByRole("combobox", { name: "Code language" }))
     await user.click(screen.getByText("Python"))
 
     expect(onLanguageChange).toHaveBeenCalledWith("python")
@@ -56,7 +60,9 @@ describe("CodeBlockEditor", () => {
     )
 
     await waitFor(() =>
-      expect(document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')).toHaveLength(4)
+      expect(
+        document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')
+      ).toHaveLength(4)
     )
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -67,7 +73,7 @@ describe("CodeBlockEditor", () => {
     const onRedo = vi.fn()
     render(<CodeBlockEditor {...props({ onExit, onUndo, onRedo })} />)
 
-    const content = screen.getByLabelText("Código")
+    const content = screen.getByLabelText("Code")
     fireEvent.keyDown(content, { key: "Enter", shiftKey: true })
     fireEvent.keyDown(content, { key: "z", ctrlKey: true })
     fireEvent.keyDown(content, { key: "z", ctrlKey: true, shiftKey: true })
@@ -81,8 +87,12 @@ describe("CodeBlockEditor", () => {
   it("keeps the highlighted editor visible but not editable in read-only mode", async () => {
     render(<CodeBlockEditor {...props({ readOnly: true })} />)
 
-    const content = screen.getByLabelText("Código")
-    await waitFor(() => expect(content).toHaveAttribute("contenteditable", "false"))
-    expect(document.querySelector('[data-cy="code-editor-code-1"] .cm-line')).toBeInTheDocument()
+    const content = screen.getByLabelText("Code")
+    await waitFor(() =>
+      expect(content).toHaveAttribute("contenteditable", "false")
+    )
+    expect(
+      document.querySelector('[data-cy="code-editor-code-1"] .cm-line')
+    ).toBeInTheDocument()
   })
 })

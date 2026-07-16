@@ -36,4 +36,17 @@ describe("landing page", () => {
       expect(body.scrollWidth).to.be.at.most(body.clientWidth + 1)
     })
   })
+
+  it("switches to Portuguese and restores the preference", () => {
+    cy.visit("/")
+    cy.get('[data-cy="language-selector"]').click()
+    cy.get('[data-cy="language-pt-BR"]').click()
+    cy.contains("Criar conta").should("be.visible")
+    cy.get("html").should("have.attr", "lang", "pt-BR")
+
+    cy.reload()
+
+    cy.contains("Criar conta").should("be.visible")
+    cy.get("html").should("have.attr", "lang", "pt-BR")
+  })
 })

@@ -31,6 +31,7 @@ import { pagePath } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { api, type PageSummary, type SearchResult } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 type CommandMenuContextValue = {
   open: boolean
@@ -58,6 +59,7 @@ export function CommandMenuProvider({
 }) {
   const router = useRouter()
   const { logout, token } = useAuth()
+  const { t } = useI18n()
   const { selectWorkspace } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -141,9 +143,9 @@ export function CommandMenuProvider({
     <CommandMenuContext.Provider value={{ open, setOpen, openMenu }}>
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <DialogTitle className="sr-only">{t("Command palette")}</DialogTitle>
         <DialogDescription className="sr-only">
-          Ir para paginas ou gerenciar sua conta.
+          {t("Go to pages or manage your account.")}
         </DialogDescription>
         <DialogContent
           showCloseButton={false}
@@ -152,18 +154,18 @@ export function CommandMenuProvider({
           <Command shouldFilter={false}>
             <CommandInput
               data-cy="command-input"
-              placeholder="Buscar páginas e conteúdo..."
+              placeholder={t("Search pages and content...")}
               value={query}
               onValueChange={setQuery}
             />
             <CommandList>
               {!remoteSearch ? (
-                <CommandGroup heading="Ir para">
+                <CommandGroup heading={t("Go to")}>
                   {pages.map((page, index) => (
                     <CommandItem
                       key={page.id}
                       data-cy={`command-go-page-${page.id}`}
-                      value={`${page.title || "Sem título"} ${page.id}`}
+                      value={`${page.title || t("Untitled")} ${page.id}`}
                       onSelect={() =>
                         runCommand(() => router.push(pagePath(page.id)))
                       }
@@ -178,7 +180,7 @@ export function CommandMenuProvider({
                       ) : (
                         <FileTextIcon />
                       )}
-                      {page.title || "Sem título"}
+                      {page.title || t("Untitled")}
                       {index === 0 ? (
                         <CommandShortcut>G P</CommandShortcut>
                       ) : null}
@@ -190,7 +192,7 @@ export function CommandMenuProvider({
                   className="py-6 text-center text-sm text-muted-foreground"
                   data-cy="command-search-loading"
                 >
-                  Buscando…
+                  {t("Searching...")}
                 </p>
               ) : searchError ? (
                 <p
@@ -198,14 +200,14 @@ export function CommandMenuProvider({
                   className="py-6 text-center text-sm text-destructive"
                   data-cy="command-search-error"
                 >
-                  Não foi possível buscar. Tente novamente.
+                  {t("Could not search. Try again.")}
                 </p>
               ) : groupedResults.length === 0 ? (
                 <p
                   className="py-6 text-center text-sm text-muted-foreground"
                   data-cy="command-search-empty"
                 >
-                  Nenhum resultado encontrado.
+                  {t("No results found.")}
                 </p>
               ) : (
                 groupedResults.map(({ key, items }) => (
@@ -230,7 +232,7 @@ export function CommandMenuProvider({
                               {result.page_icon || "📄"}
                             </span>
                             <span className="truncate">
-                              {result.page_title || "Sem título"}
+                              {result.page_title || t("Untitled")}
                             </span>
                           </span>
                           <span className="truncate text-xs text-muted-foreground">
@@ -243,16 +245,16 @@ export function CommandMenuProvider({
                 ))
               )}
               <CommandSeparator />
-              <CommandGroup heading="Conta">
+              <CommandGroup heading={t("Account")}>
                 <CommandItem
                   data-cy="command-log-out"
-                  value="sair logout"
+                  value={`${t("Log out")} logout`}
                   onSelect={() =>
                     runCommand(() => logout().then(() => router.replace("/")))
                   }
                 >
                   <LogOutIcon />
-                  Sair
+                  {t("Log out")}
                 </CommandItem>
               </CommandGroup>
             </CommandList>

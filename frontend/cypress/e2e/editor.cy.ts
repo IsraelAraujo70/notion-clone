@@ -243,10 +243,10 @@ describe("block editor", () => {
         selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
       )
     })
-    cy.contains("2 blocos selecionados").should("be.visible")
-    cy.contains("Duplicar").should("be.visible")
-    cy.contains("Transformar em").should("be.visible")
-    cy.contains("Duplicar").click()
+    cy.contains("2 blocks selected").should("be.visible")
+    cy.contains("Duplicate").should("be.visible")
+    cy.contains("Turn into").should("be.visible")
+    cy.contains("Duplicate").click()
     cy.get('[data-block-id] [contenteditable="true"]').should(($editables) => {
       expect([...$editables].map((editable) => editable.textContent)).to.deep.equal([
         "Alpha",
@@ -304,7 +304,7 @@ describe("block editor", () => {
         $selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
       )
     })
-    cy.contains("2 blocos selecionados").should("be.visible")
+    cy.contains("2 blocks selected").should("be.visible")
     cy.get<HTMLElement>('[data-cy="block-context-menu"]').then(($menu) => {
       $menu[0].dispatchEvent(
         new KeyboardEvent("keydown", {

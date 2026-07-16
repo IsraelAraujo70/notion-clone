@@ -145,17 +145,17 @@ describe("M5 real-provider collaborative AI", () => {
           cy.get('[data-cy="block-menu-ai-continue"]').click()
           cy.get('[role="dialog"][aria-label="Reason AI"]', { timeout: 10_000 })
             .should("be.visible")
-            .find('[aria-label="Mensagem para Reason AI"]')
+            .find('[aria-label="Message to Reason AI"]')
             .clear()
             .type(prompt)
-          cy.contains("button", "Enviar").click()
-          cy.contains("button", "Interromper exibição", {
+          cy.contains("button", "Send").click()
+          cy.contains("button", "Stop display", {
             timeout: 10_000,
           }).should("be.visible")
           iframeBody()
             .find('[data-block-type="paragraph"]', { timeout: 65_000 })
             .should("have.length", 3)
-          cy.contains("button", "Interromper exibição", {
+          cy.contains("button", "Stop display", {
             timeout: 65_000,
           }).should("not.exist")
           cy.get('[role="alert"]').should("not.exist")
@@ -206,7 +206,7 @@ describe("M5 real-provider collaborative AI", () => {
               1, 2, 3,
             ])
           })
-          cy.get('[aria-label="Fechar Reason AI"]').click()
+          cy.get('[aria-label="Close Reason AI"]').click()
           firstParagraph(cy.get("body")).click().type("{ctrl}z")
           cy.get('[data-block-type="paragraph"]').should("have.length", 1)
           iframeBody()

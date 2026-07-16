@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { LocalizedDocumentTitle } from "@/components/localized-document-title"
 
 export const metadata: Metadata = {
-  title: "Sem título · reason",
+  title: "Untitled · reason",
 }
 
 export default async function DashboardPagePage({
@@ -12,5 +13,10 @@ export default async function DashboardPagePage({
   params: Promise<{ pageId: string }>
 }) {
   const { pageId } = await params
-  return <DashboardShell pageId={pageId} />
+  return (
+    <>
+      <LocalizedDocumentTitle title="Untitled" />
+      <DashboardShell pageId={pageId} />
+    </>
+  )
 }

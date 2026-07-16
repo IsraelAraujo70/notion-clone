@@ -58,6 +58,8 @@ import { useSearchResultHighlight } from "@/components/editor/use-search-result-
 import { OperationGroupCoordinator } from "@/lib/ai/group-coordinator"
 import { AiAssistant } from "@/components/ai/organisms/ai-assistant"
 import type { AiAction } from "@/lib/ai/contracts"
+import { useI18n } from "@/lib/i18n/i18n-provider"
+import type { Message } from "@/lib/i18n/messages"
 
 function opId() {
   return createId()
@@ -80,10 +82,10 @@ function isActiveBlock(tree: BlockTree, blockId: string) {
   return false
 }
 
-const SAVE_LABEL: Record<SaveState, string> = {
-  saved: "Salvo",
-  saving: "Salvando…",
-  error: "Não foi possível salvar",
+const SAVE_LABEL: Record<SaveState, Message> = {
+  saved: "Saved",
+  saving: "Saving…",
+  error: "Could not save",
 }
 
 function rememberLocalOp(localOpIds: Set<string>, op: Operation) {
@@ -113,6 +115,7 @@ function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
 }
 
 export function EditorPage({ pageId }: { pageId: string }) {
+  const { t } = useI18n()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { token, user } = useAuth()
@@ -502,6 +505,10 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const pageIcon = tree ? pageProperty(tree, "icon") : ""
   const titleRef = useRef<HTMLHeadingElement>(null)
 
+  useEffect(() => {
+    document.title = `${pageTitle || t("Untitled")} · reason`
+  }, [pageTitle, t])
+
   // Os breadcrumbs vêm do servidor, mas a última migalha é a página aberta:
   // ela precisa acompanhar o título/ícone que o usuário está digitando agora.
   const crumbs: Crumb[] = breadcrumbs.map((crumb, index) =>
@@ -538,12 +545,12 @@ export function EditorPage({ pageId }: { pageId: string }) {
     return (
       <main className="grid min-h-svh place-items-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
-          Não foi possível abrir esta página.
+          {t("Could not open this page.")}
           <Button
             variant="outline"
             onClick={() => setReloadKey((key) => key + 1)}
           >
-            Tentar de novo
+            {t("Try again")}
           </Button>
         </div>
       </main>
@@ -553,8 +560,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
   return (
     <main className="min-h-svh bg-background text-foreground">
       <header className="sticky top-0 z-10 flex min-h-12 min-w-0 items-center justify-between gap-2 border-b bg-background/80 px-2 py-1.5 backdrop-blur sm:h-12 sm:gap-4 sm:px-6 sm:py-0">
-        <SidebarTrigger className="md:hidden" />
-        <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
+        <SidebarTrigger
+          className="md:hidden"
+          aria-label={t("Toggle sidebar")}
+        />
+        <Breadcrumb
+          className="min-w-0 flex-1 overflow-hidden"
+          aria-label={t("Breadcrumb")}
+        >
           <BreadcrumbList className="flex-nowrap overflow-hidden whitespace-nowrap">
             {crumbs.map((crumb, index) => (
               <Fragment key={crumb.id}>
@@ -567,7 +580,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
                       <span aria-hidden="true" className="mr-1">
                         {crumb.icon || "📄"}
                       </span>
-                      {crumb.title || "Sem título"}
+                      {crumb.title || t("Untitled")}
                     </BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink
@@ -577,7 +590,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
                       <span aria-hidden="true" className="mr-1">
                         {crumb.icon || "📄"}
                       </span>
-                      {crumb.title || "Sem título"}
+                      {crumb.title || t("Untitled")}
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>
@@ -594,13 +607,13 @@ export function EditorPage({ pageId }: { pageId: string }) {
               size="sm"
               variant="ghost"
               disabled={!canWrite}
-              aria-label="Resumir página com AI"
+              aria-label={t("Summarize page with AI")}
               onClick={() =>
                 openAiAction({ type: "summarize_page", page_id: pageId })
               }
             >
               <SparklesIcon data-icon="inline-start" />
-              <span className="hidden sm:inline">Resumir</span>
+              <span className="hidden sm:inline">{t("Summarize")}</span>
             </Button>
           ) : null}
           <ShareDialog pageId={pageId} canWrite={canWrite} />
@@ -610,7 +623,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
             data-state={canWrite ? saveState : "read-only"}
             className={`text-xs max-sm:sr-only ${saveState === "error" ? "text-destructive" : "text-muted-foreground"}`}
           >
-            {canWrite ? SAVE_LABEL[saveState] : "Somente leitura"}
+            {canWrite ? t(SAVE_LABEL[saveState]) : t("Read only")}
           </span>
         </div>
       </header>
@@ -622,14 +635,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
           className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm"
         >
           <span>
-            Uma edição foi rejeitada. Recarregue para ver o estado real.
+            {t("An edit was rejected. Reload to see the current state.")}
           </span>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setReloadKey((key) => key + 1)}
           >
-            Recarregar
+            {t("Reload")}
           </Button>
         </div>
       ) : null}
@@ -656,7 +669,8 @@ export function EditorPage({ pageId }: { pageId: string }) {
               contentEditable={canWrite}
               suppressContentEditableWarning
               spellCheck
-              className="mb-6 min-h-12 text-[40px] leading-tight font-bold break-words outline-none empty:before:text-muted-foreground/40 empty:before:content-['Sem_título']"
+              data-placeholder={t("Untitled")}
+              className="mb-6 min-h-12 text-[40px] leading-tight font-bold break-words outline-none empty:before:text-muted-foreground/40 empty:before:content-[attr(data-placeholder)]"
               onInput={(event: FormEvent<HTMLHeadingElement>) =>
                 updateTitle(event.currentTarget.textContent ?? "")
               }
@@ -685,7 +699,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
                   openAiAction({
                     type: "transform_selection",
                     block_ids: blockIds,
-                    instruction: "Improve clarity and formatting",
+                    instruction: t("Improve clarity and formatting"),
                   })
                 }
               }}
@@ -713,7 +727,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
                         body: file,
                       })
                       if (!put.ok) {
-                        throw new Error("Upload falhou")
+                        throw new Error(t("Upload failed"))
                       }
                       return { url: presign.public_url, key: presign.key }
                     }

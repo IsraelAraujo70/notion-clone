@@ -47,8 +47,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import type { PageSummary } from "@/lib/api"
 import type { Workspace } from "@/lib/api"
-
-const UNTITLED = "Sem título"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function rethrowUnlessUnauthorized(error: unknown) {
   if (!isUnauthorizedApiError(error)) {
@@ -108,6 +107,7 @@ function RenameDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useI18n()
   const { renamePage } = usePages()
   const [title, setTitle] = useState(node.title)
   const [saving, setSaving] = useState(false)
@@ -130,12 +130,12 @@ function RenameDialog({
       <DialogContent className="sm:max-w-md" data-cy="rename-page-dialog">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Renomear página</DialogTitle>
+            <DialogTitle>{t("Rename page")}</DialogTitle>
           </DialogHeader>
           <Input
             className="my-4"
             value={title}
-            placeholder={UNTITLED}
+            placeholder={t("Untitled")}
             data-cy="rename-page-input"
             onChange={(event) => setTitle(event.target.value)}
           />
@@ -145,14 +145,14 @@ function RenameDialog({
               variant="ghost"
               onClick={() => onOpenChange(false)}
             >
-              Cancelar
+              {t("Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={saving}
               data-cy="rename-page-submit"
             >
-              Salvar
+              {t("Save")}
             </Button>
           </DialogFooter>
         </form>
@@ -172,6 +172,7 @@ function MoveWorkspaceDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useI18n()
   const { movePageToWorkspace } = usePages()
   const [destinationId, setDestinationId] = useState(destinations[0]?.id ?? "")
   const [moving, setMoving] = useState(false)
@@ -195,14 +196,16 @@ function MoveWorkspaceDialog({
       <DialogContent className="sm:max-w-md" data-cy="move-workspace-dialog">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Mover para outro workspace</DialogTitle>
+            <DialogTitle>{t("Move to another workspace")}</DialogTitle>
           </DialogHeader>
           <p className="mt-2 text-sm text-muted-foreground">
-            A página &quot;{node.title || UNTITLED}&quot; e todas as sub-páginas
-            serão transferidas.
+            {t(
+              "The page \"{title}\" and all its subpages will be transferred.",
+              { title: node.title || t("Untitled") }
+            )}
           </p>
           <label className="my-4 block text-sm font-medium">
-            Workspace de destino
+            {t("Destination workspace")}
             <select
               className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               data-cy="move-workspace-select"
@@ -222,14 +225,14 @@ function MoveWorkspaceDialog({
               variant="ghost"
               onClick={() => onOpenChange(false)}
             >
-              Cancelar
+              {t("Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={moving || !destinationId}
               data-cy="move-workspace-submit"
             >
-              Mover página
+              {t("Move page")}
             </Button>
           </DialogFooter>
         </form>
@@ -240,6 +243,7 @@ function MoveWorkspaceDialog({
 
 function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const router = useRouter()
+  const { t } = useI18n()
   const { currentPageId, canWrite, createChildPage, deletePage } = usePages()
   const { activeWorkspace, activeWorkspaceId, workspaces } = useWorkspace()
   const [open, setOpen] = useState(true)
@@ -251,7 +255,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       workspace.id !== activeWorkspaceId && workspace.role === "owner"
   )
   const hasChildren = node.children.length > 0
-  const title = node.title || UNTITLED
+  const title = node.title || t("Untitled")
   const indent = Math.min(depth, 4) * 12
   const leadingOffset = 8 + indent
   const contentOffset = leadingOffset + (hasChildren ? 28 : 0)
@@ -312,7 +316,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const addAction = canWrite ? (
     <SidebarMenuAction
       data-cy={`nav-page-plus-${node.id}`}
-      aria-label="Adicionar sub-página"
+      aria-label={t("Add subpage")}
       disabled={busy}
       onClick={addChild}
       showOnHover
@@ -337,11 +341,11 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
           onSelect={() => setRenaming(true)}
         >
           <PencilIcon />
-          Renomear
+          {t("Rename")}
         </ContextMenuItem>
         <ContextMenuItem data-cy="nav-page-add" onSelect={addChild}>
           <PlusIcon />
-          Adicionar sub-página
+          {t("Add subpage")}
         </ContextMenuItem>
         {activeWorkspace?.role === "owner" && destinations.length > 0 ? (
           <ContextMenuItem
@@ -349,7 +353,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
             onSelect={() => setMoving(true)}
           >
             <ArrowRightLeftIcon />
-            Mover para outro workspace
+            {t("Move to another workspace")}
           </ContextMenuItem>
         ) : null}
         <ContextMenuSeparator />
@@ -369,7 +373,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
           }}
         >
           <Trash2Icon />
-          Mover para a lixeira
+          {t("Move to trash")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -400,7 +404,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       <button
         type="button"
         data-cy={`nav-page-toggle-${node.id}`}
-        aria-label={`Alternar sub-páginas de ${title}`}
+        aria-label={t("Toggle subpages of {title}", { title })}
         style={{ insetInlineStart: `${leadingOffset}px` }}
         className="group/page-tree-toggle absolute top-1.5 z-10 flex size-5 items-center justify-center rounded-sm text-sidebar-foreground outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent focus-visible:ring-2"
       >
@@ -443,18 +447,19 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
 
 export function NavPages() {
   const router = useRouter()
+  const { t } = useI18n()
   const { pages, containerPageId, loading, canWrite, createTopLevelPage } =
     usePages()
   const tree = useMemo(() => buildPageTree(pages), [pages])
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Páginas</SidebarGroupLabel>
+      <SidebarGroupLabel>{t("Pages")}</SidebarGroupLabel>
       {canWrite && containerPageId ? (
         // O `+` do cabeçalho cria uma página de topo, não uma sub-página.
         <SidebarGroupAction
           data-cy="nav-pages-create"
-          aria-label="Nova página"
+          aria-label={t("New page")}
           onClick={async () => {
             try {
               router.push(pagePath(await createTopLevelPage()))

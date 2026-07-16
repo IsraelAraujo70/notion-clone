@@ -58,11 +58,10 @@ describe("InvitePage", () => {
     render(<InvitePage token="invite-token" />)
 
     expect(await screen.findByText("Product")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Criar conta" })).toHaveAttribute(
-      "href",
-      "/signup?invite=invite-token"
-    )
-    expect(screen.getByRole("link", { name: "Entrar" })).toHaveAttribute(
+    expect(
+      screen.getByRole("link", { name: "Create account" })
+    ).toHaveAttribute("href", "/signup?invite=invite-token")
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
       "href",
       "/login?invite=invite-token"
     )
@@ -87,9 +86,7 @@ describe("InvitePage", () => {
     render(<InvitePage token="invite-token" />)
 
     await screen.findByText("Product")
-    await userEvent.click(
-      screen.getByRole("button", { name: "Aceitar convite" })
-    )
+    await userEvent.click(screen.getByRole("button", { name: "Accept invite" }))
 
     await waitFor(() => {
       expect(mocks.acceptWorkspaceInvite).toHaveBeenCalledWith(
@@ -111,12 +108,14 @@ describe("InvitePage", () => {
 
     render(<InvitePage token="invite-token" />)
 
-    expect(await screen.findByText("Este convite expirou.")).toBeInTheDocument()
     expect(
-      screen.queryByRole("button", { name: "Aceitar convite" })
+      await screen.findByText("This invite has expired.")
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Accept invite" })
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole("link", { name: "Criar conta" })
+      screen.queryByRole("link", { name: "Create account" })
     ).not.toBeInTheDocument()
   })
 })

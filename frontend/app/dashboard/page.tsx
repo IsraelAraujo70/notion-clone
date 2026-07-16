@@ -1,11 +1,17 @@
 import type { Metadata } from "next"
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { LocalizedDocumentTitle } from "@/components/localized-document-title"
 
 export const metadata: Metadata = {
-  title: "Sem título · reason",
+  title: "Untitled · reason",
 }
 
 export default function DashboardPage() {
-  return <DashboardShell />
+  return (
+    <>
+      <LocalizedDocumentTitle title="Untitled" />
+      <DashboardShell />
+    </>
+  )
 }

@@ -22,9 +22,11 @@ import {
 } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { ApiError, api } from "@/lib/api"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { isStrongPassword } from "@/lib/passwordStrength"
 
 export function ResetPasswordForm({ token }: { token: string }) {
+  const { t } = useI18n()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -38,15 +40,15 @@ export function ResetPasswordForm({ token }: { token: string }) {
     event.preventDefault()
     setError(null)
     if (!token) {
-      setError("O link de redefinição está sem token.")
+      setError(t("The reset link is missing its token."))
       return
     }
     if (!passwordReady) {
-      setError("Use uma senha mais forte antes de salvar.")
+      setError(t("Use a stronger password before saving."))
       return
     }
     if (password !== confirmPassword) {
-      setError("As senhas não conferem.")
+      setError(t("Passwords do not match."))
       return
     }
 
@@ -58,7 +60,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível falar com o servidor. Tente novamente."
+          : t("Could not reach the server. Try again.")
       )
     } finally {
       setPending(false)
@@ -70,10 +72,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
       <Card>
         <CardHeader>
           <CardTitle className="font-heading text-2xl">
-            Redefinir senha
+            {t("Reset password")}
           </CardTitle>
           <CardDescription>
-            Escolha uma senha mais forte para o workspace.
+            {t("Choose a stronger password for your workspace.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -84,12 +86,16 @@ export function ResetPasswordForm({ token }: { token: string }) {
           )}
           {done && (
             <Alert role="status">
-              <AlertTitle>Senha alterada. Entre com a nova senha.</AlertTitle>
+              <AlertTitle>
+                {t("Password changed. Sign in with your new password.")}
+              </AlertTitle>
             </Alert>
           )}
           <FieldGroup>
             <Field data-invalid={!passwordReady && password.length > 0}>
-              <FieldLabel htmlFor="new-password">Nova senha</FieldLabel>
+              <FieldLabel htmlFor="new-password">
+                {t("New password")}
+              </FieldLabel>
               <PasswordInput
                 id="new-password"
                 required
@@ -105,7 +111,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
             </Field>
             <Field data-invalid={passwordsMismatch}>
               <FieldLabel htmlFor="confirm-new-password">
-                Confirmar senha
+                {t("Confirm password")}
               </FieldLabel>
               <PasswordInput
                 id="confirm-new-password"
@@ -119,7 +125,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
               {passwordsMismatch && (
-                <FieldDescription>As senhas não conferem.</FieldDescription>
+                <FieldDescription>
+                  {t("Passwords do not match.")}
+                </FieldDescription>
               )}
             </Field>
           </FieldGroup>
@@ -137,11 +145,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
               }
             >
               {pending && <Spinner data-icon="inline-start" />}
-              {pending ? "Salvando senha..." : "Salvar nova senha"}
+              {pending ? t("Saving password...") : t("Save new password")}
             </Button>
           ) : (
             <Button asChild className="w-full">
-              <Link href="/login">Entrar</Link>
+              <Link href="/login">{t("Sign in")}</Link>
             </Button>
           )}
         </CardFooter>

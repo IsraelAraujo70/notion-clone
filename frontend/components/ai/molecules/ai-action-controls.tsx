@@ -2,6 +2,7 @@ import { FileTextIcon, ListRestartIcon, WandSparklesIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import type { AiAction } from "@/lib/ai/contracts"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function AiActionControls({
   canWrite,
@@ -16,8 +17,10 @@ export function AiActionControls({
   selectedBlockIds: string[]
   onAction: (action: AiAction, prompt: string) => void
 }) {
+  const { t } = useI18n()
+
   return (
-    <div className="flex flex-wrap gap-1.5" aria-label="Ações de AI">
+    <div className="flex flex-wrap gap-1.5" aria-label={t("AI actions")}>
       <Button
         size="xs"
         variant="outline"
@@ -25,11 +28,11 @@ export function AiActionControls({
         onClick={() =>
           onAction(
             { type: "summarize_page", page_id: pageId },
-            "Summarize this page"
+            t("Summarize this page")
           )
         }
       >
-        <FileTextIcon /> Resumir
+        <FileTextIcon /> {t("Summarize")}
       </Button>
       <Button
         size="xs"
@@ -40,13 +43,13 @@ export function AiActionControls({
             {
               type: "transform_selection",
               block_ids: selectedBlockIds,
-              instruction: "Improve clarity and formatting",
+              instruction: t("Improve clarity and formatting"),
             },
-            "Improve clarity and formatting"
+            t("Improve clarity and formatting")
           )
         }
       >
-        <WandSparklesIcon /> Formatar seleção
+        <WandSparklesIcon /> {t("Format selection")}
       </Button>
       <Button
         size="xs"
@@ -57,13 +60,13 @@ export function AiActionControls({
             {
               type: "transform_selection",
               block_ids: pageBlockIds,
-              instruction: "Improve the page structure and formatting",
+              instruction: t("Improve the page structure and formatting"),
             },
-            "Improve the page structure and formatting"
+            t("Improve the page structure and formatting")
           )
         }
       >
-        <ListRestartIcon /> Formatar página
+        <ListRestartIcon /> {t("Format page")}
       </Button>
     </div>
   )

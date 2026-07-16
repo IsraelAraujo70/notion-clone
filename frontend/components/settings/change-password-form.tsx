@@ -14,10 +14,12 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { ApiError, api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { isStrongPassword } from "@/lib/passwordStrength"
 
 export function ChangePasswordForm() {
   const { token } = useAuth()
+  const { t } = useI18n()
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -34,15 +36,15 @@ export function ChangePasswordForm() {
     setError(null)
     setNotice(null)
     if (!token) {
-      setError("Sessão ausente.")
+      setError(t("Session is missing."))
       return
     }
     if (!passwordReady) {
-      setError("Use uma senha mais forte antes de salvar.")
+      setError(t("Use a stronger password before saving."))
       return
     }
     if (newPassword !== confirmPassword) {
-      setError("As senhas não conferem.")
+      setError(t("Passwords do not match."))
       return
     }
 
@@ -55,12 +57,14 @@ export function ChangePasswordForm() {
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
-      setNotice("Senha alterada. Suas outras sessões foram encerradas.")
+      setNotice(
+        t("Password changed. Your other sessions have been signed out.")
+      )
     } catch (caught) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível alterar a senha."
+          : t("Could not change the password.")
       )
     } finally {
       setPending(false)
@@ -81,7 +85,9 @@ export function ChangePasswordForm() {
       )}
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="current-password">Senha atual</FieldLabel>
+          <FieldLabel htmlFor="current-password">
+            {t("Current password")}
+          </FieldLabel>
           <PasswordInput
             id="current-password"
             autoComplete="current-password"
@@ -91,7 +97,7 @@ export function ChangePasswordForm() {
           />
         </Field>
         <Field data-invalid={!passwordReady && newPassword.length > 0}>
-          <FieldLabel htmlFor="new-password">Nova senha</FieldLabel>
+          <FieldLabel htmlFor="new-password">{t("New password")}</FieldLabel>
           <PasswordInput
             id="new-password"
             autoComplete="new-password"
@@ -106,7 +112,7 @@ export function ChangePasswordForm() {
         </Field>
         <Field data-invalid={passwordsMismatch}>
           <FieldLabel htmlFor="confirm-new-password">
-            Confirmar nova senha
+            {t("Confirm new password")}
           </FieldLabel>
           <PasswordInput
             id="confirm-new-password"
@@ -119,7 +125,7 @@ export function ChangePasswordForm() {
             onChange={(event) => setConfirmPassword(event.target.value)}
           />
           {passwordsMismatch && (
-            <FieldDescription>As senhas não conferem.</FieldDescription>
+            <FieldDescription>{t("Passwords do not match.")}</FieldDescription>
           )}
         </Field>
       </FieldGroup>
@@ -134,7 +140,7 @@ export function ChangePasswordForm() {
         }
       >
         {pending && <Spinner data-icon="inline-start" />}
-        {pending ? "Salvando..." : "Alterar senha"}
+        {pending ? t("Saving...") : t("Change password")}
       </Button>
     </form>
   )

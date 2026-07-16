@@ -24,6 +24,25 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import type { TrashEntry } from "@/lib/api"
+import { useI18n } from "@/lib/i18n/i18n-provider"
+import type { Message } from "@/lib/i18n/messages"
+
+const BLOCK_TYPE_MESSAGES: Record<TrashEntry["type"], Message> = {
+  page: "Page",
+  paragraph: "Paragraph",
+  heading1: "Heading 1",
+  heading2: "Heading 2",
+  heading3: "Heading 3",
+  bulleted_list_item: "Bulleted list item",
+  numbered_list_item: "Numbered list item",
+  to_do: "To-do",
+  toggle: "Toggle",
+  quote: "Quote",
+  code: "Code",
+  callout: "Callout",
+  divider: "Divider",
+  image: "Image",
+}
 
 export function TrashDialog({
   open,
@@ -32,6 +51,7 @@ export function TrashDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { formatDate, t } = useI18n()
   const { trash, refreshTrash, restore, permanentDelete, canWrite } = usePages()
   const [loading, setLoading] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
@@ -57,10 +77,11 @@ export function TrashDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-lg" data-cy="trash-dialog">
           <DialogHeader>
-            <DialogTitle>Lixeira</DialogTitle>
+            <DialogTitle>{t("Trash")}</DialogTitle>
             <DialogDescription>
-              Restaurar traz o bloco e toda a subárvore dele de volta à posição
-              original.
+              {t(
+                "Restoring returns the block and its entire subtree to its original position."
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -75,9 +96,9 @@ export function TrashDialog({
                 <EmptyMedia variant="icon">
                   <FileTextIcon />
                 </EmptyMedia>
-                <EmptyTitle>Lixeira vazia</EmptyTitle>
+                <EmptyTitle>{t("Empty trash")}</EmptyTitle>
                 <EmptyDescription>
-                  Nada foi apagado neste workspace.
+                  {t("Nothing has been deleted in this workspace.")}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -91,11 +112,14 @@ export function TrashDialog({
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium">
-                      {entry.title || "Sem título"}
+                      {entry.title || t("Untitled")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {entry.type} ·{" "}
-                      {new Date(entry.trashed_at).toLocaleString("pt-BR")}
+                      {t(BLOCK_TYPE_MESSAGES[entry.type])} ·{" "}
+                      {formatDate(entry.trashed_at, {
+                        dateStyle: "short",
+                        timeStyle: "medium",
+                      })}
                     </p>
                   </div>
                   {canWrite ? (
@@ -115,7 +139,7 @@ export function TrashDialog({
                         }}
                       >
                         <Undo2Icon data-icon="inline-start" />
-                        Restaurar
+                        {t("Restore")}
                       </Button>
                       <Button
                         size="sm"
@@ -127,7 +151,7 @@ export function TrashDialog({
                         }}
                       >
                         <Trash2Icon data-icon="inline-start" />
-                        Excluir
+                        {t("Delete")}
                       </Button>
                     </div>
                   ) : null}
@@ -146,17 +170,18 @@ export function TrashDialog({
       >
         <DialogContent data-cy="trash-delete-confirm-dialog">
           <DialogHeader>
-            <DialogTitle>Excluir permanentemente?</DialogTitle>
+            <DialogTitle>{t("Delete permanently?")}</DialogTitle>
             <DialogDescription>
-              “{pendingDelete?.title || "Sem título"}” e toda a subárvore serão
-              removidas. Imagens associadas também serão apagadas. Esta ação não
-              pode ser desfeita.
+              {t(
+                '"{title}" and its entire subtree will be removed. Associated images will also be deleted. This action cannot be undone.',
+                { title: pendingDelete?.title || t("Untitled") }
+              )}
             </DialogDescription>
           </DialogHeader>
           {deleteError ? (
             <Alert variant="destructive" data-cy="trash-delete-error">
               <AlertDescription>
-                Não foi possível excluir. Tente novamente.
+                {t("Could not delete. Try again.")}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -167,7 +192,7 @@ export function TrashDialog({
               data-cy="trash-delete-cancel"
               onClick={() => setPendingDelete(null)}
             >
-              Cancelar
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -192,7 +217,7 @@ export function TrashDialog({
               ) : (
                 <Trash2Icon data-icon="inline-start" />
               )}
-              Excluir permanentemente
+              {t("Delete permanently")}
             </Button>
           </DialogFooter>
         </DialogContent>

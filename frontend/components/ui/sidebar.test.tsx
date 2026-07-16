@@ -73,7 +73,7 @@ describe("SidebarRail", () => {
   it("resizes after the drag threshold, persists the width, and does not collapse", async () => {
     render(<TestSidebar />)
     const rail = screen.getByRole("button", {
-      name: "Redimensionar ou alternar sidebar",
+      name: "Resize or toggle sidebar",
     })
 
     fireEvent.pointerDown(rail, { pointerId: 1, clientX: 240 })
@@ -96,7 +96,7 @@ describe("SidebarRail", () => {
   it("supports keyboard resize bounds and click collapse", async () => {
     render(<TestSidebar />)
     const rail = screen.getByRole("button", {
-      name: "Redimensionar ou alternar sidebar",
+      name: "Resize or toggle sidebar",
     })
 
     fireEvent.keyDown(rail, { key: "ArrowRight", shiftKey: true })

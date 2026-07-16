@@ -46,10 +46,10 @@ describe("AiAssistantPanel", () => {
 
     expect(screen.getByRole("heading", { name: "Reason AI" })).toBeVisible()
     expect(
-      screen.getByRole("button", { name: "Histórico de conversas" })
+      screen.getByRole("button", { name: "Conversation history" })
     ).toHaveAttribute("aria-expanded", "false")
     await userEvent.click(
-      screen.getByRole("button", { name: "Fechar Reason AI" })
+      screen.getByRole("button", { name: "Close Reason AI" })
     )
     expect(props.onClose).toHaveBeenCalledOnce()
   })
@@ -57,14 +57,12 @@ describe("AiAssistantPanel", () => {
   it("describes cancellation honestly as stopping only the local display", () => {
     renderPanel({
       busy: true,
-      status: "Interrompendo apenas a exibição local…",
+      status: "Stopping local display only...",
     })
 
-    expect(
-      screen.getByRole("button", { name: "Interromper exibição" })
-    ).toBeVisible()
+    expect(screen.getByRole("button", { name: "Stop display" })).toBeVisible()
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Interrompendo apenas a exibição local"
+      "Stopping local display only"
     )
   })
 
@@ -82,9 +80,7 @@ describe("AiAssistantPanel", () => {
       ],
     })
 
-    expect(
-      screen.getByRole("listbox", { name: "Mencionar página" })
-    ).toBeVisible()
+    expect(screen.getByRole("listbox", { name: "Mention page" })).toBeVisible()
     expect(screen.getByText(/Project Atlas/)).toBeVisible()
     expect(screen.queryByText("Roadmap")).not.toBeInTheDocument()
 

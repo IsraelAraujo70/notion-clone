@@ -37,7 +37,7 @@ vi.mock("@/components/workspace/workspace-switcher", () => ({
       <button type="button">Product</button>
       <button type="button">Design</button>
       <button type="button" onClick={onCreateWorkspace}>
-        Criar workspace
+        Create workspace
       </button>
     </div>
   ),
@@ -45,12 +45,12 @@ vi.mock("@/components/workspace/workspace-switcher", () => ({
 
 vi.mock("@/components/settings/settings-dialog", () => ({
   SettingsDialog: ({ open }: { open: boolean }) =>
-    open ? <div role="dialog">Configurações</div> : null,
+    open ? <div role="dialog">Settings</div> : null,
 }))
 
 vi.mock("@/components/workspace/create-workspace-dialog", () => ({
   CreateWorkspaceDialog: ({ open }: { open: boolean }) =>
-    open ? <div role="dialog">Criar workspace dialog</div> : null,
+    open ? <div role="dialog">Create workspace dialog</div> : null,
 }))
 
 describe("NavUser", () => {
@@ -72,8 +72,8 @@ describe("NavUser", () => {
     expect(screen.getByText("Product")).toBeInTheDocument()
     expect(screen.getByText("Design")).toBeInTheDocument()
 
-    await userEvent.click(screen.getByText("Configurações"))
-    expect(screen.getByRole("dialog")).toHaveTextContent("Configurações")
+    await userEvent.click(screen.getByText("Settings"))
+    expect(screen.getByRole("dialog")).toHaveTextContent("Settings")
   })
 
   it("opens create workspace and logs out", async () => {
@@ -85,10 +85,10 @@ describe("NavUser", () => {
     )
 
     await userEvent.click(screen.getByRole("button", { name: /israel/i }))
-    await userEvent.click(screen.getByText("Criar workspace"))
-    expect(screen.getByText("Criar workspace dialog")).toBeInTheDocument()
+    await userEvent.click(screen.getByText("Create workspace"))
+    expect(screen.getByText("Create workspace dialog")).toBeInTheDocument()
 
-    await userEvent.click(screen.getByText("Sair"))
+    await userEvent.click(screen.getByText("Log out"))
 
     expect(mocks.logout).toHaveBeenCalled()
     expect(mocks.replace).toHaveBeenCalledWith("/")

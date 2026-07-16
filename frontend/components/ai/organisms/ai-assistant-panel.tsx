@@ -24,10 +24,8 @@ import type {
   AiConversation,
   AiMessage,
 } from "@/lib/ai/contracts"
-import {
-  activePageMention,
-  insertPageMention,
-} from "@/lib/ai/page-mentions"
+import { activePageMention, insertPageMention } from "@/lib/ai/page-mentions"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { AiActionControls } from "../molecules/ai-action-controls"
 import { AiMessage as MessageView } from "../molecules/ai-message"
 
@@ -61,6 +59,7 @@ type Props = {
 }
 
 export function AiAssistantPanel(props: Props) {
+  const { formatDate, t } = useI18n()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cursor, setCursor] = useState(props.draft.length)
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
@@ -78,7 +77,7 @@ export function AiAssistantPanel(props: Props) {
     const inserted = insertPageMention(
       props.draft,
       mention,
-      page.title || "Sem título"
+      page.title || t("Untitled")
     )
     props.onMentionPage(page.id, inserted.value)
     setCursor(inserted.cursor)
@@ -92,16 +91,16 @@ export function AiAssistantPanel(props: Props) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
         <div>
-          <h2 className="font-medium">Reason AI</h2>
+          <h2 className="font-medium">{t("Reason AI")}</h2>
           <p className="text-xs text-muted-foreground">
-            Pergunte ou edite com contexto
+            {t("Ask or edit with context")}
           </p>
         </div>
         <div className="flex gap-1">
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Nova conversa"
+            aria-label={t("New conversation")}
             disabled={props.busy}
             onClick={props.onNewConversation}
           >
@@ -110,7 +109,7 @@ export function AiAssistantPanel(props: Props) {
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Histórico de conversas"
+            aria-label={t("Conversation history")}
             aria-pressed={props.showHistory}
             aria-expanded={props.showHistory}
             aria-controls="ai-conversation-history"
@@ -122,7 +121,7 @@ export function AiAssistantPanel(props: Props) {
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Fechar Reason AI"
+            aria-label={t("Close Reason AI")}
             onClick={props.onClose}
           >
             <XIcon />
@@ -133,11 +132,11 @@ export function AiAssistantPanel(props: Props) {
         <div
           id="ai-conversation-history"
           className="min-h-0 flex-1 overflow-y-auto p-2"
-          aria-label="Conversas"
+          aria-label={t("Conversations")}
         >
           {props.conversations.length === 0 ? (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              Nenhuma conversa ainda.
+              {t("No conversations yet.")}
             </p>
           ) : (
             props.conversations.map((conversation) => (
@@ -148,10 +147,10 @@ export function AiAssistantPanel(props: Props) {
                 onClick={() => props.onSelectConversation(conversation.id)}
               >
                 <span className="block truncate font-medium">
-                  {conversation.title || "Nova conversa"}
+                  {conversation.title || t("New conversation")}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(conversation.updated_at).toLocaleDateString()}
+                  {formatDate(conversation.updated_at)}
                 </span>
               </button>
             ))
@@ -169,8 +168,9 @@ export function AiAssistantPanel(props: Props) {
             />
             {!props.canWrite ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                Você pode perguntar sobre o workspace. Ações que alteram blocos
-                exigem edição.
+                {t(
+                  "You can ask about the workspace. Actions that change blocks require edit access."
+                )}
               </p>
             ) : null}
           </div>
@@ -180,8 +180,9 @@ export function AiAssistantPanel(props: Props) {
           >
             {props.messages.length === 0 && !props.busy ? (
               <p className="mx-auto max-w-64 pt-12 text-center text-sm text-muted-foreground">
-                Use fontes do seu workspace para responder, resumir e continuar
-                seu texto.
+                {t(
+                  "Use sources from your workspace to answer questions, summarize, and continue your writing."
+                )}
               </p>
             ) : null}
             {props.messages.map((message) => (
@@ -207,11 +208,13 @@ export function AiAssistantPanel(props: Props) {
                 key={`${tool}-${index}`}
                 className="text-xs text-muted-foreground"
               >
-                Executando {tool}…
+                {t("Running {tool}...", { tool })}
               </p>
             ))}
             {props.busy && !props.streamedText ? (
-              <p className="text-sm text-muted-foreground">Pensando…</p>
+              <p className="text-sm text-muted-foreground">
+                {t("Thinking...")}
+              </p>
             ) : null}
             {props.error ? (
               <p role="alert" className="text-sm text-destructive">
@@ -227,23 +230,25 @@ export function AiAssistantPanel(props: Props) {
           <div className="relative border-t p-3">
             {mention ? (
               <Command
-                label="Mencionar página"
+                label={t("Mention page")}
                 className="absolute right-3 bottom-full left-3 mb-2 h-auto border shadow-md"
                 shouldFilter={false}
                 value={
                   matchingPages[activeMentionIndex % matchingPages.length]?.id
                 }
               >
-                <CommandList label="Mencionar página">
+                <CommandList label={t("Mention page")}>
                   {matchingPages.length === 0 ? (
-                    <CommandEmpty>Nenhuma página encontrada.</CommandEmpty>
+                    <CommandEmpty>{t("No pages found.")}</CommandEmpty>
                   ) : (
-                    <CommandGroup heading="Páginas">
+                    <CommandGroup heading={t("Pages")}>
                       {matchingPages.map((page) => (
                         <CommandItem
                           key={page.id}
                           value={page.id}
-                          data-checked={props.mentionedPageIds.includes(page.id)}
+                          data-checked={props.mentionedPageIds.includes(
+                            page.id
+                          )}
                           onPointerDown={(event) => {
                             event.preventDefault()
                             selectMention(page)
@@ -252,7 +257,7 @@ export function AiAssistantPanel(props: Props) {
                           <FileTextIcon />
                           <span className="truncate">
                             {page.icon ? `${page.icon} ` : ""}
-                            {page.title || "Sem título"}
+                            {page.title || t("Untitled")}
                           </span>
                         </CommandItem>
                       ))}
@@ -269,7 +274,9 @@ export function AiAssistantPanel(props: Props) {
                 setCursor(event.target.selectionStart)
               }}
               onClick={(event) => setCursor(event.currentTarget.selectionStart)}
-              onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+              onSelect={(event) =>
+                setCursor(event.currentTarget.selectionStart)
+              }
               onKeyDown={(event) => {
                 if (mention && matchingPages.length > 0) {
                   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -300,14 +307,14 @@ export function AiAssistantPanel(props: Props) {
                   props.onSubmit()
                 }
               }}
-              aria-label="Mensagem para Reason AI"
-              placeholder="Pergunte sobre seu workspace…"
+              aria-label={t("Message to Reason AI")}
+              placeholder={t("Ask about your workspace...")}
               className="max-h-32 min-h-20 resize-none"
               autoFocus
             />
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[11px] text-muted-foreground">
-                Enter envia · Shift+Enter quebra linha
+                {t("Enter sends · Shift+Enter inserts a line break")}
               </span>
               {props.busy ? (
                 <Button
@@ -318,8 +325,8 @@ export function AiAssistantPanel(props: Props) {
                 >
                   <SquareIcon />
                   {props.stopping
-                    ? "Interrompendo exibição…"
-                    : "Interromper exibição"}
+                    ? t("Stopping display...")
+                    : t("Stop display")}
                 </Button>
               ) : (
                 <Button
@@ -327,7 +334,7 @@ export function AiAssistantPanel(props: Props) {
                   disabled={!props.draft.trim()}
                   onClick={props.onSubmit}
                 >
-                  <SendIcon /> Enviar
+                  <SendIcon /> {t("Send")}
                 </Button>
               )}
             </div>

@@ -22,10 +22,12 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const { openMenu } = useCommandMenu()
   const { pages } = usePages()
+  const { t } = useI18n()
   const [trashOpen, setTrashOpen] = useState(false)
 
   return (
@@ -46,11 +48,11 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   data-cy="command-trigger"
-                  tooltip="Buscar e navegar"
+                  tooltip={t("Search and navigate")}
                   onClick={openMenu}
                 >
                   <SearchIcon />
-                  <span>Busca</span>
+                  <span>{t("Search")}</span>
                   <Kbd className="ml-auto group-data-[collapsible=icon]:hidden">
                     ⌘K
                   </Kbd>
@@ -59,11 +61,11 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   data-cy="trash-trigger"
-                  tooltip="Lixeira"
+                  tooltip={t("Trash")}
                   onClick={() => setTrashOpen(true)}
                 >
                   <Trash2Icon />
-                  <span>Lixeira</span>
+                  <span>{t("Trash")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -74,7 +76,10 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
-      <SidebarRail />
+      <SidebarRail
+        aria-label={t("Resize or toggle sidebar")}
+        title={t("Drag to resize. Click to collapse or expand.")}
+      />
       <TrashDialog open={trashOpen} onOpenChange={setTrashOpen} />
     </Sidebar>
   )

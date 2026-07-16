@@ -16,13 +16,11 @@ describe("AiActionControls", () => {
       />
     )
 
-    expect(screen.getByRole("button", { name: /Resumir/ })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /Summarize/ })).toBeDisabled()
     expect(
-      screen.getByRole("button", { name: /Formatar seleção/ })
+      screen.getByRole("button", { name: /Format selection/ })
     ).toBeDisabled()
-    expect(
-      screen.getByRole("button", { name: /Formatar página/ })
-    ).toBeDisabled()
+    expect(screen.getByRole("button", { name: /Format page/ })).toBeDisabled()
   })
 
   it("preserves selected block order in a transform action", async () => {
@@ -37,7 +35,7 @@ describe("AiActionControls", () => {
       />
     )
     await userEvent.click(
-      screen.getByRole("button", { name: /Formatar seleção/ })
+      screen.getByRole("button", { name: /Format selection/ })
     )
     expect(onAction).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -43,17 +43,17 @@ describe("TrashDialog", () => {
     render(<TrashDialog open onOpenChange={vi.fn()} />)
     await waitFor(() => expect(mocks.refreshTrash).toHaveBeenCalled())
 
-    await userEvent.click(screen.getByRole("button", { name: "Excluir" }))
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
     expect(mocks.permanentDelete).not.toHaveBeenCalled()
     expect(
-      screen.getByRole("heading", { name: "Excluir permanentemente?" })
+      screen.getByRole("heading", { name: "Delete permanently?" })
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/toda a subárvore serão removidas/)
+      screen.getByText(/and its entire subtree will be removed/)
     ).toBeInTheDocument()
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Excluir permanentemente" })
+      screen.getByRole("button", { name: "Delete permanently" })
     )
     await waitFor(() =>
       expect(mocks.permanentDelete).toHaveBeenCalledWith("page-trash")
@@ -65,7 +65,7 @@ describe("TrashDialog", () => {
     render(<TrashDialog open onOpenChange={vi.fn()} />)
     await waitFor(() => expect(mocks.refreshTrash).toHaveBeenCalled())
 
-    expect(screen.queryByRole("button", { name: "Restaurar" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Excluir" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Restore" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 })

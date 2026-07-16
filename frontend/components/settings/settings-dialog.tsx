@@ -14,7 +14,9 @@ import { McpIntegrationsPanel } from "@/components/settings/mcp-integrations-pan
 import { ProfileForm } from "@/components/settings/profile-form"
 import { ThemeSelector } from "@/components/settings/theme-selector"
 import { WorkspaceMembersPanel } from "@/components/settings/workspace-members-panel"
+import { LanguageSelector } from "@/components/atoms/language-selector"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function initials(displayName: string) {
   return displayName
@@ -33,8 +35,9 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { user } = useAuth()
-  const displayName = user?.display_name || "Usuário"
-  const email = user?.email || "Sessão ativa"
+  const { t } = useI18n()
+  const displayName = user?.display_name || t("User")
+  const email = user?.email || t("Active session")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -43,17 +46,19 @@ export function SettingsDialog({
         className="max-h-[90svh] overflow-y-auto sm:max-w-3xl"
       >
         <DialogHeader>
-          <DialogTitle>Configurações</DialogTitle>
+          <DialogTitle>{t("Settings")}</DialogTitle>
           <DialogDescription>
-            Gerencie sua conta, workspaces, integrações e aparência.
+            {t(
+              "Manage your account, workspaces, integrations, and appearance."
+            )}
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="account" className="gap-5">
           <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
-            <TabsTrigger value="account">Conta</TabsTrigger>
-            <TabsTrigger value="workspace">Workspace</TabsTrigger>
-            <TabsTrigger value="integrations">Integrações</TabsTrigger>
-            <TabsTrigger value="appearance">Aparência</TabsTrigger>
+            <TabsTrigger value="account">{t("Account")}</TabsTrigger>
+            <TabsTrigger value="workspace">{t("Workspace")}</TabsTrigger>
+            <TabsTrigger value="integrations">{t("Integrations")}</TabsTrigger>
+            <TabsTrigger value="appearance">{t("Appearance")}</TabsTrigger>
           </TabsList>
           <TabsContent value="account" className="flex flex-col gap-6">
             <div className="flex items-center gap-3 rounded-lg border p-3">
@@ -81,14 +86,23 @@ export function SettingsDialog({
           <TabsContent value="integrations">
             <McpIntegrationsPanel />
           </TabsContent>
-          <TabsContent value="appearance" className="flex flex-col gap-3">
+          <TabsContent value="appearance" className="flex flex-col gap-6">
             <div>
-              <h3 className="font-medium">Tema</h3>
+              <h3 className="font-medium">{t("Theme")}</h3>
               <p className="text-sm text-muted-foreground">
-                Escolha a aparência do app.
+                {t("Choose the app's appearance.")}
               </p>
             </div>
             <ThemeSelector />
+            <div className="flex flex-col gap-3 border-t pt-5">
+              <div>
+                <h3 className="font-medium">{t("Language")}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {t("Choose the language used by the app.")}
+                </p>
+              </div>
+              <LanguageSelector />
+            </div>
           </TabsContent>
         </Tabs>
       </DialogContent>

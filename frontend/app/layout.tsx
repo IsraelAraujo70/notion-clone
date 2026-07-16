@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AuthProvider } from "@/lib/auth"
+import { I18nProvider } from "@/lib/i18n/i18n-provider"
 import { cn } from "@/lib/utils"
 
 const fontSans = Inter({
@@ -25,7 +26,7 @@ const fontMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "reason",
-  description: "Block workspace with authentication and a protected dashboard.",
+  description: "A secure, collaborative workspace built from blocks.",
 }
 
 export default function RootLayout({
@@ -46,11 +47,13 @@ export default function RootLayout({
       )}
     >
       <body>
-        <ThemeProvider>
-          <TooltipProvider>
-            <AuthProvider>{children}</AuthProvider>
-          </TooltipProvider>
-        </ThemeProvider>
+        <I18nProvider>
+          <ThemeProvider>
+            <TooltipProvider>
+              <AuthProvider>{children}</AuthProvider>
+            </TooltipProvider>
+          </ThemeProvider>
+        </I18nProvider>
       </body>
     </html>
   )

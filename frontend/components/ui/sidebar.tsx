@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
@@ -276,6 +277,7 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
+  const { t } = useI18n()
   const { isMobile, state, openMobile, setOpenMobile, isResizing } =
     useSidebar()
 
@@ -311,8 +313,8 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>{t("Sidebar")}</SheetTitle>
+            <SheetDescription>{t("Displays the mobile sidebar.")}</SheetDescription>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -373,6 +375,7 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
+  const { t } = useI18n()
   const { toggleSidebar } = useSidebar()
 
   return (
@@ -389,7 +392,7 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t("Toggle sidebar")}</span>
     </Button>
   )
 }
@@ -404,6 +407,7 @@ function SidebarRail({
   onPointerUp,
   ...props
 }: React.ComponentProps<"button">) {
+  const { t } = useI18n()
   const {
     isMobile,
     state,
@@ -444,7 +448,7 @@ function SidebarRail({
       data-sidebar="rail"
       data-slot="sidebar-rail"
       data-cy="sidebar-rail"
-      aria-label="Redimensionar ou alternar sidebar"
+      aria-label={t("Resize or toggle sidebar")}
       onClick={(event) => {
         onClick?.(event)
         if (event.defaultPrevented) {
@@ -533,7 +537,7 @@ function SidebarRail({
         onPointerCancel?.(event)
         finishResize(event.currentTarget, event.pointerId, true)
       }}
-      title="Arraste para redimensionar. Clique para recolher ou expandir."
+      title={t("Drag to resize. Click to collapse or expand.")}
       className={cn(
         "absolute inset-y-0 z-20 hidden w-4 touch-none transition-all ease-linear select-none group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border focus-visible:after:bg-sidebar-ring sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

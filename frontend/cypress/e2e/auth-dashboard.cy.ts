@@ -11,14 +11,17 @@ describe("auth and dashboard shell", () => {
     cy.get('[data-cy="signup-submit"]').click()
 
     // `/dashboard` redireciona para a página raiz persistida do workspace.
-    cy.location("pathname").should("match", /^\/dashboard\/pages\/[0-9a-f-]{36}$/)
+    cy.location("pathname").should(
+      "match",
+      /^\/dashboard\/pages\/[0-9a-f-]{36}$/
+    )
     cy.get('[data-cy="page-title"]').should("be.visible").and("have.text", "")
     cy.get('[data-cy^="nav-page-"]').should("be.visible")
     cy.get('[data-cy="command-trigger"]').should("be.visible")
     cy.get('[data-cy="command-trigger"]')
       .parents('[data-slot="sidebar-group"]')
       .next()
-      .should("contain", "Páginas")
+      .should("contain", "Pages")
 
     cy.get('[data-cy="command-trigger"]').click()
     cy.get('[data-cy="command-log-out"]').click()
@@ -41,10 +44,10 @@ describe("auth and dashboard shell", () => {
   it("shows non-enumerating forgot-password success copy", () => {
     cy.visit("/login")
     cy.get('[data-cy="login-email"]').type("missing@example.com")
-    cy.contains("Esqueceu a senha?").click()
+    cy.contains("Forgot password?").click()
     cy.get('[data-cy="login-submit"]').click()
     cy.contains(
-      "Se esse email tiver conta, o link de redefinição foi enviado."
+      "If an account exists for this email, a reset link was sent."
     ).should("be.visible")
   })
 })

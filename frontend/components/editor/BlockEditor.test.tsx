@@ -278,7 +278,7 @@ describe("BlockEditor drag handle", () => {
     )
 
     const handle = screen.getByRole("button", {
-      name: "Arrastar ou abrir opções do bloco",
+      name: "Drag or open block options",
     })
 
     expect(handle).toHaveClass(
@@ -670,9 +670,13 @@ describe("BlockEditor block selection", () => {
       container.querySelector('[data-cy="block-handle-numbered-item"]')!
     )
 
-    expect(await screen.findByText("1 bloco selecionado")).toBeVisible()
-    expect(screen.getByText("Duplicar")).toBeVisible()
-    expect(screen.getByText("Transformar em")).toBeVisible()
+    expect(
+      (await screen.findAllByText("1 block selected")).some(
+        (element) => !element.classList.contains("sr-only")
+      )
+    ).toBe(true)
+    expect(screen.getByText("Duplicate")).toBeVisible()
+    expect(screen.getByText("Turn into")).toBeVisible()
   })
 
   it("preserves a multi-selection after cancelling and copying from the context menu", async () => {
@@ -696,7 +700,7 @@ describe("BlockEditor block selection", () => {
     fireEvent.contextMenu(editable)
 
     expect(
-      (await screen.findAllByText("2 blocos selecionados")).some(
+      (await screen.findAllByText("2 blocks selected")).some(
         (element) => !element.classList.contains("sr-only")
       )
     ).toBe(true)
@@ -1088,9 +1092,7 @@ describe("BlockEditor code blocks", () => {
     expect(
       document.querySelectorAll('[data-cy="code-editor-code-1"] .cm-line')
     ).toHaveLength(2)
-    await user.click(
-      screen.getByRole("combobox", { name: "Linguagem do código" })
-    )
+    await user.click(screen.getByRole("combobox", { name: "Code language" }))
     await user.click(screen.getByText("Python"))
 
     expect(dispatchBatch).toHaveBeenCalledWith(

@@ -25,6 +25,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { api, ApiError, type PublicLinkResponse } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function ShareDialog({
   pageId,
@@ -34,6 +35,7 @@ export function ShareDialog({
   canWrite: boolean
 }) {
   const { token } = useAuth()
+  const { t } = useI18n()
   const { activeWorkspaceId } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [link, setLink] = useState<PublicLinkResponse | null>(null)
@@ -117,15 +119,16 @@ export function ShareDialog({
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" data-cy="share-open">
           <Share2Icon data-icon="inline-start" />
-          Compartilhar
+          {t("Share")}
         </Button>
       </DialogTrigger>
       <DialogContent data-cy="share-dialog">
         <DialogHeader>
-          <DialogTitle>Compartilhar página</DialogTitle>
+          <DialogTitle>{t("Share page")}</DialogTitle>
           <DialogDescription>
-            Qualquer pessoa com o link poderá ver esta página. Subpáginas não
-            serão publicadas.
+            {t(
+              "Anyone with the link can view this page. Subpages will not be published."
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +142,7 @@ export function ShareDialog({
         ) : error ? (
           <Alert variant="destructive" data-cy="share-error">
             <AlertDescription>
-              Não foi possível atualizar o compartilhamento. Tente novamente.
+              {t("Could not update sharing. Try again.")}
             </AlertDescription>
           </Alert>
         ) : link ? (
@@ -147,14 +150,14 @@ export function ShareDialog({
             <div className="flex gap-2">
               <Input
                 readOnly
-                aria-label="Link público"
+                aria-label={t("Public link")}
                 value={link.url}
                 data-cy="share-url"
               />
               <Button
                 variant="outline"
                 size="icon"
-                aria-label="Copiar link"
+                aria-label={t("Copy link")}
                 data-cy="share-copy"
                 onClick={copyLink}
               >
@@ -163,14 +166,16 @@ export function ShareDialog({
             </div>
             {copied ? (
               <p role="status" className="text-xs text-muted-foreground">
-                Link copiado.
+                {t("Link copied.")}
               </p>
             ) : null}
           </div>
         ) : (
           <Alert>
             <LinkIcon />
-            <AlertDescription>Esta página ainda é privada.</AlertDescription>
+            <AlertDescription>
+              {t("This page is still private.")}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -188,7 +193,7 @@ export function ShareDialog({
                 ) : (
                   <UnlinkIcon data-icon="inline-start" />
                 )}
-                Revogar link
+                {t("Revoke link")}
               </Button>
             ) : (
               <Button
@@ -201,7 +206,7 @@ export function ShareDialog({
                 ) : (
                   <LinkIcon data-icon="inline-start" />
                 )}
-                Criar link público
+                {t("Create public link")}
               </Button>
             )}
           </DialogFooter>

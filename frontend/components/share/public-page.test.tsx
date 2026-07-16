@@ -74,9 +74,9 @@ describe("PublicPage", () => {
     )
     render(<PublicPage token="revoked-token" />)
 
-    expect(await screen.findByText("Página não encontrada")).toBeVisible()
+    expect(await screen.findByText("Page not found")).toBeVisible()
     expect(
-      screen.getByText("Este link não existe ou deixou de ser público.")
+      screen.getByText("This link does not exist or is no longer public.")
     ).toBeVisible()
   })
 })

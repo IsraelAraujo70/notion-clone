@@ -12,12 +12,7 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import type { WorkspaceRole } from "@/lib/api"
-
-const roleLabels: Record<WorkspaceRole, string> = {
-  owner: "Owner",
-  editor: "Editor",
-  viewer: "Viewer",
-}
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function WorkspaceSwitcher({
   onCreateWorkspace,
@@ -26,15 +21,21 @@ export function WorkspaceSwitcher({
 }) {
   const { activeWorkspaceId, loading, selectWorkspace, workspaces } =
     useWorkspace()
+  const { t } = useI18n()
+  const roleLabels: Record<WorkspaceRole, string> = {
+    owner: t("Owner"),
+    editor: t("Editor"),
+    viewer: t("Viewer"),
+  }
 
   return (
     <>
-      <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+      <DropdownMenuLabel>{t("Workspaces")}</DropdownMenuLabel>
       <DropdownMenuGroup>
         {loading ? (
           <DropdownMenuItem disabled>
             <Spinner />
-            Carregando...
+            {t("Loading...")}
           </DropdownMenuItem>
         ) : (
           workspaces.map((workspace) => (
@@ -54,7 +55,7 @@ export function WorkspaceSwitcher({
           onSelect={onCreateWorkspace}
         >
           <PlusIcon />
-          Criar workspace
+          {t("Create workspace")}
         </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />

@@ -14,10 +14,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, ApiError, type PublicPageResponse } from "@/lib/api"
 import { getBlock, treeFromBlocks } from "@/lib/engine/tree"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 const EMPTY_COLLAPSED_BLOCKS: ReadonlySet<string> = new Set()
 
 export function PublicPage({ token }: { token: string }) {
+  const { t } = useI18n()
   const [response, setResponse] = useState<PublicPageResponse | null>(null)
   const [error, setError] = useState<"not-found" | "request" | null>(null)
 
@@ -53,6 +55,15 @@ export function PublicPage({ token }: { token: string }) {
         : null,
     [response]
   )
+  const root = tree ? getBlock(tree, tree.rootId) : null
+  const title =
+    root && typeof root.properties.title === "string"
+      ? root.properties.title
+      : ""
+
+  useEffect(() => {
+    document.title = `${title || t("Shared page")} · reason`
+  }, [t, title])
 
   if (error) {
     return (
@@ -64,13 +75,13 @@ export function PublicPage({ token }: { token: string }) {
             </EmptyMedia>
             <EmptyTitle>
               {error === "not-found"
-                ? "Página não encontrada"
-                : "Não foi possível abrir a página"}
+                ? t("Page not found")
+                : t("Could not open the page")}
             </EmptyTitle>
             <EmptyDescription>
               {error === "not-found"
-                ? "Este link não existe ou deixou de ser público."
-                : "Tente novamente em alguns instantes."}
+                ? t("This link does not exist or is no longer public.")
+                : t("Try again in a few moments.")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -88,11 +99,8 @@ export function PublicPage({ token }: { token: string }) {
     )
   }
 
-  const root = getBlock(tree, tree.rootId)
-  const title =
-    typeof root.properties.title === "string" ? root.properties.title : ""
   const icon =
-    typeof root.properties.icon === "string" ? root.properties.icon : ""
+    root && typeof root.properties.icon === "string" ? root.properties.icon : ""
 
   return (
     <main
@@ -106,7 +114,7 @@ export function PublicPage({ token }: { token: string }) {
           </span>
         ) : null}
         <h1 className="mb-6 text-[40px] leading-tight font-bold break-words">
-          {title || "Sem título"}
+          {title || t("Untitled")}
         </h1>
         <BlockEditor
           tree={tree}

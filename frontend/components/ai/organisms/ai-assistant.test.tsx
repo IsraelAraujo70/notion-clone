@@ -25,8 +25,8 @@ const conversation = {
   id: "conversation-1",
   workspace_id: "workspace-1",
   title: "",
-  created_at: "now",
-  updated_at: "now",
+  created_at: "2026-07-14T12:00:00Z",
+  updated_at: "2026-07-14T12:00:00Z",
 }
 
 describe("AiAssistant", () => {
@@ -81,7 +81,7 @@ describe("AiAssistant", () => {
       />
     )
 
-    await userEvent.click(await screen.findByRole("button", { name: "Enviar" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Send" }))
     expect(aiTransport.createConversation).not.toHaveBeenCalled()
     expect(aiTransport.streamMessage).not.toHaveBeenCalled()
 
@@ -117,16 +117,18 @@ describe("AiAssistant", () => {
     )
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Abrir Reason AI" })
+      screen.getByRole("button", { name: "Open Reason AI" })
     )
     await userEvent.type(
-      screen.getByRole("textbox", { name: "Mensagem para Reason AI" }),
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
       "Compare @atlas"
     )
     await userEvent.click(await screen.findByText(/Project Atlas/))
-    await userEvent.click(screen.getByRole("button", { name: "Enviar" }))
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
 
-    await waitFor(() => expect(aiTransport.streamMessage).toHaveBeenCalledOnce())
+    await waitFor(() =>
+      expect(aiTransport.streamMessage).toHaveBeenCalledOnce()
+    )
     expect(aiTransport.streamMessage).toHaveBeenCalledWith(
       "token",
       "workspace-1",
@@ -201,10 +203,10 @@ describe("AiAssistant", () => {
     ])
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Abrir Reason AI" })
+      screen.getByRole("button", { name: "Open Reason AI" })
     )
     await userEvent.click(
-      screen.getByRole("button", { name: "Histórico de conversas" })
+      screen.getByRole("button", { name: "Conversation history" })
     )
     expect(await screen.findByText("Current workspace")).toBeVisible()
     expect(screen.queryByText("Previous workspace")).not.toBeInTheDocument()
@@ -236,7 +238,7 @@ describe("AiAssistant", () => {
       />
     )
 
-    await userEvent.click(await screen.findByRole("button", { name: "Enviar" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Send" }))
 
     await waitFor(() =>
       expect(aiTransport.waitForRun).toHaveBeenCalledWith(
@@ -282,7 +284,7 @@ describe("AiAssistant", () => {
     const { rerender } = render(
       <AiAssistant {...common} workspaceId="workspace-1" />
     )
-    await userEvent.click(await screen.findByRole("button", { name: "Enviar" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Send" }))
     await waitFor(() => expect(pollingSignal).toBeDefined())
 
     rerender(<AiAssistant {...common} workspaceId="workspace-2" />)

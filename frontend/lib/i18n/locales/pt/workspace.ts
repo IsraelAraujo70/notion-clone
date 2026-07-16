@@ -1,0 +1,36 @@
+export const workspacePt = {
+  "Drag to resize. Click to collapse or expand.":
+    "Arraste para redimensionar. Clique para recolher ou expandir.",
+  "Resize or toggle sidebar": "Redimensionar ou alternar sidebar",
+  "Toggle sidebar": "Alternar sidebar",
+  "Accept invite": "Aceitar convite",
+  "Accepting...": "Aceitando...",
+  "Could not accept the invite.": "Não foi possível aceitar o convite.",
+  "Could not create the workspace.": "Não foi possível criar o workspace.",
+  "Could not load the invite.": "Não foi possível carregar o convite.",
+  "Create a separate space for pages, members, and permissions.":
+    "Crie um espaço separado para páginas, membros e permissões.",
+  "Create account": "Criar conta",
+  "Create workspace": "Criar workspace",
+  "Creating...": "Criando...",
+  "Expires on {date}.": "Expira em {date}.",
+  "Invalid invite.": "Convite inválido.",
+  "Invite pending": "Convite pendente",
+  "Invited email": "Email convidado",
+  "Join the shared Reason workspace.":
+    "Entre no workspace compartilhado do Reason.",
+  "Loading invite...": "Carregando convite...",
+  "Loading...": "Carregando...",
+  "Log in": "Entrar",
+  "Log out": "Sair",
+  "New page": "Nova página",
+  "No pages": "Nenhuma página",
+  "Search and navigate": "Buscar e navegar",
+  "This invite has already been accepted.": "Este convite já foi aceito.",
+  "This invite has expired.": "Este convite expirou.",
+  "This invite has been revoked.": "Este convite foi revogado.",
+  "This workspace has no pages yet. Create the first one.":
+    "Este workspace ainda não tem páginas. Crie a primeira.",
+  Trash: "Lixeira",
+  "Workspace invitation": "Convite de workspace",
+} as const

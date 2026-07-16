@@ -41,7 +41,9 @@ describe("editor and sidebar UX eval", () => {
     cy.get('[data-cy^="code-editor-"] .cm-content')
       .should("be.visible")
       .click()
-      .type("const answer = 42{enter}const doubled = answer * 2{enter}return doubled{enter}// done")
+      .type(
+        "const answer = 42{enter}const doubled = answer * 2{enter}return doubled{enter}// done"
+      )
     cy.get('[data-cy^="code-language-"]').click()
     cy.get('[data-cy="code-language-option-typescript"]').click()
     cy.get('[data-cy^="code-editor-"] .cm-line').should("have.length", 4)
@@ -53,19 +55,29 @@ describe("editor and sidebar UX eval", () => {
       .trigger("pointerdown", { pointerId: 1, clientX: 240, button: 0 })
       .trigger("pointermove", { pointerId: 1, clientX: 360 })
       .trigger("pointerup", { pointerId: 1, clientX: 360 })
-    cy.window().its("localStorage").invoke("getItem", "reason:sidebar-width:v1").should("eq", "360")
+    cy.window()
+      .its("localStorage")
+      .invoke("getItem", "reason:sidebar-width:v1")
+      .should("eq", "360")
 
     cy.reload()
     cy.get('[data-cy^="code-editor-"] .cm-line').should("have.length", 4)
     cy.get('[data-cy^="code-editor-"] .cm-line span').should("exist")
     cy.get('[data-cy^="code-language-"]').should("contain.text", "TypeScript")
-    cy.window().its("localStorage").invoke("getItem", "reason:sidebar-width:v1").should("eq", "360")
+    cy.window()
+      .its("localStorage")
+      .invoke("getItem", "reason:sidebar-width:v1")
+      .should("eq", "360")
 
     cy.window().then((window) =>
       window.localStorage.setItem("reason:sidebar-width:v1", "240")
     )
     cy.reload()
-    cy.get('[data-slot="sidebar-container"]').should("have.css", "width", "240px")
+    cy.get('[data-slot="sidebar-container"]').should(
+      "have.css",
+      "width",
+      "240px"
+    )
 
     for (let count = 0; count < 7; count += 1) {
       createChild()
@@ -76,12 +88,16 @@ describe("editor and sidebar UX eval", () => {
         .should("be.visible")
         .then(($title) => {
           expect($title[0].getBoundingClientRect().width).to.be.gte(96)
-          expect($title.attr("title")).to.equal("Sem título")
+          expect($title.attr("title")).to.equal("Untitled")
         })
     })
 
     currentPageId().then((deepestPageId) => {
-      cy.get(`[data-cy="nav-page-${deepestPageId}"]`).should("have.attr", "aria-label", "Sem título")
+      cy.get(`[data-cy="nav-page-${deepestPageId}"]`).should(
+        "have.attr",
+        "aria-label",
+        "Untitled"
+      )
     })
 
     cy.get('[data-cy="sidebar-rail"]').click()

@@ -67,7 +67,7 @@ describe("M4 search, sharing, and permanent deletion", () => {
               cy.visit(publicUrl)
               cy.get('[data-cy="public-page-error"]').should(
                 "contain.text",
-                "Página não encontrada"
+                "Page not found"
               )
 
               cy.authenticatedVisit(pagePath, auth.token)
@@ -78,7 +78,7 @@ describe("M4 search, sharing, and permanent deletion", () => {
               cy.get(`[data-cy="trash-delete-permanently-${pageId}"]`).click()
               cy.get('[data-cy="trash-delete-confirm-dialog"]').should(
                 "contain.text",
-                "toda a subárvore"
+                "and its entire subtree will be removed"
               )
               cy.get('[data-cy="trash-delete-confirm"]').click()
               cy.get(`[data-cy="trash-entry-${pageId}"]`).should("not.exist")

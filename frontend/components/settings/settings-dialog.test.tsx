@@ -147,12 +147,7 @@ const createdIntegration = {
     ...existingIntegration,
     id: "integration-new",
     name: "OpenCode no MacBook",
-    scopes: [
-      "content:read",
-      "content:write",
-      "search:read",
-      "media:read",
-    ],
+    scopes: ["content:read", "content:write", "search:read", "media:read"],
   },
 }
 
@@ -183,48 +178,45 @@ describe("SettingsDialog", () => {
   it("renders account, workspace, integrations and appearance tabs", () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
-    expect(screen.getByRole("tab", { name: "Conta" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Account" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Workspace" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Integrações" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Aparência" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("tab", { name: "Integrations" })
+    ).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Appearance" })).toBeInTheDocument()
   })
 
   it("creates, copies and revokes MCP tokens", async () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
-    await userEvent.click(screen.getByRole("tab", { name: "Integrações" }))
+    await userEvent.click(screen.getByRole("tab", { name: "Integrations" }))
     expect(await screen.findByText("Claude Desktop")).toBeInTheDocument()
 
     await userEvent.type(
-      screen.getByLabelText("Nome da integração"),
+      screen.getByLabelText("Integration name"),
       "OpenCode no MacBook"
     )
-    await userEvent.click(screen.getByRole("button", { name: "Criar token" }))
+    await userEvent.click(screen.getByRole("button", { name: "Create token" }))
 
     await waitFor(() => {
       expect(mocks.createMcpToken).toHaveBeenCalledWith("secret-token", {
         name: "OpenCode no MacBook",
-        scopes: [
-          "content:read",
-          "content:write",
-          "search:read",
-          "media:read",
-        ],
+        scopes: ["content:read", "content:write", "search:read", "media:read"],
         workspace_ids: ["workspace-1"],
         expires_in_days: 30,
       })
     })
-    expect(screen.getByLabelText("Token MCP criado")).toHaveValue(
+    expect(screen.getByLabelText("Created MCP token")).toHaveValue(
       "rsn_mcp_created-secret"
     )
 
-    await userEvent.click(screen.getByRole("button", { name: "Copiar" }))
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "rsn_mcp_created-secret"
     )
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Revogar Claude Desktop" })
+      screen.getByRole("button", { name: "Revoke Claude Desktop" })
     )
     await waitFor(() => {
       expect(mocks.revokeMcpToken).toHaveBeenCalledWith(
@@ -237,13 +229,21 @@ describe("SettingsDialog", () => {
   it("changes password and theme", async () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
-    await userEvent.type(screen.getByLabelText("Senha atual"), "Password123!")
-    await userEvent.type(screen.getByLabelText("Nova senha"), "NewPassword123!")
     await userEvent.type(
-      screen.getByLabelText("Confirmar nova senha"),
+      screen.getByLabelText("Current password"),
+      "Password123!"
+    )
+    await userEvent.type(
+      screen.getByLabelText("New password"),
       "NewPassword123!"
     )
-    await userEvent.click(screen.getByRole("button", { name: "Alterar senha" }))
+    await userEvent.type(
+      screen.getByLabelText("Confirm new password"),
+      "NewPassword123!"
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change password" })
+    )
 
     await waitFor(() => {
       expect(mocks.changePassword).toHaveBeenCalledWith("secret-token", {
@@ -252,7 +252,7 @@ describe("SettingsDialog", () => {
       })
     })
 
-    await userEvent.click(screen.getByRole("tab", { name: "Aparência" }))
+    await userEvent.click(screen.getByRole("tab", { name: "Appearance" }))
     await userEvent.click(screen.getByRole("radio", { name: "GitHub" }))
     await userEvent.click(screen.getByRole("radio", { name: "Evergreen" }))
     await userEvent.click(screen.getByRole("radio", { name: "Default" }))
@@ -270,7 +270,7 @@ describe("SettingsDialog", () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
-    await screen.findByText("Workspace selecionado")
+    await screen.findByText("Selected workspace")
 
     await userEvent.click(screen.getAllByRole("combobox")[0])
     await userEvent.click(screen.getByRole("option", { name: "Design" }))
@@ -278,7 +278,7 @@ describe("SettingsDialog", () => {
 
     await userEvent.type(screen.getByLabelText("Email"), "new@example.com")
     await userEvent.click(
-      screen.getByRole("button", { name: "Enviar convite" })
+      screen.getByRole("button", { name: "Send invitation" })
     )
     await waitFor(() => {
       expect(mocks.inviteWorkspaceMember).toHaveBeenCalledWith(
@@ -302,7 +302,7 @@ describe("SettingsDialog", () => {
       )
     })
 
-    await userEvent.click(screen.getByLabelText("Remover person@example.com"))
+    await userEvent.click(screen.getByLabelText("Remove person@example.com"))
     await waitFor(() => {
       expect(mocks.removeWorkspaceMember).toHaveBeenCalledWith(
         "secret-token",
@@ -316,15 +316,15 @@ describe("SettingsDialog", () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
-    await screen.findByText("Zona de perigo")
+    await screen.findByText("Danger zone")
 
     const deleteButton = screen.getByRole("button", {
-      name: "Apagar workspace",
+      name: "Delete workspace",
     })
     expect(deleteButton).toBeDisabled()
 
     await userEvent.type(
-      screen.getByLabelText("Digite Product para confirmar"),
+      screen.getByLabelText("Type Product to confirm"),
       "Product"
     )
     await waitFor(() => expect(deleteButton).toBeEnabled())
@@ -343,12 +343,10 @@ describe("SettingsDialog", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
     expect(
-      await screen.findByText(
-        "Somente owners podem gerenciar membros e convites."
-      )
+      await screen.findByText("Only owners can manage members and invitations.")
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole("button", { name: "Enviar convite" })
+      screen.queryByRole("button", { name: "Send invitation" })
     ).not.toBeInTheDocument()
     expect(mocks.listWorkspaceInvites).not.toHaveBeenCalled()
   })

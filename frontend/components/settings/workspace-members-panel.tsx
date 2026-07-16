@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useState,
   type FormEvent,
@@ -45,19 +46,13 @@ import {
   type WorkspaceRole,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
-const roles: Array<{ value: WorkspaceRole; label: string }> = [
-  { value: "owner", label: "Owner" },
-  { value: "editor", label: "Editor" },
-  { value: "viewer", label: "Viewer" },
-]
-
-function roleLabel(role: WorkspaceRole) {
-  return roles.find((item) => item.value === role)?.label ?? role
-}
+const roles: WorkspaceRole[] = ["owner", "editor", "viewer"]
 
 export function WorkspaceMembersPanel() {
   const { token, user } = useAuth()
+  const { t } = useI18n()
   const { activeWorkspace, deleteWorkspace, selectWorkspace, workspaces } =
     useWorkspace()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
@@ -68,8 +63,18 @@ export function WorkspaceMembersPanel() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const reportLoadError = useEffectEvent((caught: unknown) => {
+    setError(
+      caught instanceof ApiError ? caught.message : t("Could not load members.")
+    )
+  })
 
   const isOwner = activeWorkspace?.role === "owner"
+  const roleLabel = (workspaceRole: WorkspaceRole) => {
+    if (workspaceRole === "owner") return t("Owner")
+    if (workspaceRole === "editor") return t("Editor")
+    return t("Viewer")
+  }
   const ownerCount = useMemo(
     () => members.filter((member) => member.role === "owner").length,
     [members]
@@ -98,11 +103,7 @@ export function WorkspaceMembersPanel() {
 
       setDeleteConfirmation("")
       void load().catch((caught) => {
-        setError(
-          caught instanceof ApiError
-            ? caught.message
-            : "Não foi possível carregar membros."
-        )
+        reportLoadError(caught)
       })
     })
 
@@ -126,13 +127,13 @@ export function WorkspaceMembersPanel() {
       })
       setEmail("")
       setRole("editor")
-      setNotice("Convite enviado.")
+      setNotice(t("Invitation sent."))
       await load()
     } catch (caught) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível enviar o convite."
+          : t("Could not send the invitation.")
       )
     } finally {
       setPending(false)
@@ -157,7 +158,7 @@ export function WorkspaceMembersPanel() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível alterar a permissão."
+          : t("Could not change the role.")
       )
     } finally {
       setPending(false)
@@ -177,7 +178,7 @@ export function WorkspaceMembersPanel() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível remover o membro."
+          : t("Could not remove the member.")
       )
     } finally {
       setPending(false)
@@ -197,7 +198,7 @@ export function WorkspaceMembersPanel() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível revogar o convite."
+          : t("Could not revoke the invitation.")
       )
     } finally {
       setPending(false)
@@ -214,12 +215,12 @@ export function WorkspaceMembersPanel() {
     try {
       await deleteWorkspace(activeWorkspace.id)
       setDeleteConfirmation("")
-      setNotice("Workspace apagado.")
+      setNotice(t("Workspace deleted."))
     } catch (caught) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível apagar o workspace."
+          : t("Could not delete the workspace.")
       )
     } finally {
       setPending(false)
@@ -227,7 +228,7 @@ export function WorkspaceMembersPanel() {
   }
 
   if (!activeWorkspace) {
-    return <p className="text-sm text-muted-foreground">Nenhum workspace.</p>
+    return <p className="text-sm text-muted-foreground">{t("No workspace.")}</p>
   }
 
   return (
@@ -235,14 +236,15 @@ export function WorkspaceMembersPanel() {
       <div className="rounded-xl border bg-muted/20 p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_240px] md:items-end">
           <div>
-            <h3 className="font-medium">Workspace</h3>
+            <h3 className="font-medium">{t("Workspace")}</h3>
             <p className="text-sm text-muted-foreground">
-              Escolha o workspace antes de gerenciar membros, convites e
-              páginas.
+              {t(
+                "Choose the workspace before managing members, invitations, and pages."
+              )}
             </p>
           </div>
           <Field>
-            <FieldLabel>Workspace selecionado</FieldLabel>
+            <FieldLabel>{t("Selected workspace")}</FieldLabel>
             <Select
               value={activeWorkspace.id}
               onValueChange={(workspaceId) => selectWorkspace(workspaceId)}
@@ -267,7 +269,9 @@ export function WorkspaceMembersPanel() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-sm text-muted-foreground">
           <Badge variant="secondary">{activeWorkspace.name}</Badge>
-          <span>Sua permissão: {roleLabel(activeWorkspace.role)}</span>
+          <span>
+            {t("Your role: {role}", { role: roleLabel(activeWorkspace.role) })}
+          </span>
         </div>
       </div>
       {error && (
@@ -283,7 +287,7 @@ export function WorkspaceMembersPanel() {
       {!isOwner && (
         <Alert>
           <AlertTitle>
-            Somente owners podem gerenciar membros e convites.
+            {t("Only owners can manage members and invitations.")}
           </AlertTitle>
         </Alert>
       )}
@@ -294,14 +298,14 @@ export function WorkspaceMembersPanel() {
           className="flex flex-col gap-3 rounded-xl border p-4"
         >
           <div>
-            <h3 className="font-medium">Convites</h3>
+            <h3 className="font-medium">{t("Invitations")}</h3>
             <p className="text-sm text-muted-foreground">
-              Envie acesso por email para o workspace selecionado.
+              {t("Send access by email to the selected workspace.")}
             </p>
           </div>
           <FieldGroup className="grid gap-3 md:grid-cols-[1fr_140px_auto]">
             <Field>
-              <FieldLabel htmlFor="invite-email">Email</FieldLabel>
+              <FieldLabel htmlFor="invite-email">{t("Email")}</FieldLabel>
               <Input
                 id="invite-email"
                 data-cy="workspace-invite-email"
@@ -312,7 +316,7 @@ export function WorkspaceMembersPanel() {
               />
             </Field>
             <Field>
-              <FieldLabel>Permissão</FieldLabel>
+              <FieldLabel>{t("Role")}</FieldLabel>
               <Select
                 value={role}
                 onValueChange={(value) => setRole(value as WorkspaceRole)}
@@ -323,8 +327,8 @@ export function WorkspaceMembersPanel() {
                 <SelectContent>
                   <SelectGroup>
                     {roles.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
+                      <SelectItem key={item} value={item}>
+                        {roleLabel(item)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -338,23 +342,23 @@ export function WorkspaceMembersPanel() {
                 disabled={pending || !email.trim()}
               >
                 {pending && <Spinner data-icon="inline-start" />}
-                Enviar convite
+                {t("Send invitation")}
               </Button>
             </Field>
           </FieldGroup>
           <FieldDescription>
-            O convite expira em 7 dias e é enviado por email.
+            {t("The invitation expires in 7 days and is sent by email.")}
           </FieldDescription>
         </form>
       )}
 
       <div className="flex flex-col gap-2 rounded-xl border p-4">
-        <h3 className="font-medium">Membros</h3>
+        <h3 className="font-medium">{t("Members")}</h3>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Usuário</TableHead>
-              <TableHead>Permissão</TableHead>
+              <TableHead>{t("User")}</TableHead>
+              <TableHead>{t("Role")}</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -386,8 +390,8 @@ export function WorkspaceMembersPanel() {
                         <SelectContent>
                           <SelectGroup>
                             {roles.map((item) => (
-                              <SelectItem key={item.value} value={item.value}>
-                                {item.label}
+                              <SelectItem key={item} value={item}>
+                                {roleLabel(item)}
                               </SelectItem>
                             ))}
                           </SelectGroup>
@@ -405,7 +409,9 @@ export function WorkspaceMembersPanel() {
                         type="button"
                         size="icon-sm"
                         variant="ghost"
-                        aria-label={`Remover ${member.email}`}
+                        aria-label={t("Remove {email}", {
+                          email: member.email,
+                        })}
                         disabled={
                           pending ||
                           lastOwner ||
@@ -426,17 +432,17 @@ export function WorkspaceMembersPanel() {
 
       {isOwner && (
         <div className="flex flex-col gap-2 rounded-xl border p-4">
-          <h3 className="font-medium">Convites pendentes</h3>
+          <h3 className="font-medium">{t("Pending invitations")}</h3>
           {invites.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nenhum convite pendente.
+              {t("No pending invitations.")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Permissão</TableHead>
+                  <TableHead>{t("Email")}</TableHead>
+                  <TableHead>{t("Role")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -453,7 +459,7 @@ export function WorkspaceMembersPanel() {
                         disabled={pending}
                         onClick={() => revokeInvite(invite)}
                       >
-                        Revogar
+                        {t("Revoke")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -467,16 +473,19 @@ export function WorkspaceMembersPanel() {
       {isOwner && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
           <div className="flex flex-col gap-1">
-            <h3 className="font-medium text-destructive">Zona de perigo</h3>
+            <h3 className="font-medium text-destructive">{t("Danger zone")}</h3>
             <p className="text-sm text-muted-foreground">
-              Apagar o workspace remove páginas, membros, convites e histórico.
-              Essa ação é permanente.
+              {t(
+                "Deleting the workspace removes pages, members, invitations, and history. This action is permanent."
+              )}
             </p>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
             <Field>
               <FieldLabel htmlFor="delete-workspace-confirmation">
-                Digite {activeWorkspace.name} para confirmar
+                {t("Type {workspace} to confirm", {
+                  workspace: activeWorkspace.name,
+                })}
               </FieldLabel>
               <Input
                 id="delete-workspace-confirmation"
@@ -495,7 +504,7 @@ export function WorkspaceMembersPanel() {
               onClick={() => void handleDeleteWorkspace()}
             >
               {pending && <Spinner data-icon="inline-start" />}
-              Apagar workspace
+              {t("Delete workspace")}
             </Button>
           </div>
         </div>

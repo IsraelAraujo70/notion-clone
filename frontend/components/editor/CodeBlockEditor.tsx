@@ -35,9 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export const CODE_LANGUAGES = [
-  { value: "plaintext", label: "Texto simples" },
+  { value: "plaintext", label: "Plain text" },
   { value: "javascript", label: "JavaScript" },
   { value: "typescript", label: "TypeScript" },
   { value: "jsx", label: "JSX" },
@@ -179,10 +180,12 @@ export const CodeBlockEditor = React.forwardRef<
   },
   ref
 ) {
+  const { t } = useI18n()
   const mountRef = React.useRef<HTMLDivElement>(null)
   const viewRef = React.useRef<EditorView | null>(null)
   const languageCompartment = React.useRef(new Compartment())
   const editableCompartment = React.useRef(new Compartment())
+  const accessibilityCompartment = React.useRef(new Compartment())
   const syncingValue = React.useRef(false)
   const callbacksRef = React.useRef({
     onChange,
@@ -205,6 +208,7 @@ export const CodeBlockEditor = React.forwardRef<
     onRedo,
   }
   const normalizedLanguage = normalizeLanguage(language)
+  const codeLabel = t("Code")
 
   React.useImperativeHandle(ref, () => ({
     focus(offset) {
@@ -279,10 +283,12 @@ export const CodeBlockEditor = React.forwardRef<
             EditorView.editable.of(!readOnly),
           ]),
           codeKeymap,
-          EditorView.contentAttributes.of({
-            "aria-label": "Código",
-            spellcheck: "false",
-          }),
+          accessibilityCompartment.current.of(
+            EditorView.contentAttributes.of({
+              "aria-label": codeLabel,
+              spellcheck: "false",
+            })
+          ),
           EditorView.domEventHandlers({
             focus: () => {
               callbacksRef.current.onFocus()
@@ -367,10 +373,25 @@ export const CodeBlockEditor = React.forwardRef<
     })
   }, [readOnly])
 
+  React.useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: accessibilityCompartment.current.reconfigure(
+        EditorView.contentAttributes.of({
+          "aria-label": codeLabel,
+          spellcheck: "false",
+        })
+      ),
+    })
+  }, [codeLabel])
+
   return (
     <div className="overflow-hidden rounded-md bg-muted" data-cy={`code-shell-${blockId}`}>
       <div className="flex h-9 items-center justify-between border-b border-border/70 px-2">
-        <span className="text-xs font-medium text-muted-foreground">Código</span>
+        <span className="text-xs font-medium text-muted-foreground">
+          {codeLabel}
+        </span>
         <Select
           value={normalizedLanguage}
           onValueChange={(next) => onLanguageChange(normalizeLanguage(next))}
@@ -379,7 +400,7 @@ export const CodeBlockEditor = React.forwardRef<
           <SelectTrigger
             size="sm"
             data-cy={`code-language-${blockId}`}
-            aria-label="Linguagem do código"
+            aria-label={t("Code language")}
             className="border-0 bg-transparent text-xs shadow-none hover:bg-background/50"
           >
             <SelectValue />
@@ -391,7 +412,7 @@ export const CodeBlockEditor = React.forwardRef<
                 value={option.value}
                 data-cy={`code-language-option-${option.value}`}
               >
-                {option.label}
+                {option.value === "plaintext" ? t("Plain text") : option.label}
               </SelectItem>
             ))}
           </SelectContent>

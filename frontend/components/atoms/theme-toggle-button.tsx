@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { getNextMode } from "@/lib/theme"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function subscribeMounted() {
   return () => undefined
@@ -31,6 +32,7 @@ export function ThemeToggleButton() {
     getServerMountedSnapshot
   )
   const { mode: resolvedMode, setMode } = useAppTheme()
+  const { t } = useI18n()
 
   // O provider lê o tema do localStorage na inicialização do state, então o
   // primeiro render do cliente já pode divergir do HTML do servidor. Até montar,
@@ -39,7 +41,9 @@ export function ThemeToggleButton() {
   const mode = mounted ? resolvedMode : "light"
   const nextMode = getNextMode(mode)
   const label =
-    nextMode === "dark" ? "Switch to dark mode" : "Switch to light mode"
+    nextMode === "dark"
+      ? t("Switch to dark mode")
+      : t("Switch to light mode")
   const Icon = mode === "dark" ? Sun : Moon
 
   return (

@@ -17,6 +17,7 @@ import {
   type AuthResponse,
   type User,
 } from "@/lib/api"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 const TOKEN_KEY = "notion_clone_token"
 
@@ -146,6 +147,7 @@ export function useAuth(): AuthContextValue {
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
+  const { t } = useI18n()
   const router = useRouter()
 
   useEffect(() => {
@@ -159,7 +161,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       <div className="grid min-h-svh place-items-center">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner />
-          Loading your workspace…
+          {t("Loading your workspace...")}
         </div>
       </div>
     )

@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-} from "react"
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { SparklesIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -35,6 +29,7 @@ import {
   sortConversations,
 } from "@/lib/ai/conversation-state"
 import { aiTransport } from "@/lib/ai/transport"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 import { AiAssistantPanel } from "./ai-assistant-panel"
 
 type Props = {
@@ -56,6 +51,8 @@ export function AiAssistant(props: Props) {
   const { requestedAction, onRequestedActionHandled } = props
   const router = useRouter()
   const isMobile = useIsMobile()
+  const { t } = useI18n()
+  const translateEffect = useEffectEvent(t)
   const { selectWorkspace } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -146,7 +143,7 @@ export function AiAssistant(props: Props) {
           isCurrentRequest(generationRef.current, request.signal) &&
           !(caught instanceof DOMException && caught.name === "AbortError")
         ) {
-          setError("Não foi possível carregar as conversas.")
+          setError(translateEffect("Could not load conversations."))
         }
       })
     })
@@ -177,13 +174,13 @@ export function AiAssistant(props: Props) {
     let active = true
     queueMicrotask(() => {
       if (!active) return
-        setQueuedAction(requestedAction)
-        setMentionedPageIds([])
+      setQueuedAction(requestedAction)
+      setMentionedPageIds([])
       setDraft(
         requestedAction.type === "summarize_page"
-          ? "Summarize this page"
+          ? translateEffect("Summarize this page")
           : requestedAction.type === "continue_writing"
-            ? "Continue writing in the same style"
+            ? translateEffect("Continue writing in the same style")
             : requestedAction.type === "transform_selection"
               ? requestedAction.instruction
               : requestedAction.prompt
@@ -224,7 +221,7 @@ export function AiAssistant(props: Props) {
         isCurrentRequest(generation, request.signal) &&
         !(caught instanceof DOMException && caught.name === "AbortError")
       ) {
-        setError("Não foi possível abrir a conversa.")
+        setError(t("Could not open the conversation."))
       }
     }
   }
@@ -244,7 +241,9 @@ export function AiAssistant(props: Props) {
     try {
       const activeMentionedPageIds = mentionedPageIds.filter((id) => {
         const page = props.pages.find((candidate) => candidate.id === id)
-        return page ? hasPageMention(prompt, page.title || "Sem título") : false
+        return page
+          ? hasPageMention(prompt, page.title || t("Untitled"))
+          : false
       })
       const action = queuedAction ?? {
         type: "workspace_agent" as const,
@@ -366,9 +365,9 @@ export function AiAssistant(props: Props) {
               props.onRunCompleted(run.operation_group_id, run.last_seq)
             }
             if (run.status === "failed") {
-              setError(run.error ?? "A resposta falhou.")
+              setError(run.error ?? t("The response failed."))
             } else {
-              setStatus("A execução foi concluída no servidor.")
+              setStatus(t("The run completed on the server."))
             }
           }
         } catch (pollError) {
@@ -380,7 +379,9 @@ export function AiAssistant(props: Props) {
             )
           ) {
             setStatus(
-              "Não foi possível confirmar o estado final da execução. Alterações já confirmadas permanecem."
+              t(
+                "Could not confirm the run's final status. Confirmed changes remain."
+              )
             )
           }
         } finally {
@@ -393,11 +394,11 @@ export function AiAssistant(props: Props) {
         caught.name === "AbortError"
       ) {
         if (isCurrentRequest(generation)) {
-          setStatus("Exibição interrompida.")
+          setStatus(t("Display stopped."))
         }
       } else if (isCurrentRequest(generation)) {
         setError(
-          caught instanceof Error ? caught.message : "A resposta falhou."
+          caught instanceof Error ? caught.message : t("The response failed.")
         )
       }
     } finally {
@@ -459,7 +460,7 @@ export function AiAssistant(props: Props) {
           current.filter((id) => {
             const page = props.pages.find((candidate) => candidate.id === id)
             return page
-              ? hasPageMention(nextDraft, page.title || "Sem título")
+              ? hasPageMention(nextDraft, page.title || t("Untitled"))
               : false
           })
         )
@@ -478,7 +479,7 @@ export function AiAssistant(props: Props) {
       onSubmit={() => void submit()}
       onCancel={() => {
         setStopping(true)
-        setStatus("Interrompendo apenas a exibição local…")
+        setStatus(t("Stopping local display only..."))
         abortRef.current?.abort()
       }}
       onClose={closeAssistant}
@@ -490,10 +491,10 @@ export function AiAssistant(props: Props) {
       <Button
         ref={launcherRef}
         className="fixed right-4 bottom-4 z-40 h-11 rounded-full px-4 shadow-lg md:right-6 md:bottom-6"
-        aria-label="Abrir Reason AI"
+        aria-label={t("Open Reason AI")}
         onClick={() => setOpen(true)}
       >
-        <SparklesIcon /> Perguntar à AI
+        <SparklesIcon /> {t("Ask AI")}
       </Button>
       {isMobile ? (
         <Sheet
@@ -507,9 +508,9 @@ export function AiAssistant(props: Props) {
             showCloseButton={false}
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>Reason AI</SheetTitle>
+              <SheetTitle>{t("Reason AI")}</SheetTitle>
               <SheetDescription id="ai-sheet-description">
-                Assistente do workspace
+                {t("Workspace assistant")}
               </SheetDescription>
             </SheetHeader>
             {content}
@@ -519,7 +520,7 @@ export function AiAssistant(props: Props) {
         <section
           role="dialog"
           aria-modal="false"
-          aria-label="Reason AI"
+          aria-label={t("Reason AI")}
           className="fixed right-6 bottom-20 z-40 flex h-[min(680px,calc(100svh-7rem))] w-[400px] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-2xl"
         >
           {content}

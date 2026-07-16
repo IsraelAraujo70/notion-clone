@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { PageEditor, PresencePeer } from "@/lib/api"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export type PresenceAvatarItem = {
   user_id: string
@@ -76,6 +77,7 @@ export function PresenceAvatarStack({
   recent: PageEditor[]
   max?: number
 }) {
+  const { t } = useI18n()
   const { visible, overflow } = mergePresenceAvatars(live, recent, max)
   if (visible.length === 0) return null
 
@@ -102,7 +104,7 @@ export function PresenceAvatarStack({
             </TooltipTrigger>
             <TooltipContent>
               {item.display_name}
-              {item.live ? " · online" : ""}
+              {item.live ? ` · ${t("online")}` : ""}
             </TooltipContent>
           </Tooltip>
         ))}

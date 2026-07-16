@@ -33,7 +33,7 @@ import {
 import { createId } from "@/lib/id"
 import type { PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
-import { filteredSlashItems, SlashMenu } from "./SlashMenu"
+import { filteredSlashItems, SlashMenu, useSlashItems } from "./SlashMenu"
 import { BlockPresenceAvatar } from "./presence-avatars"
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu"
 import {
@@ -62,6 +62,7 @@ import {
   BlockDropdownOptionsContent,
   type BlockMenuAction,
 } from "./block-options-menu"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 type DropPosition = "above" | "below"
 
@@ -263,6 +264,8 @@ export function BlockEditor({
   blockPresence,
   onUploadImage,
 }: BlockEditorProps) {
+  const { t } = useI18n()
+  const slashItems = useSlashItems()
   const imageInputRef = useRef<HTMLInputElement>(null)
   const imageTargetBlockRef = useRef<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -914,7 +917,7 @@ export function BlockEditor({
       }
 
       if (slash?.blockId === block.id) {
-        const itemCount = filteredSlashItems(slash.query).length
+        const itemCount = filteredSlashItems(slash.query, slashItems).length
         if (event.key === "ArrowDown") {
           event.preventDefault()
           setSlash({
@@ -938,7 +941,7 @@ export function BlockEditor({
         if (event.key === "Enter" && itemCount > 0) {
           event.preventDefault()
           selectSlashType(
-            filteredSlashItems(slash.query)[slash.activeIndex]?.type ??
+            filteredSlashItems(slash.query, slashItems)[slash.activeIndex]?.type ??
               "paragraph"
           )
           return
@@ -1021,6 +1024,7 @@ export function BlockEditor({
       requestFocus,
       selectSlashType,
       slash,
+      slashItems,
       splitBlock,
       undo,
     ]
@@ -1667,7 +1671,7 @@ export function BlockEditor({
                   role="button"
                   tabIndex={0}
                   draggable={!readOnly}
-                  aria-label="Arrastar ou abrir opções do bloco"
+                  aria-label={t("Drag or open block options")}
                   data-block-handle="true"
                   data-cy={`block-handle-${block.id}`}
                   onMouseDown={(event) => event.stopPropagation()}
@@ -1760,7 +1764,7 @@ export function BlockEditor({
                     {typeof block.properties.title === "string" &&
                     block.properties.title.length > 0
                       ? block.properties.title
-                      : "Sem título"}
+                      : t("Untitled")}
                   </span>
                 </button>
               ) : block.type === "divider" ? (
@@ -1818,21 +1822,21 @@ export function BlockEditor({
                       alt={
                         typeof block.properties.caption === "string"
                           ? block.properties.caption
-                          : "Imagem"
+                          : t("Image")
                       }
                       className="max-h-[min(70vh,720px)] w-full rounded-md border bg-muted/30 object-contain"
                       draggable={false}
                     />
                   ) : (
                     <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                      Imagem sem URL
+                      {t("Image has no URL")}
                     </div>
                   )}
                   {!readOnly ? (
                     <input
                       type="text"
                       data-cy={`image-caption-${block.id}`}
-                      placeholder="Legenda (opcional)"
+                      placeholder={t("Caption (optional)")}
                       value={
                         typeof block.properties.caption === "string"
                           ? block.properties.caption
@@ -1966,7 +1970,7 @@ export function BlockEditor({
                   {block.type === "toggle" ? (
                     <button
                       type="button"
-                      aria-label="Alternar filhos"
+                      aria-label={t("Toggle children")}
                       className={`flex h-7 w-5 items-center justify-center rounded text-muted-foreground transition-transform hover:bg-muted ${
                         isCollapsed ? "" : "rotate-90"
                       }`}
@@ -1988,7 +1992,7 @@ export function BlockEditor({
                   <div className="relative min-w-0 flex-1">
                     {showPlaceholder ? (
                       <span className="pointer-events-none absolute top-0 left-0 text-muted-foreground/60">
-                        Escreva algo, ou tecle &apos;/&apos; para comandos
+                        {t("Write something, or press '/' for commands")}
                       </span>
                     ) : null}
                     <div
@@ -2054,6 +2058,7 @@ export function BlockEditor({
                     />
                     {blockSlash ? (
                       <SlashMenu
+                        items={slashItems}
                         query={blockSlash.query}
                         activeIndex={blockSlash.activeIndex}
                         onHover={(activeIndex) =>
@@ -2152,7 +2157,12 @@ export function BlockEditor({
       ) : null}
       <p className="sr-only" aria-live="polite">
         {selection.size > 0
-          ? `${selectedRootIds.length} blocos selecionados`
+          ? t(
+              selectedRootIds.length === 1
+                ? "{count} block selected"
+                : "{count} blocks selected",
+              { count: selectedRootIds.length }
+            )
           : ""}
       </p>
       <input
@@ -2174,7 +2184,7 @@ export function BlockEditor({
           className="px-8 py-2 text-xs text-muted-foreground"
           data-cy="image-uploading"
         >
-          Enviando imagem…
+          {t("Uploading image…")}
         </p>
       ) : null}
       {getBlock(tree, tree.rootId).content.map((childId) =>

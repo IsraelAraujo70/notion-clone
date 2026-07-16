@@ -23,25 +23,29 @@ import {
   type WorkspaceRole,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
-const roleLabels: Record<WorkspaceRole, string> = {
-  owner: "Owner",
-  editor: "Editor",
-  viewer: "Viewer",
-}
-
-const statusCopy: Record<WorkspaceInvitePreview["status"], string> = {
-  pending: "Convite pendente",
-  accepted: "Este convite já foi aceito.",
-  expired: "Este convite expirou.",
-  revoked: "Este convite foi revogado.",
-}
+type InviteError =
+  | { kind: "server"; message: string }
+  | { kind: "load" | "accept" }
 
 export function InvitePage({ token }: { token: string }) {
   const router = useRouter()
   const { loading: authLoading, token: authToken, user } = useAuth()
+  const { formatDate, t } = useI18n()
+  const roleLabels: Record<WorkspaceRole, string> = {
+    owner: t("Owner"),
+    editor: t("Editor"),
+    viewer: t("Viewer"),
+  }
+  const statusCopy: Record<WorkspaceInvitePreview["status"], string> = {
+    pending: t("Invite pending"),
+    accepted: t("This invite has already been accepted."),
+    expired: t("This invite has expired."),
+    revoked: t("This invite has been revoked."),
+  }
   const [preview, setPreview] = useState<WorkspaceInvitePreview | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<InviteError | null>(null)
   const [loading, setLoading] = useState(Boolean(token))
   const [accepting, setAccepting] = useState(false)
 
@@ -69,8 +73,8 @@ export function InvitePage({ token }: { token: string }) {
           if (!cancelled) {
             setError(
               caught instanceof ApiError
-                ? caught.message
-                : "Não foi possível carregar o convite."
+                ? { kind: "server", message: caught.message }
+                : { kind: "load" }
             )
           }
         })
@@ -99,8 +103,8 @@ export function InvitePage({ token }: { token: string }) {
     } catch (caught) {
       setError(
         caught instanceof ApiError
-          ? caught.message
-          : "Não foi possível aceitar o convite."
+          ? { kind: "server", message: caught.message }
+          : { kind: "accept" }
       )
       setAccepting(false)
     }
@@ -110,7 +114,7 @@ export function InvitePage({ token }: { token: string }) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Spinner />
-        Carregando convite...
+        {t("Loading invite...")}
       </div>
     )
   }
@@ -119,31 +123,39 @@ export function InvitePage({ token }: { token: string }) {
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle className="font-heading text-2xl">
-          Convite de workspace
+          {t("Workspace invitation")}
         </CardTitle>
         <CardDescription>
-          Entre no workspace compartilhado do reason.
+          {t("Join the shared Reason workspace.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {error && (
           <Alert variant="destructive">
-            <AlertTitle>{error}</AlertTitle>
+            <AlertTitle>
+              {error.kind === "server"
+                ? error.message
+                : error.kind === "load"
+                  ? t("Could not load the invite.")
+                  : t("Could not accept the invite.")}
+            </AlertTitle>
           </Alert>
         )}
         {!token && (
           <Alert variant="destructive">
-            <AlertTitle>Convite inválido.</AlertTitle>
+            <AlertTitle>{t("Invalid invite.")}</AlertTitle>
           </Alert>
         )}
         {preview && (
           <div className="flex flex-col gap-3 rounded-lg border p-3">
             <div>
-              <p className="text-sm text-muted-foreground">Workspace</p>
+              <p className="text-sm text-muted-foreground">{t("Workspace")}</p>
               <p className="font-medium">{preview.workspace_name}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Email convidado</p>
+              <p className="text-sm text-muted-foreground">
+                {t("Invited email")}
+              </p>
               <p className="font-medium">{preview.email}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -151,7 +163,12 @@ export function InvitePage({ token }: { token: string }) {
               <Badge variant="outline">{statusCopy[preview.status]}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Expira em {new Date(preview.expires_at).toLocaleString("pt-BR")}.
+              {t("Expires on {date}.", {
+                date: formatDate(preview.expires_at, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }),
+              })}
             </p>
           </div>
         )}
@@ -166,15 +183,17 @@ export function InvitePage({ token }: { token: string }) {
               onClick={acceptInvite}
             >
               {accepting && <Spinner data-icon="inline-start" />}
-              {accepting ? "Aceitando..." : "Aceitar convite"}
+              {accepting ? t("Accepting...") : t("Accept invite")}
             </Button>
           ) : (
             <div className="grid w-full gap-2 sm:grid-cols-2">
               <Button asChild>
-                <Link href={`/signup?invite=${token}`}>Criar conta</Link>
+                <Link href={`/signup?invite=${token}`}>
+                  {t("Create account")}
+                </Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href={`/login?invite=${token}`}>Entrar</Link>
+                <Link href={`/login?invite=${token}`}>{t("Log in")}</Link>
               </Button>
             </div>
           )}

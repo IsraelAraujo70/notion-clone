@@ -48,8 +48,8 @@ describe("LoginForm", () => {
     render(<LoginForm />)
 
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "Password123!")
-    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+    await userEvent.type(screen.getByLabelText("Password"), "Password123!")
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
     expect(mocks.login).toHaveBeenCalledWith({
       email: "israel@example.com",
@@ -73,8 +73,8 @@ describe("LoginForm", () => {
     render(<LoginForm inviteToken="invite-token" />)
 
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "Password123!")
-    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+    await userEvent.type(screen.getByLabelText("Password"), "Password123!")
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
     expect(mocks.acceptWorkspaceInvite).toHaveBeenCalledWith(
       "secret-token",
@@ -89,16 +89,16 @@ describe("LoginForm", () => {
 
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
     await userEvent.click(
-      screen.getByRole("button", { name: "Esqueceu a senha?" })
+      screen.getByRole("button", { name: "Forgot password?" })
     )
-    await userEvent.click(screen.getByRole("button", { name: "Enviar link" }))
+    await userEvent.click(screen.getByRole("button", { name: "Send link" }))
 
     expect(mocks.requestPasswordReset).toHaveBeenCalledWith({
       email: "israel@example.com",
     })
     expect(
       screen.getByText(
-        "Se esse email tiver conta, o link de redefinição foi enviado."
+        "If an account exists for this email, a reset link was sent."
       )
     ).toBeInTheDocument()
   })

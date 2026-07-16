@@ -56,7 +56,7 @@ describe("CommandMenuProvider", () => {
 
     await userEvent.keyboard("{Meta>}k{/Meta}")
     expect(
-      screen.getByPlaceholderText("Buscar páginas e conteúdo...")
+      screen.getByPlaceholderText("Search pages and content...")
     ).toBeInTheDocument()
 
     await userEvent.click(screen.getByText("Notas"))
@@ -71,7 +71,7 @@ describe("CommandMenuProvider", () => {
     )
 
     await userEvent.click(screen.getByText("Open commands"))
-    await userEvent.click(screen.getByText("Sem título"))
+    await userEvent.click(screen.getByText("Untitled"))
     expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/page-child")
   })
 
@@ -84,7 +84,7 @@ describe("CommandMenuProvider", () => {
     )
 
     await userEvent.click(screen.getByText("Open commands"))
-    await userEvent.click(screen.getByText("Sair"))
+    await userEvent.click(screen.getByText("Log out"))
 
     expect(mocks.logout).toHaveBeenCalled()
     expect(mocks.replace).toHaveBeenCalledWith("/")
@@ -112,7 +112,7 @@ describe("CommandMenuProvider", () => {
       </CommandMenuProvider>
     )
     fireEvent.click(screen.getByText("Open commands"))
-    const input = screen.getByPlaceholderText("Buscar páginas e conteúdo...")
+    const input = screen.getByPlaceholderText("Search pages and content...")
 
     fireEvent.change(input, { target: { value: "ab" } })
     await act(() => vi.advanceTimersByTimeAsync(200))
@@ -176,7 +176,7 @@ describe("CommandMenuProvider", () => {
     )
     await userEvent.click(screen.getByText("Open commands"))
     await userEvent.type(
-      screen.getByPlaceholderText("Buscar páginas e conteúdo..."),
+      screen.getByPlaceholderText("Search pages and content..."),
       "roadmap"
     )
 

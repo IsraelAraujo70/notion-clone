@@ -35,11 +35,13 @@ describe("SignupForm", () => {
   it("rejects weak passwords before calling the API", async () => {
     render(<SignupForm />)
 
-    await userEvent.type(screen.getByLabelText("Nome"), "Israel")
+    await userEvent.type(screen.getByLabelText("Name"), "Israel")
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "weakpass")
-    await userEvent.type(screen.getByLabelText("Confirmar senha"), "weakpass")
-    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+    await userEvent.type(screen.getByLabelText("Password"), "weakpass")
+    await userEvent.type(screen.getByLabelText("Confirm password"), "weakpass")
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create account" })
+    )
 
     expect(mocks.signup).not.toHaveBeenCalled()
   })
@@ -47,16 +49,18 @@ describe("SignupForm", () => {
   it("rejects mismatched passwords", async () => {
     render(<SignupForm />)
 
-    await userEvent.type(screen.getByLabelText("Nome"), "Israel")
+    await userEvent.type(screen.getByLabelText("Name"), "Israel")
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "Password123!")
+    await userEvent.type(screen.getByLabelText("Password"), "Password123!")
     await userEvent.type(
-      screen.getByLabelText("Confirmar senha"),
+      screen.getByLabelText("Confirm password"),
       "Different123!"
     )
 
-    expect(screen.getByText("As senhas não conferem.")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled()
+    expect(screen.getByText("Passwords do not match.")).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Create account" })
+    ).toBeDisabled()
   })
 
   it("accepts an invite after signup", async () => {
@@ -72,14 +76,16 @@ describe("SignupForm", () => {
     mocks.acceptWorkspaceInvite.mockResolvedValue({})
     render(<SignupForm inviteToken="invite-token" />)
 
-    await userEvent.type(screen.getByLabelText("Nome"), "Israel")
+    await userEvent.type(screen.getByLabelText("Name"), "Israel")
     await userEvent.type(screen.getByLabelText("Email"), "israel@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "Password123!")
+    await userEvent.type(screen.getByLabelText("Password"), "Password123!")
     await userEvent.type(
-      screen.getByLabelText("Confirmar senha"),
+      screen.getByLabelText("Confirm password"),
       "Password123!"
     )
-    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create account" })
+    )
 
     expect(mocks.signup).toHaveBeenCalledWith({
       email: "israel@example.com",

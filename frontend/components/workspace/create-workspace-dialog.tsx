@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { ApiError } from "@/lib/api"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function CreateWorkspaceDialog({
   onOpenChange,
@@ -26,6 +27,7 @@ export function CreateWorkspaceDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { createWorkspace } = useWorkspace()
+  const { t } = useI18n()
   const [name, setName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -42,7 +44,7 @@ export function CreateWorkspaceDialog({
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível criar o workspace."
+          : t("Could not create the workspace.")
       )
     } finally {
       setPending(false)
@@ -53,9 +55,9 @@ export function CreateWorkspaceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Criar workspace</DialogTitle>
+          <DialogTitle>{t("Create workspace")}</DialogTitle>
           <DialogDescription>
-            Crie um espaço separado para páginas, membros e permissões.
+            {t("Create a separate space for pages, members, and permissions.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -66,7 +68,7 @@ export function CreateWorkspaceDialog({
           )}
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="workspace-name">Nome</FieldLabel>
+              <FieldLabel htmlFor="workspace-name">{t("Name")}</FieldLabel>
               <Input
                 id="workspace-name"
                 data-cy="workspace-name"
@@ -84,7 +86,7 @@ export function CreateWorkspaceDialog({
               disabled={pending || !name.trim()}
             >
               {pending && <Spinner data-icon="inline-start" />}
-              {pending ? "Criando..." : "Criar workspace"}
+              {pending ? t("Creating...") : t("Create workspace")}
             </Button>
           </DialogFooter>
         </form>

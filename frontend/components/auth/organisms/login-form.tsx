@@ -25,9 +25,11 @@ import { PasswordInput } from "@/components/auth/molecules/password-input"
 import { Spinner } from "@/components/ui/spinner"
 import { ApiError, api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/lib/i18n/i18n-provider"
 
 export function LoginForm({ inviteToken }: { inviteToken?: string }) {
   const { login } = useAuth()
+  const { t } = useI18n()
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -45,7 +47,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
       if (forgotMode) {
         await api.requestPasswordReset({ email })
         setNotice(
-          "Se esse email tiver conta, o link de redefinição foi enviado."
+          t("If an account exists for this email, a reset link was sent.")
         )
         setPending(false)
         return
@@ -60,7 +62,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : "Não foi possível falar com o servidor. Tente novamente."
+          : t("Could not reach the server. Try again.")
       )
       setPending(false)
     }
@@ -71,12 +73,12 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
       <Card>
         <CardHeader>
           <CardTitle className="font-heading text-2xl">
-            Bem-vindo de volta
+            {t("Welcome back")}
           </CardTitle>
           <CardDescription>
             {forgotMode
-              ? "Envie um link de redefinição para o seu email."
-              : "Entre para acessar seu workspace."}
+              ? t("Send a reset link to your email.")
+              : t("Sign in to access your workspace.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -92,7 +94,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
           )}
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <FieldLabel htmlFor="email">{t("Email")}</FieldLabel>
               <Input
                 id="email"
                 data-cy="login-email"
@@ -106,7 +108,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
             {!forgotMode && (
               <Field>
                 <div className="flex items-center justify-between gap-3">
-                  <FieldLabel htmlFor="password">Senha</FieldLabel>
+                  <FieldLabel htmlFor="password">{t("Password")}</FieldLabel>
                   <Button
                     type="button"
                     variant="link"
@@ -118,7 +120,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
                       setNotice(null)
                     }}
                   >
-                    Esqueceu a senha?
+                    {t("Forgot password?")}
                   </Button>
                 </div>
                 <PasswordInput
@@ -134,7 +136,7 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
             {forgotMode && (
               <Field>
                 <FieldDescription>
-                  O link de redefinição expira em uma hora.
+                  {t("The reset link expires in one hour.")}
                 </FieldDescription>
               </Field>
             )}
@@ -150,11 +152,11 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
             {pending && <Spinner data-icon="inline-start" />}
             {pending
               ? forgotMode
-                ? "Enviando link..."
-                : "Entrando..."
+                ? t("Sending link...")
+                : t("Signing in...")
               : forgotMode
-                ? "Enviar link"
-                : "Entrar"}
+                ? t("Send link")
+                : t("Sign in")}
           </Button>
           {forgotMode && (
             <Button
@@ -167,16 +169,16 @@ export function LoginForm({ inviteToken }: { inviteToken?: string }) {
                 setNotice(null)
               }}
             >
-              Voltar para entrar
+              {t("Back to sign in")}
             </Button>
           )}
           <p className="text-sm text-muted-foreground">
-            Novo por aqui?{" "}
+            {t("New here?")}{" "}
             <Link
               href={inviteToken ? `/signup?invite=${inviteToken}` : "/signup"}
               className="text-primary hover:underline"
             >
-              Criar conta
+              {t("Create account")}
             </Link>
           </p>
         </CardFooter>

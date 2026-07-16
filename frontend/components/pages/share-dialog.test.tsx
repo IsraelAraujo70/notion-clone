@@ -55,27 +55,25 @@ describe("ShareDialog", () => {
 
   it("creates, copies, and revokes the active public link", async () => {
     render(<ShareDialog pageId="page-1" canWrite />)
-    await userEvent.click(screen.getByRole("button", { name: "Compartilhar" }))
-    expect(
-      await screen.findByText("Esta página ainda é privada.")
-    ).toBeVisible()
+    await userEvent.click(screen.getByRole("button", { name: "Share" }))
+    expect(await screen.findByText("This page is still private.")).toBeVisible()
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Criar link público" })
+      screen.getByRole("button", { name: "Create public link" })
     )
     expect(await screen.findByDisplayValue(publicLink.url)).toBeVisible()
 
-    await userEvent.click(screen.getByRole("button", { name: "Copiar link" }))
+    await userEvent.click(screen.getByRole("button", { name: "Copy link" }))
     expect(mocks.writeText).toHaveBeenCalledWith(publicLink.url)
 
-    await userEvent.click(screen.getByRole("button", { name: "Revogar link" }))
+    await userEvent.click(screen.getByRole("button", { name: "Revoke link" }))
     await waitFor(() => expect(mocks.revokePublicLink).toHaveBeenCalled())
-    expect(screen.getByText("Esta página ainda é privada.")).toBeVisible()
+    expect(screen.getByText("This page is still private.")).toBeVisible()
   })
 
   it("does not render sharing actions for viewers", () => {
     render(<ShareDialog pageId="page-1" canWrite={false} />)
-    expect(screen.queryByRole("button", { name: "Compartilhar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull()
     expect(mocks.getPublicLink).not.toHaveBeenCalled()
   })
 })
