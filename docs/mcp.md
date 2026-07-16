@@ -6,6 +6,10 @@ O Reason expõe um servidor MCP stateless em `POST /mcp`. Cada requisição usa 
 
 Tokens são criados com uma sessão normal do Reason. O valor bruto aparece somente na resposta de criação; o banco guarda apenas seu hash.
 
+Na interface, abra o menu do usuário e acesse **Configurações > Integrações**. Escolha o nome, a validade, os workspaces e as permissões. Copie o token assim que ele for criado, pois o segredo não será exibido novamente. A mesma tela lista e revoga tokens existentes.
+
+Para automação, use a API:
+
 ```http
 POST /integrations/mcp/tokens
 Authorization: Bearer <sessão>

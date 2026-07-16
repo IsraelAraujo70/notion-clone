@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChangePasswordForm } from "@/components/settings/change-password-form"
+import { McpIntegrationsPanel } from "@/components/settings/mcp-integrations-panel"
 import { ProfileForm } from "@/components/settings/profile-form"
 import { ThemeSelector } from "@/components/settings/theme-selector"
 import { WorkspaceMembersPanel } from "@/components/settings/workspace-members-panel"
@@ -44,13 +45,14 @@ export function SettingsDialog({
         <DialogHeader>
           <DialogTitle>Configurações</DialogTitle>
           <DialogDescription>
-            Gerencie sua conta, workspace e aparência.
+            Gerencie sua conta, workspaces, integrações e aparência.
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="account" className="gap-5">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
             <TabsTrigger value="account">Conta</TabsTrigger>
             <TabsTrigger value="workspace">Workspace</TabsTrigger>
+            <TabsTrigger value="integrations">Integrações</TabsTrigger>
             <TabsTrigger value="appearance">Aparência</TabsTrigger>
           </TabsList>
           <TabsContent value="account" className="flex flex-col gap-6">
@@ -75,6 +77,9 @@ export function SettingsDialog({
           </TabsContent>
           <TabsContent value="workspace">
             <WorkspaceMembersPanel />
+          </TabsContent>
+          <TabsContent value="integrations">
+            <McpIntegrationsPanel />
           </TabsContent>
           <TabsContent value="appearance" className="flex flex-col gap-3">
             <div>

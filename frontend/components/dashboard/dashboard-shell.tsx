@@ -21,7 +21,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
 import { Spinner } from "@/components/ui/spinner"
 import { WorkspaceProvider } from "@/components/workspace/workspace-provider"
 import { isUnauthorizedApiError } from "@/lib/api"
@@ -34,9 +38,10 @@ function EmptyWorkspace() {
 
   return (
     <div
-      className="grid min-h-svh place-items-center"
+      className="relative grid min-h-svh place-items-center"
       data-cy="workspace-empty"
     >
+      <SidebarTrigger className="absolute top-2 left-2 md:hidden" />
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">

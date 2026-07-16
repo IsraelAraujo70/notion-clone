@@ -85,6 +85,70 @@ describe("api client", () => {
     })
   })
 
+  it("creates, lists and revokes MCP integration tokens", async () => {
+    const integration = {
+      id: "integration-1",
+      name: "OpenCode",
+      scopes: ["content:read"],
+      workspace_ids: ["workspace-1"],
+      expires_at: "2026-08-08T12:00:00Z",
+      revoked_at: null,
+      last_used_at: null,
+      created_at: "2026-07-08T12:00:00Z",
+    }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, [integration]))
+      .mockResolvedValueOnce(
+        jsonResponse(201, { token: "rsn_mcp_secret", integration })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await api.listMcpTokens("secret-token")
+    await api.createMcpToken("secret-token", {
+      name: "OpenCode",
+      scopes: ["content:read"],
+      workspace_ids: ["workspace-1"],
+      expires_in_days: 30,
+    })
+    await api.revokeMcpToken("secret-token", "integration-1")
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE_URL}/integrations/mcp/tokens`,
+      {
+        method: "GET",
+        headers: { Authorization: "Bearer secret-token" },
+        body: undefined,
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE_URL}/integrations/mcp/tokens`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret-token",
+        },
+        body: JSON.stringify({
+          name: "OpenCode",
+          scopes: ["content:read"],
+          workspace_ids: ["workspace-1"],
+          expires_in_days: 30,
+        }),
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE_URL}/integrations/mcp/tokens/integration-1`,
+      {
+        method: "DELETE",
+        headers: { Authorization: "Bearer secret-token" },
+        body: undefined,
+      }
+    )
+  })
+
   it("posts password reset requests without bearer auth", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 204 }))

@@ -81,6 +81,28 @@ export type WorkspaceInvitePreview = {
   status: "pending" | "accepted" | "expired" | "revoked"
 }
 
+export type McpScope =
+  | "content:read"
+  | "content:write"
+  | "search:read"
+  | "media:read"
+
+export type McpIntegrationToken = {
+  id: string
+  name: string
+  scopes: McpScope[]
+  workspace_ids: string[]
+  expires_at: string
+  revoked_at: string | null
+  last_used_at: string | null
+  created_at: string
+}
+
+export type CreatedMcpIntegrationToken = {
+  token: string
+  integration: McpIntegrationToken
+}
+
 export type PageSummary = {
   id: string
   title: string
@@ -345,6 +367,27 @@ export const api = {
     }),
   removeWorkspaceMember: (token: string, workspaceId: string, userId: string) =>
     request<void>(`/workspaces/${workspaceId}/members/${userId}`, {
+      method: "DELETE",
+      token,
+    }),
+  listMcpTokens: (token: string) =>
+    request<McpIntegrationToken[]>("/integrations/mcp/tokens", { token }),
+  createMcpToken: (
+    token: string,
+    input: {
+      name: string
+      scopes: McpScope[]
+      workspace_ids: string[]
+      expires_in_days: number
+    }
+  ) =>
+    request<CreatedMcpIntegrationToken>("/integrations/mcp/tokens", {
+      method: "POST",
+      token,
+      body: input,
+    }),
+  revokeMcpToken: (token: string, integrationId: string) =>
+    request<void>(`/integrations/mcp/tokens/${integrationId}`, {
       method: "DELETE",
       token,
     }),

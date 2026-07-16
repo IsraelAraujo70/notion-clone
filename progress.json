@@ -116,6 +116,7 @@
         "backend/src/bootstrap/router.rs",
         "backend/src/adapters/mcp/",
         "backend/migrations/0015_mcp_integration_tokens.sql",
+        "frontend/components/settings/mcp-integrations-panel.tsx",
         "docs/mcp.md"
       ],
       "remaining": [

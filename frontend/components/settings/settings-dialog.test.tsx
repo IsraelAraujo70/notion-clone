@@ -13,12 +13,15 @@ const mocks = vi.hoisted(() => ({
   },
   activeRole: "owner" as "owner" | "editor" | "viewer",
   changePassword: vi.fn(),
+  createMcpToken: vi.fn(),
   deleteWorkspace: vi.fn(),
   inviteWorkspaceMember: vi.fn(),
   listWorkspaceInvites: vi.fn(),
   listWorkspaceMembers: vi.fn(),
+  listMcpTokens: vi.fn(),
   setMode: vi.fn(),
   removeWorkspaceMember: vi.fn(),
+  revokeMcpToken: vi.fn(),
   selectWorkspace: vi.fn(),
   setTheme: vi.fn(),
   updateWorkspaceMemberRole: vi.fn(),
@@ -87,11 +90,14 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {},
   api: {
     changePassword: mocks.changePassword,
+    createMcpToken: mocks.createMcpToken,
     deleteWorkspace: mocks.deleteWorkspace,
     inviteWorkspaceMember: mocks.inviteWorkspaceMember,
     listWorkspaceInvites: mocks.listWorkspaceInvites,
     listWorkspaceMembers: mocks.listWorkspaceMembers,
+    listMcpTokens: mocks.listMcpTokens,
     removeWorkspaceMember: mocks.removeWorkspaceMember,
+    revokeMcpToken: mocks.revokeMcpToken,
     updateWorkspaceMemberRole: mocks.updateWorkspaceMemberRole,
   },
 }))
@@ -124,29 +130,108 @@ const invites = [
   },
 ]
 
+const existingIntegration = {
+  id: "integration-old",
+  name: "Claude Desktop",
+  scopes: ["content:read", "search:read"],
+  workspace_ids: ["workspace-1"],
+  expires_at: "2026-08-08T12:00:00Z",
+  revoked_at: null,
+  last_used_at: null,
+  created_at: "2026-07-08T12:00:00Z",
+}
+
+const createdIntegration = {
+  token: "rsn_mcp_created-secret",
+  integration: {
+    ...existingIntegration,
+    id: "integration-new",
+    name: "OpenCode no MacBook",
+    scopes: [
+      "content:read",
+      "content:write",
+      "search:read",
+      "media:read",
+    ],
+  },
+}
+
 describe("SettingsDialog", () => {
   beforeEach(() => {
     mocks.activeRole = "owner"
     mocks.activeWorkspace.role = "owner"
     mocks.workspaces[0].role = "owner"
     mocks.changePassword.mockReset().mockResolvedValue(undefined)
+    mocks.createMcpToken.mockReset().mockResolvedValue(createdIntegration)
     mocks.deleteWorkspace.mockReset().mockResolvedValue(undefined)
     mocks.inviteWorkspaceMember.mockReset().mockResolvedValue(invites[0])
     mocks.listWorkspaceInvites.mockReset().mockResolvedValue(invites)
     mocks.listWorkspaceMembers.mockReset().mockResolvedValue(members)
+    mocks.listMcpTokens.mockReset().mockResolvedValue([existingIntegration])
     mocks.removeWorkspaceMember.mockReset().mockResolvedValue(undefined)
+    mocks.revokeMcpToken.mockReset().mockResolvedValue(undefined)
     mocks.selectWorkspace.mockReset()
     mocks.setMode.mockReset()
     mocks.setTheme.mockReset()
     mocks.updateWorkspaceMemberRole.mockReset().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
   })
 
-  it("renders account, workspace and appearance tabs", () => {
+  it("renders account, workspace, integrations and appearance tabs", () => {
     render(<SettingsDialog open onOpenChange={vi.fn()} />)
 
     expect(screen.getByRole("tab", { name: "Conta" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Workspace" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Integrações" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Aparência" })).toBeInTheDocument()
+  })
+
+  it("creates, copies and revokes MCP tokens", async () => {
+    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole("tab", { name: "Integrações" }))
+    expect(await screen.findByText("Claude Desktop")).toBeInTheDocument()
+
+    await userEvent.type(
+      screen.getByLabelText("Nome da integração"),
+      "OpenCode no MacBook"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Criar token" }))
+
+    await waitFor(() => {
+      expect(mocks.createMcpToken).toHaveBeenCalledWith("secret-token", {
+        name: "OpenCode no MacBook",
+        scopes: [
+          "content:read",
+          "content:write",
+          "search:read",
+          "media:read",
+        ],
+        workspace_ids: ["workspace-1"],
+        expires_in_days: 30,
+      })
+    })
+    expect(screen.getByLabelText("Token MCP criado")).toHaveValue(
+      "rsn_mcp_created-secret"
+    )
+
+    await userEvent.click(screen.getByRole("button", { name: "Copiar" }))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "rsn_mcp_created-secret"
+    )
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Revogar Claude Desktop" })
+    )
+    await waitFor(() => {
+      expect(mocks.revokeMcpToken).toHaveBeenCalledWith(
+        "secret-token",
+        "integration-old"
+      )
+    })
   })
 
   it("changes password and theme", async () => {

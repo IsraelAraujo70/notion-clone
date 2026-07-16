@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { api, type Breadcrumb as Crumb, type PageEditor } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import {
@@ -552,6 +553,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   return (
     <main className="min-h-svh bg-background text-foreground">
       <header className="sticky top-0 z-10 flex min-h-12 min-w-0 items-center justify-between gap-2 border-b bg-background/80 px-2 py-1.5 backdrop-blur sm:h-12 sm:gap-4 sm:px-6 sm:py-0">
+        <SidebarTrigger className="md:hidden" />
         <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
           <BreadcrumbList className="flex-nowrap overflow-hidden whitespace-nowrap">
             {crumbs.map((crumb, index) => (
