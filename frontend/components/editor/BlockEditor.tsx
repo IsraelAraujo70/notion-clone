@@ -35,10 +35,7 @@ import type { PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
 import { filteredSlashItems, SlashMenu } from "./SlashMenu"
 import { BlockPresenceAvatar } from "./presence-avatars"
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -157,9 +154,13 @@ function getCaretOffset(element: HTMLElement): number {
 function getSelectionOffsets(element: HTMLElement) {
   const selection = window.getSelection()
   const length = element.textContent?.length ?? 0
-  if (!selection || selection.rangeCount === 0) return { start: length, end: length }
+  if (!selection || selection.rangeCount === 0)
+    return { start: length, end: length }
   const range = selection.getRangeAt(0)
-  if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) {
+  if (
+    !element.contains(range.startContainer) ||
+    !element.contains(range.endContainer)
+  ) {
     return { start: length, end: length }
   }
   const start = range.cloneRange()
@@ -312,10 +313,7 @@ export function BlockEditor({
       ),
     [rows]
   )
-  const visibleIds = useMemo(
-    () => rows.map((row) => row.block.id),
-    [rows]
-  )
+  const visibleIds = useMemo(() => rows.map((row) => row.block.id), [rows])
   const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds])
 
   const isActiveBlock = useCallback(
@@ -476,7 +474,7 @@ export function BlockEditor({
         }
         requestFocus({
           blockId: block.id,
-          offset: shortcut.text.length,
+          offset: shortcut.caretOffset,
           forceTextSync: true,
         })
         dispatchBatch(
@@ -521,8 +519,16 @@ export function BlockEditor({
   )
 
   const handleTextPaste = useCallback(
-    (block: Block, element: HTMLElement, event: ClipboardEvent<HTMLElement>) => {
-      if ([...event.clipboardData.files].some((file) => file.type.startsWith("image/"))) {
+    (
+      block: Block,
+      element: HTMLElement,
+      event: ClipboardEvent<HTMLElement>
+    ) => {
+      if (
+        [...event.clipboardData.files].some((file) =>
+          file.type.startsWith("image/")
+        )
+      ) {
         return
       }
       if (!block.parentId) return
@@ -542,7 +548,8 @@ export function BlockEditor({
         const lastRoot = operations
           .filter(
             (operation) =>
-              operation.type === "insert_block" && operation.parentId === parent.id
+              operation.type === "insert_block" &&
+              operation.parentId === parent.id
           )
           .at(-1)
         dispatchBatch(operations, { breakCoalescing: true })
@@ -565,11 +572,15 @@ export function BlockEditor({
         return
       const text = blockText(block)
       const selection = getSelectionOffsets(element)
-      if (text.length > 0 && !(selection.start === 0 && selection.end === text.length)) {
+      if (
+        text.length > 0 &&
+        !(selection.start === 0 && selection.end === text.length)
+      ) {
         return
       }
       const drafts = parseMarkdownBlocks(markdown)
-      if (drafts.length === 0 || drafts.length > MAX_MARKDOWN_PASTE_BLOCKS) return
+      if (drafts.length === 0 || drafts.length > MAX_MARKDOWN_PASTE_BLOCKS)
+        return
       if (drafts.at(-1)?.blockType === "divider") {
         drafts.push({ blockType: "paragraph", properties: { text: "" } })
       }
@@ -1100,14 +1111,7 @@ export function BlockEditor({
         focusVisible(firstId, isTextBlock(first) ? blockText(first).length : 0)
       }
     },
-    [
-      clearDrag,
-      dispatchBatch,
-      dropPositionFor,
-      focusVisible,
-      tree,
-      visibleIds,
-    ]
+    [clearDrag, dispatchBatch, dropPositionFor, focusVisible, tree, visibleIds]
   )
 
   const setSelectionBoth = useCallback((next: ReadonlySet<string>) => {
@@ -1204,7 +1208,9 @@ export function BlockEditor({
     async (action: "copy" | "cut" | "delete", ids: string[]) => {
       if (action !== "delete") {
         try {
-          await writeNavigatorClipboard(serializeBlocks(tree, selectedRoots(ids)))
+          await writeNavigatorClipboard(
+            serializeBlocks(tree, selectedRoots(ids))
+          )
           setClipboardReady(true)
         } catch {
           return
@@ -1250,13 +1256,21 @@ export function BlockEditor({
       createId
     )
     if (operations.length) dispatchBatch(operations, { breakCoalescing: true })
-  }, [dispatchBatch, focusedBlockId, selectedBlockId, selectedRoots, tree, workspaceId])
+  }, [
+    dispatchBatch,
+    focusedBlockId,
+    selectedBlockId,
+    selectedRoots,
+    tree,
+    workspaceId,
+  ])
 
   const turnSelectedInto = useCallback(
     (blockType: BlockType) => {
       const operations = selectedRoots(menuTargetIdsRef.current).flatMap((id) => {
         const block = tree.blocks.get(id)
-        if (!block || ["page", "image", "divider"].includes(block.type)) return []
+        if (!block || ["page", "image", "divider"].includes(block.type))
+          return []
         return [
           {
             type: "update_block" as const,
@@ -1266,7 +1280,9 @@ export function BlockEditor({
             properties: {
               text: blockText(block),
               checked:
-                blockType === "to_do" ? block.properties.checked === true : null,
+                blockType === "to_do"
+                  ? block.properties.checked === true
+                  : null,
               language:
                 blockType === "code"
                   ? typeof block.properties.language === "string"
@@ -1277,7 +1293,8 @@ export function BlockEditor({
           },
         ]
       })
-      if (operations.length) dispatchBatch(operations, { breakCoalescing: true })
+      if (operations.length)
+        dispatchBatch(operations, { breakCoalescing: true })
     },
     [dispatchBatch, selectedRoots, tree]
   )
@@ -1480,7 +1497,10 @@ export function BlockEditor({
         event.preventDefault()
         deleteBlocks([...selectionRef.current])
         clearSelection()
-      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      } else if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "a"
+      ) {
         event.preventDefault()
         setSelectionBoth(new Set(visibleIds))
       } else if (event.key === "Escape") {
@@ -1527,7 +1547,15 @@ export function BlockEditor({
       window.removeEventListener("copy", onCopy)
       window.removeEventListener("cut", onCut)
     }
-  }, [clearSelection, deleteBlocks, readOnly, selectedRoots, setSelectionBoth, tree, visibleIds])
+  }, [
+    clearSelection,
+    deleteBlocks,
+    readOnly,
+    selectedRoots,
+    setSelectionBoth,
+    tree,
+    visibleIds,
+  ])
 
   const handleBlockSelectionPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>, blockId: string) => {
@@ -1551,7 +1579,10 @@ export function BlockEditor({
           selectionAnchorRef.current,
           blockId
         )
-        const next = event.metaKey || event.ctrlKey ? new Set(selectionRef.current) : new Set<string>()
+        const next =
+          event.metaKey || event.ctrlKey
+            ? new Set(selectionRef.current)
+            : new Set<string>()
         range.forEach((id) => next.add(id))
         setSelectionBoth(next)
       } else {
@@ -1586,16 +1617,16 @@ export function BlockEditor({
         {drop?.blockId === block.id && drop.position === "above" ? (
           <div className="h-0.5 rounded bg-primary" />
         ) : null}
-          <ContextMenu
-            onOpenChange={(open) => {
-              if (!open) return
-              preserveMenuSelectionRef.current = true
-              if (pendingContextMenuBlockRef.current === block.id) {
-                pendingContextMenuBlockRef.current = null
-                setSelectionBoth(new Set(menuSelectionRef.current))
-              } else {
-                prepareBlockMenu(block.id)
-              }
+        <ContextMenu
+          onOpenChange={(open) => {
+            if (!open) return
+            preserveMenuSelectionRef.current = true
+            if (pendingContextMenuBlockRef.current === block.id) {
+              pendingContextMenuBlockRef.current = null
+              setSelectionBoth(new Set(menuSelectionRef.current))
+            } else {
+              prepareBlockMenu(block.id)
+            }
           }}
         >
           <ContextMenuTrigger asChild>
@@ -1825,8 +1856,8 @@ export function BlockEditor({
                           ? block.properties.caption
                           : ""
                       }
-                       className="w-full border-0 bg-transparent px-1 text-center text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-                       onContextMenuCapture={(event) => event.stopPropagation()}
+                      className="w-full border-0 bg-transparent px-1 text-center text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+                      onContextMenuCapture={(event) => event.stopPropagation()}
                       onChange={(event) =>
                         dispatchBatch(
                           [
@@ -1856,56 +1887,56 @@ export function BlockEditor({
               ) : block.type === "code" ? (
                 <div onContextMenuCapture={(event) => event.stopPropagation()}>
                   <CodeBlockEditor
-                  ref={(editor) => setCodeEditorRef(block.id, editor)}
-                  blockId={block.id}
-                  value={text}
-                  language={
-                    typeof block.properties.language === "string"
-                      ? block.properties.language
-                      : undefined
-                  }
-                  readOnly={readOnly}
-                  onChange={(nextText) =>
-                    dispatchBatch(
-                      [
-                        {
-                          type: "update_block",
-                          opId: opId(),
-                          blockId: block.id,
-                          properties: { text: nextText },
-                        },
-                      ],
-                      { coalesceKey: `text:${block.id}` }
-                    )
-                  }
-                  onLanguageChange={(language) =>
-                    dispatchBatch(
-                      [
-                        {
-                          type: "update_block",
-                          opId: opId(),
-                          blockId: block.id,
-                          properties: { language },
-                        },
-                      ],
-                      { breakCoalescing: true }
-                    )
-                  }
-                  onFocus={() => {
-                    setFocusedBlockId(block.id)
-                    onSelectedBlockChange(block.id)
-                    clearSelection()
-                  }}
-                  onBlur={() => {
-                    setFocusedBlockId((current) =>
-                      current === block.id ? null : current
-                    )
-                    dispatchBatch([], { breakCoalescing: true })
-                  }}
-                  onExit={() => exitCodeBlock(block)}
-                  onMergeBackward={() => mergeBackward(block)}
-                  onMoveFocus={(direction) => moveFocus(block.id, direction)}
-                  onUndo={undo}
+                    ref={(editor) => setCodeEditorRef(block.id, editor)}
+                    blockId={block.id}
+                    value={text}
+                    language={
+                      typeof block.properties.language === "string"
+                        ? block.properties.language
+                        : undefined
+                    }
+                    readOnly={readOnly}
+                    onChange={(nextText) =>
+                      dispatchBatch(
+                        [
+                          {
+                            type: "update_block",
+                            opId: opId(),
+                            blockId: block.id,
+                            properties: { text: nextText },
+                          },
+                        ],
+                        { coalesceKey: `text:${block.id}` }
+                      )
+                    }
+                    onLanguageChange={(language) =>
+                      dispatchBatch(
+                        [
+                          {
+                            type: "update_block",
+                            opId: opId(),
+                            blockId: block.id,
+                            properties: { language },
+                          },
+                        ],
+                        { breakCoalescing: true }
+                      )
+                    }
+                    onFocus={() => {
+                      setFocusedBlockId(block.id)
+                      onSelectedBlockChange(block.id)
+                      clearSelection()
+                    }}
+                    onBlur={() => {
+                      setFocusedBlockId((current) =>
+                        current === block.id ? null : current
+                      )
+                      dispatchBatch([], { breakCoalescing: true })
+                    }}
+                    onExit={() => exitCodeBlock(block)}
+                    onMergeBackward={() => mergeBackward(block)}
+                    onMoveFocus={(direction) => moveFocus(block.id, direction)}
+                    onUndo={undo}
                     onRedo={redo}
                   />
                 </div>
@@ -2104,7 +2135,8 @@ export function BlockEditor({
         }
       }}
       onDrop={(event) => {
-        if (draggingIdsRef.current.length > 0 || readOnly || !onUploadImage) return
+        if (draggingIdsRef.current.length > 0 || readOnly || !onUploadImage)
+          return
         const file = [...event.dataTransfer.files].find((item) =>
           item.type.startsWith("image/")
         )
@@ -2132,7 +2164,9 @@ export function BlockEditor({
         />
       ) : null}
       <p className="sr-only" aria-live="polite">
-        {selection.size > 0 ? `${selectedRootIds.length} blocos selecionados` : ""}
+        {selection.size > 0
+          ? `${selectedRootIds.length} blocos selecionados`
+          : ""}
       </p>
       <input
         ref={imageInputRef}

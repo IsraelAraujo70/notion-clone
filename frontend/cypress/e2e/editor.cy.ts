@@ -79,15 +79,30 @@ describe("block editor", () => {
     firstBlock().should("have.text", "Teste de digitação")
   })
 
-  it("keeps symbol-heavy typing stable", () => {
+  it("keeps existing markdown shortcuts working", () => {
     firstBlock().click().type("# Título grande")
-    firstBlock().should("have.text", "# Título grande")
+    cy.get('[data-block-type="heading1"] [contenteditable="true"]').should(
+      "have.text",
+      "Título grande"
+    )
 
-    firstBlock().type("{enter}- item de lista")
+    cy.get('[data-block-type="heading1"] [contenteditable="true"]').type(
+      "{enter}- item de lista"
+    )
+    cy.get(
+      '[data-block-type="bulleted_list_item"] [contenteditable="true"]'
+    ).should("have.text", "item de lista")
+  })
+
+  it("keeps symbol-heavy typing stable", () => {
+    firstBlock().click().type("C# Título grande")
+    firstBlock().should("have.text", "C# Título grande")
+
+    firstBlock().type("{enter}preço - item de lista")
     cy.get('[data-block-type="paragraph"]').should("have.length", 2)
     cy.get('[data-block-type="paragraph"]')
       .eq(1)
-      .should("have.text", "- item de lista")
+      .should("have.text", "preço - item de lista")
   })
 
   it("persists title and blocks across a reload", () => {
@@ -108,6 +123,23 @@ describe("block editor", () => {
     cy.get('[data-cy="breadcrumb-current"]').should(
       "contain.text",
       "Notas de lançamento"
+    )
+  })
+
+  it("converts ### to heading 3 and persists subsequent text", () => {
+    firstBlock().click().type("### Título nível 3")
+
+    cy.get('[data-block-type="heading3"] [contenteditable="true"]')
+      .should("have.text", "Título nível 3")
+      .type(" persistido")
+      .should("have.text", "Título nível 3 persistido")
+    saved()
+
+    cy.reload()
+
+    cy.get('[data-block-type="heading3"] [contenteditable="true"]').should(
+      "have.text",
+      "Título nível 3 persistido"
     )
   })
 
@@ -149,7 +181,7 @@ describe("block editor", () => {
     firstBlock().click().type("Alpha{enter}Bravo{enter}Charlie")
     saved()
 
-    cy.get('[data-block-id]').then(($rows) => {
+    cy.get("[data-block-id]").then(($rows) => {
       const first = $rows[0].getBoundingClientRect()
       const second = $rows[1].getBoundingClientRect()
       cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
@@ -190,7 +222,7 @@ describe("block editor", () => {
       })
     })
 
-    cy.get('[data-block-id]').then(($rows) => {
+    cy.get("[data-block-id]").then(($rows) => {
       const selected = [...$rows].filter((row) =>
         row.classList.contains("bg-primary/15")
       )
@@ -356,7 +388,10 @@ describe("block editor", () => {
           .type("Renomeada")
         cy.get('[data-cy="rename-page-submit"]').click()
 
-        cy.get(`[data-cy="nav-page-${childId}"]`).should("contain.text", "Renomeada")
+        cy.get(`[data-cy="nav-page-${childId}"]`).should(
+          "contain.text",
+          "Renomeada"
+        )
         cy.get('[data-cy="page-title"]').should("have.text", "Renomeada")
 
         cy.get(`[data-cy="nav-page-${childId}"]`).rightclick()
@@ -367,7 +402,10 @@ describe("block editor", () => {
         cy.get(`[data-cy="nav-page-${childId}"]`).should("not.exist")
 
         cy.get('[data-cy="trash-trigger"]').click()
-        cy.get(`[data-cy="trash-entry-${childId}"]`).should("contain.text", "Renomeada")
+        cy.get(`[data-cy="trash-entry-${childId}"]`).should(
+          "contain.text",
+          "Renomeada"
+        )
       })
     })
   })
@@ -393,7 +431,10 @@ describe("block editor", () => {
         .not('[data-cy="breadcrumb-current"]')
         .should("not.exist")
 
-      cy.get(`[data-cy="nav-page-${firstId}"]`).should("contain.text", "Primeira")
+      cy.get(`[data-cy="nav-page-${firstId}"]`).should(
+        "contain.text",
+        "Primeira"
+      )
       cy.get(`[data-cy="nav-page-${firstId}"]`).click()
       cy.get('[data-cy="page-title"]').should("have.text", "Primeira")
       cy.get('[data-cy^="page-link-"]').should("not.exist")
@@ -419,7 +460,9 @@ describe("block editor", () => {
     // (filho + neto) para o lixo numa única `delete_block`.
     blocks()
       .eq(1)
-      .type("{leftarrow}{leftarrow}{leftarrow}{leftarrow}{leftarrow}{backspace}")
+      .type(
+        "{leftarrow}{leftarrow}{leftarrow}{leftarrow}{leftarrow}{backspace}"
+      )
     cy.get('[data-block-type="paragraph"]').should("have.length", 1)
     firstBlock().should("have.text", "paifilho")
     saved()
@@ -429,7 +472,9 @@ describe("block editor", () => {
 
     cy.get('[data-cy="trash-trigger"]').click()
     cy.get('[data-cy="trash-dialog"]').should("be.visible")
-    cy.get('[data-cy^="trash-entry-"]').should("have.length", 1).contains("filho")
+    cy.get('[data-cy^="trash-entry-"]')
+      .should("have.length", 1)
+      .contains("filho")
     cy.get('[data-cy^="trash-restore-"]').click()
     cy.get('[data-cy^="trash-entry-"]').should("not.exist")
 

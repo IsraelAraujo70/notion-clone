@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
+import type { Operation } from "@/lib/contracts"
 import {
   applyOperation,
   createPageTree,
@@ -250,6 +252,63 @@ function editorProps(tree: BlockTree, collapsed: Set<string>) {
   }
 }
 
+function MarkdownEditor() {
+  const page = createPageTree("Markdown", "markdown-root")
+  const initialTree = applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-markdown-target",
+    block: newBlock("paragraph", { text: "" }, "markdown-target"),
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+  const [tree, setTree] = useState(initialTree)
+
+  const dispatchBatch = (operations: Operation[]) => {
+    setTree((current) =>
+      operations.reduce(
+        (next, operation) => applyOperation(next, operation).tree,
+        current
+      )
+    )
+  }
+
+  return (
+    <BlockEditor
+      {...editorProps(tree, new Set())}
+      dispatchBatch={dispatchBatch}
+    />
+  )
+}
+
+describe("BlockEditor Markdown shortcuts", () => {
+  it("converts ### into heading 3 and keeps typing at the caret", async () => {
+    const user = userEvent.setup()
+    const { container } = render(<MarkdownEditor />)
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="markdown-target"] [contenteditable]'
+    )!
+
+    await user.click(editable)
+    editable.textContent = "###\u00a0after"
+    const range = document.createRange()
+    range.setStart(editable.firstChild!, 4)
+    range.collapse(true)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    fireEvent.input(editable)
+
+    expect(
+      container.querySelector('[data-block-id="markdown-target"]')
+    ).toHaveAttribute("data-block-type", "heading3")
+    expect(editable).toHaveTextContent("after")
+    expect(window.getSelection()?.anchorNode).toBe(editable.firstChild)
+    expect(window.getSelection()?.anchorOffset).toBe(0)
+
+    await user.type(editable, "Heading 3 ", { skipClick: true })
+    expect(editable).toHaveTextContent("Heading 3 after")
+  })
+})
+
 function treeWithThreeBlocks() {
   let tree = createPageTree("Selection", "selection-root")
   for (const [index, id] of ["select-a", "select-b", "select-c"].entries()) {
@@ -288,7 +347,9 @@ describe("BlockEditor block selection", () => {
       hasPointerCapture: () => true,
     })
     const rows = ["select-a", "select-b", "select-c"].map((id, index) => {
-      const row = container.querySelector<HTMLElement>(`[data-block-id="${id}"]`)!
+      const row = container.querySelector<HTMLElement>(
+        `[data-block-id="${id}"]`
+      )!
       vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
         x: 100,
         y: 100 + index * 40,
@@ -324,10 +385,14 @@ describe("BlockEditor block selection", () => {
         "select-b",
       ])
     )
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeTruthy()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeTruthy()
     expect(rows[0]).toHaveClass("bg-primary/15")
     fireEvent.pointerUp(editor, { pointerId: 1, pointerType: "mouse" })
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeNull()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
   })
 
   it("copies a block selection with structured clipboard data", () => {
