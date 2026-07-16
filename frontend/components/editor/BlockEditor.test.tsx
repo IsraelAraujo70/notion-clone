@@ -392,7 +392,9 @@ describe("BlockEditor block selection", () => {
     ).toBe(true)
 
     await user.keyboard("{Escape}")
-    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    await waitFor(() =>
+      expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    )
 
     fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
     await Promise.resolve()

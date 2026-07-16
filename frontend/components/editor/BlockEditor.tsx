@@ -293,6 +293,7 @@ export function BlockEditor({
   const [menuTargetCount, setMenuTargetCount] = useState(0)
   const menuSelectionRef = useRef<ReadonlySet<string>>(new Set())
   const pendingContextMenuBlockRef = useRef<string | null>(null)
+  const contextMenuEscapeSelectionRef = useRef<ReadonlySet<string> | null>(null)
   const menuRestoreFocusRef = useRef<HTMLElement | null>(null)
   const preserveMenuSelectionRef = useRef(false)
   const nativeTextContextBlockRef = useRef<string | null>(null)
@@ -1142,13 +1143,26 @@ export function BlockEditor({
     [selectedRoots, setSelectionBoth]
   )
 
-  const restoreBlockMenuFocus = useCallback((event: Event) => {
-    const target = menuRestoreFocusRef.current
-    menuRestoreFocusRef.current = null
-    if (!target?.isConnected) return
-    event.preventDefault()
-    target.focus()
-  }, [])
+  const restoreBlockMenuFocus = useCallback(
+    (event: Event) => {
+      const target = menuRestoreFocusRef.current
+      const escapeSelection = contextMenuEscapeSelectionRef.current
+      menuRestoreFocusRef.current = null
+      contextMenuEscapeSelectionRef.current = null
+      if (target?.isConnected) {
+        event.preventDefault()
+        preserveMenuSelectionRef.current = true
+        target.focus()
+      }
+      if (escapeSelection) {
+        requestAnimationFrame(() => {
+          preserveMenuSelectionRef.current = true
+          setSelectionBoth(escapeSelection)
+        })
+      }
+    },
+    [setSelectionBoth]
+  )
 
   const prepareTextBlockMenu = useCallback(
     (blockId: string, element: HTMLElement) => {
@@ -1583,6 +1597,7 @@ export function BlockEditor({
           <ContextMenu
             onOpenChange={(open) => {
               if (!open) return
+              contextMenuEscapeSelectionRef.current = null
               preserveMenuSelectionRef.current = true
               if (pendingContextMenuBlockRef.current === block.id) {
                 pendingContextMenuBlockRef.current = null
@@ -2048,6 +2063,11 @@ export function BlockEditor({
             canContinue={!readOnly && menuTargetCount === 1}
             canPaste={clipboardReady}
             onCloseAutoFocus={restoreBlockMenuFocus}
+            onEscapeKeyDown={() => {
+              contextMenuEscapeSelectionRef.current = new Set(
+                menuTargetIdsRef.current
+              )
+            }}
             onAction={(action) => runOptionsAction(action, block.id)}
             onTurnInto={turnSelectedInto}
           />
