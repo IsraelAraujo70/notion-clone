@@ -64,6 +64,8 @@ npm start
 
 Em um aparelho Android, uma API local precisa usar o IP acessível da máquina, não `localhost`. Para gerar um APK interno, configure o EAS e execute `eas build --profile preview --platform android`.
 
+O workflow `Android beta` gera um APK pelo GitHub Actions e publica o asset `reason-beta.apk` no release fixo `android-beta`. A landing aponta para esse asset por padrão; `NEXT_PUBLIC_ANDROID_APK_URL` permite substituir a URL.
+
 ## Verificação
 
 ```bash

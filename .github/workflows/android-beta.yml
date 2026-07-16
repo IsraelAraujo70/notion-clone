@@ -1,0 +1,56 @@
+name: Android beta
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Android project
+        working-directory: mobile
+        run: npx expo prebuild --clean --platform android --non-interactive
+
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease
+
+      - name: Prepare release asset
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk mobile/reason-beta.apk
+
+      - name: Publish beta release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-beta
+          name: Reason Android Beta
+          prerelease: true
+          generate_release_notes: true
+          files: mobile/reason-beta.apk

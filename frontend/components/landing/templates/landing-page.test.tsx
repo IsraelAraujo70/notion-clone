@@ -47,4 +47,15 @@ describe("LandingPage", () => {
     expect(screen.queryByText(/pronta/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/ready/i)).not.toBeInTheDocument()
   })
+
+  it("links the Android beta to the stable GitHub release asset", () => {
+    render(<LandingPage />)
+
+    expect(
+      screen.getByRole("link", { name: "Download Android beta APK" })
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/IsraelAraujo70/notion-clone/releases/download/android-beta/reason-beta.apk"
+    )
+  })
 })

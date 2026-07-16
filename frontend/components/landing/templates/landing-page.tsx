@@ -8,6 +8,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   CommandIcon,
+  DownloadIcon,
   FileTextIcon,
   GitBranchIcon,
   GripVerticalIcon,
@@ -29,6 +30,10 @@ import { ThemeToggleButton } from "@/components/atoms/theme-toggle-button"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useI18n } from "@/lib/i18n/i18n-provider"
+
+const androidApkUrl =
+  process.env.NEXT_PUBLIC_ANDROID_APK_URL ??
+  "https://github.com/IsraelAraujo70/notion-clone/releases/download/android-beta/reason-beta.apk"
 
 const productPillars = [
   {
@@ -300,6 +305,25 @@ export function LandingPage() {
           </Button>
           <Button asChild size="lg" variant="outline">
             <Link href="/login">{t("Sign in")}</Link>
+          </Button>
+          <Button
+            asChild
+            size="lg"
+            variant="secondary"
+            className="border border-[#a8d7b3] bg-[#e8f8ec] text-[#176b2c] hover:bg-[#dcf4e2] dark:border-[#315f3b] dark:bg-[#1d3d25] dark:text-[#a6efb6] dark:hover:bg-[#254b2e]"
+          >
+            <a
+              href={androidApkUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t("Download Android beta APK")}
+            >
+              <DownloadIcon data-icon="inline-start" />
+              {t("Download Android beta")}
+              <span className="rounded bg-current/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wider">
+                APK
+              </span>
+            </a>
           </Button>
         </div>
       </section>

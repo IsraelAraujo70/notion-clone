@@ -13,6 +13,8 @@ export const landingPt = {
   Code: "Código",
   Commands: "Comandos",
   Drafts: "Rascunhos",
+  "Download Android beta": "Baixar beta para Android",
+  "Download Android beta APK": "Baixar beta para Android em APK",
   "Fast command surface": "Interface de comandos ágil",
   Heading: "Título",
   Home: "Início",
