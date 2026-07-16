@@ -181,48 +181,60 @@ describe("block editor", () => {
     firstBlock().click().type("Alpha{enter}Bravo{enter}Charlie")
     saved()
 
-    cy.get("[data-block-id]").then(($rows) => {
+    cy.get('[data-cy="block-editor"] [data-block-id]').then(($rows) => {
       const first = $rows[0].getBoundingClientRect()
       const second = $rows[1].getBoundingClientRect()
-      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
-        const editor = $editor[0]
-        editor.setPointerCapture = () => {}
-        editor.releasePointerCapture = () => {}
-        editor.hasPointerCapture = () => true
-        editor.dispatchEvent(
-          new PointerEvent("pointerdown", {
-            bubbles: true,
-            pointerId: 7,
-            pointerType: "mouse",
-            button: 0,
-            clientX: first.left - 12,
-            clientY: first.top - 4,
-          })
-        )
-        editor.dispatchEvent(
-          new PointerEvent("pointermove", {
-            bubbles: true,
-            pointerId: 7,
-            pointerType: "mouse",
-            buttons: 1,
-            clientX: first.right + 8,
-            clientY: second.bottom + 4,
-          })
-        )
+      const editable = $rows[0]
+        .querySelector<HTMLElement>('[contenteditable="true"]')!
+        .getBoundingClientRect()
+      const startX = Math.min(first.right - 8, editable.right + 16)
+      const startY = first.top + first.height / 2
+      const endX = startX - 24
+      const endY = second.bottom - 2
+      const page = $rows[0].ownerDocument
+      const startTarget = page.elementFromPoint(startX, startY)
+      const endTarget = page.elementFromPoint(endX, endY)
+      const editor = page.querySelector<HTMLElement>(
+        '[data-cy="block-editor"]'
+      )!
+      editor.setPointerCapture = () => {}
+      editor.releasePointerCapture = () => {}
+      editor.hasPointerCapture = () => true
+
+      expect(
+        startX,
+        "whitespace disponível à direita do texto"
+      ).to.be.greaterThan(editable.right)
+      expect(startTarget).not.to.equal(
+        $rows[0].querySelector('[contenteditable="true"]')
+      )
+      expect(editor.contains(startTarget)).to.equal(true)
+      expect(editor.contains(endTarget)).to.equal(true)
+
+      cy.wrap(startTarget).trigger("pointerdown", {
+        pointerId: 7,
+        pointerType: "mouse",
+        button: 0,
+        clientX: startX,
+        clientY: startY,
       })
-      cy.get('[data-cy="block-selection-marquee"]').should("be.visible")
-      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
-        $editor[0].dispatchEvent(
-          new PointerEvent("pointerup", {
-            bubbles: true,
-            pointerId: 7,
-            pointerType: "mouse",
-          })
-        )
+      cy.wrap(endTarget).trigger("pointermove", {
+        pointerId: 7,
+        pointerType: "mouse",
+        buttons: 1,
+        clientX: endX,
+        clientY: endY,
+      })
+      cy.get('[data-cy="block-selection-marquee"]').should("exist")
+      cy.wrap(endTarget).trigger("pointerup", {
+        pointerId: 7,
+        pointerType: "mouse",
+        clientX: endX,
+        clientY: endY,
       })
     })
 
-    cy.get("[data-block-id]").then(($rows) => {
+    cy.get('[data-cy="block-editor"] [data-block-id]').then(($rows) => {
       const selected = [...$rows].filter((row) =>
         row.classList.contains("bg-primary/15")
       )

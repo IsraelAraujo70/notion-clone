@@ -2022,7 +2022,9 @@ export function BlockEditor({
                       }}
                       suppressContentEditableWarning
                       spellCheck
-                      className={`min-h-7 w-full break-words outline-none ${blockClasses(block.type)} ${
+                      className={`min-h-7 break-words outline-none ${
+                        text.length > 0 ? "inline-block max-w-full" : "w-full"
+                      } ${blockClasses(block.type)} ${
                         checked ? "text-muted-foreground line-through" : ""
                       }`}
                       onFocus={() => {

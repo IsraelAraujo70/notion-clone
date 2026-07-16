@@ -550,8 +550,9 @@ describe("BlockEditor block selection", () => {
       />
     )
     const editor = container.firstElementChild as HTMLElement
+    const setPointerCapture = vi.fn()
     Object.assign(editor, {
-      setPointerCapture: vi.fn(),
+      setPointerCapture,
       releasePointerCapture: vi.fn(),
       hasPointerCapture: () => true,
     })
@@ -572,16 +573,42 @@ describe("BlockEditor block selection", () => {
       })
       return row
     })
+    const editable = rows[0].querySelector<HTMLElement>(
+      '[contenteditable="true"]'
+    )!
+    expect(editable).toHaveClass("inline-block", "max-w-full")
+    expect(editable).not.toHaveClass("w-full")
 
-    fireEvent.pointerDown(editor, {
+    fireEvent.pointerDown(editable, {
       pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 120,
+      clientY: 110,
+    })
+    fireEvent.pointerMove(editor, {
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 300,
+      clientY: 150,
+    })
+    expect(setPointerCapture).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
+
+    // A linha continua ocupando a largura disponível, mas o whitespace à direita
+    // do texto tem a própria linha como alvo, não o contenteditable.
+    fireEvent.pointerDown(rows[0], {
+      pointerId: 2,
       pointerType: "mouse",
       button: 0,
       clientX: 80,
       clientY: 90,
     })
     fireEvent.pointerMove(editor, {
-      pointerId: 1,
+      pointerId: 2,
       pointerType: "mouse",
       buttons: 1,
       clientX: 520,
@@ -594,11 +621,12 @@ describe("BlockEditor block selection", () => {
         "select-b",
       ])
     )
+    expect(setPointerCapture).toHaveBeenCalledWith(2)
     expect(
       container.querySelector('[data-cy="block-selection-marquee"]')
     ).toBeTruthy()
     expect(rows[0]).toHaveClass("bg-primary/15")
-    fireEvent.pointerUp(editor, { pointerId: 1, pointerType: "mouse" })
+    fireEvent.pointerUp(editor, { pointerId: 2, pointerType: "mouse" })
     expect(
       container.querySelector('[data-cy="block-selection-marquee"]')
     ).toBeNull()
