@@ -289,10 +289,10 @@ describe("BlockEditor Markdown shortcuts", () => {
     )!
 
     await user.click(editable)
-    editable.textContent = "###\u00a0"
+    editable.textContent = "###\u00a0after"
     const range = document.createRange()
-    range.selectNodeContents(editable)
-    range.collapse(false)
+    range.setStart(editable.firstChild!, 4)
+    range.collapse(true)
     window.getSelection()?.removeAllRanges()
     window.getSelection()?.addRange(range)
     fireEvent.input(editable)
@@ -300,9 +300,12 @@ describe("BlockEditor Markdown shortcuts", () => {
     expect(
       container.querySelector('[data-block-id="markdown-target"]')
     ).toHaveAttribute("data-block-type", "heading3")
+    expect(editable).toHaveTextContent("after")
+    expect(window.getSelection()?.anchorNode).toBe(editable.firstChild)
+    expect(window.getSelection()?.anchorOffset).toBe(0)
 
-    await user.type(editable, "Heading 3")
-    expect(editable).toHaveTextContent("Heading 3")
+    await user.type(editable, "Heading 3 ", { skipClick: true })
+    expect(editable).toHaveTextContent("Heading 3 after")
   })
 })
 
@@ -336,7 +339,9 @@ describe("BlockEditor block selection", () => {
       hasPointerCapture: () => true,
     })
     const rows = ["select-a", "select-b", "select-c"].map((id, index) => {
-      const row = container.querySelector<HTMLElement>(`[data-block-id="${id}"]`)!
+      const row = container.querySelector<HTMLElement>(
+        `[data-block-id="${id}"]`
+      )!
       vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
         x: 100,
         y: 100 + index * 40,
@@ -372,10 +377,14 @@ describe("BlockEditor block selection", () => {
         "select-b",
       ])
     )
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeTruthy()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeTruthy()
     expect(rows[0]).toHaveClass("bg-primary/15")
     fireEvent.pointerUp(editor, { pointerId: 1, pointerType: "mouse" })
-    expect(container.querySelector('[data-cy="block-selection-marquee"]')).toBeNull()
+    expect(
+      container.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
   })
 
   it("copies a block selection with structured clipboard data", () => {

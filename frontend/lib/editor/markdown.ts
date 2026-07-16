@@ -3,6 +3,7 @@ import type { BlockProperties, BlockType } from "@/lib/contracts"
 export interface MarkdownShortcut {
   blockType: BlockType
   text: string
+  caretOffset: number
   replacesBlock?: boolean
 }
 
@@ -171,16 +172,30 @@ export function detectMarkdownShortcut(
   caretOffset: number
 ): MarkdownShortcut | null {
   for (const [prefix, blockType] of SPACE_PREFIXES) {
-    const typedPrefix = text.slice(0, prefix.length).replaceAll("\u00a0", " ")
-    if (caretOffset === prefix.length && typedPrefix === prefix) {
-      return { blockType, text: text.slice(prefix.length) }
+    const marker = prefix.slice(0, -1)
+    const separator = text[marker.length]
+    if (
+      caretOffset === prefix.length &&
+      text.startsWith(marker) &&
+      (separator === " " || separator === "\u00a0")
+    ) {
+      return {
+        blockType,
+        text: text.slice(prefix.length),
+        caretOffset: caretOffset - prefix.length,
+      }
     }
   }
 
   if (caretOffset === 3 && text === "```")
-    return { blockType: "code", text: "" }
+    return { blockType: "code", text: "", caretOffset: 0 }
   if (caretOffset === 3 && text === "---")
-    return { blockType: "divider", text: "", replacesBlock: true }
+    return {
+      blockType: "divider",
+      text: "",
+      caretOffset: 0,
+      replacesBlock: true,
+    }
 
   return null
 }

@@ -30,6 +30,7 @@ describe("detectMarkdownShortcut", () => {
     expect(detectMarkdownShortcut("---", 3)).toEqual({
       blockType: "divider",
       text: "",
+      caretOffset: 0,
       replacesBlock: true,
     })
   })
@@ -38,6 +39,23 @@ describe("detectMarkdownShortcut", () => {
     expect(detectMarkdownShortcut("###\u00a0", 4)).toEqual({
       blockType: "heading3",
       text: "",
+      caretOffset: 0,
+    })
+  })
+
+  it("preserves intentional non-breaking spaces in markers and content", () => {
+    expect(detectMarkdownShortcut("[\u00a0] ", 4)).toBeNull()
+    expect(detectMarkdownShortcut("###\u00a0before\u00a0after", 4)).toEqual({
+      blockType: "heading3",
+      text: "before\u00a0after",
+      caretOffset: 0,
+    })
+  })
+
+  it("moves the caret by the removed prefix instead of to the text end", () => {
+    expect(detectMarkdownShortcut("### after", 4)).toMatchObject({
+      text: "after",
+      caretOffset: 0,
     })
   })
 
