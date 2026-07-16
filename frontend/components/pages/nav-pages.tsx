@@ -279,12 +279,18 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       aria-label={title}
       title={title}
     >
-      {!hasChildren ? (
-        <PageIcon icon={node.icon} dataCy={`nav-page-leading-${node.id}`} />
-      ) : null}
+      <PageIcon
+        icon={node.icon}
+        dataCy={`nav-page-leading-${node.id}`}
+        className={
+          hasChildren
+            ? "hidden size-5 shrink-0 items-center justify-center text-base leading-none group-data-[collapsible=icon]:flex"
+            : undefined
+        }
+      />
       <span
         data-cy={`nav-page-title-${node.id}`}
-        className="min-w-24 flex-1 truncate"
+        className="min-w-24 flex-1 truncate group-data-[collapsible=icon]:hidden"
         title={title}
       >
         {title}
@@ -400,7 +406,6 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       >
         <PageIcon
           icon={node.icon}
-          dataCy={`nav-page-leading-${node.id}`}
           className="shrink-0 text-base leading-none group-focus-within/page-tree-item:hidden group-hover/page-tree-item:hidden"
         />
         <ChevronRightIcon className="hidden size-4 group-focus-within/page-tree-item:block group-hover/page-tree-item:block group-data-[state=open]/page-tree-toggle:rotate-90" />

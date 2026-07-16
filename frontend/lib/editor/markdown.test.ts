@@ -30,7 +30,32 @@ describe("detectMarkdownShortcut", () => {
     expect(detectMarkdownShortcut("---", 3)).toEqual({
       blockType: "divider",
       text: "",
+      caretOffset: 0,
       replacesBlock: true,
+    })
+  })
+
+  it("accepts the non-breaking trailing space emitted by contenteditable", () => {
+    expect(detectMarkdownShortcut("###\u00a0", 4)).toEqual({
+      blockType: "heading3",
+      text: "",
+      caretOffset: 0,
+    })
+  })
+
+  it("preserves intentional non-breaking spaces in markers and content", () => {
+    expect(detectMarkdownShortcut("[\u00a0] ", 4)).toBeNull()
+    expect(detectMarkdownShortcut("###\u00a0before\u00a0after", 4)).toEqual({
+      blockType: "heading3",
+      text: "before\u00a0after",
+      caretOffset: 0,
+    })
+  })
+
+  it("moves the caret by the removed prefix instead of to the text end", () => {
+    expect(detectMarkdownShortcut("### after", 4)).toMatchObject({
+      text: "after",
+      caretOffset: 0,
     })
   })
 
@@ -111,6 +136,7 @@ const answer = 43
 
 describe("slashQuery", () => {
   it("returns the query after the active slash", () => {
+    expect(slashQuery("/", 1)).toBe("")
     expect(slashQuery("/hea", 4)).toBe("hea")
     expect(slashQuery("hello /code", 11)).toBe("code")
   })
@@ -119,6 +145,10 @@ describe("slashQuery", () => {
     expect(removeSlashQuery("hello /code world", 11)).toEqual({
       text: "hello  world",
       slashIndex: 6,
+    })
+    expect(removeSlashQuery("before/kept /title after", 18)).toEqual({
+      text: "before/kept  after",
+      slashIndex: 12,
     })
   })
 

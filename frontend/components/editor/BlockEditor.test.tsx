@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
+import type { Operation } from "@/lib/contracts"
 import {
   applyOperation,
   createPageTree,
@@ -49,6 +51,215 @@ function treeWithTwoParagraphs(): BlockTree {
     }
   ).tree
 }
+
+function treeWithEmptyParagraph(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const tree = applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-empty",
+    block: newBlock("paragraph", { text: "" }, "empty-block"),
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+  const root = tree.blocks.get(tree.rootId)!
+  return {
+    ...tree,
+    blocks: new Map(tree.blocks).set(root.id, {
+      ...root,
+      parentId: "workspace-container-not-in-page-snapshot",
+    }),
+  }
+}
+
+function setEditableText(editable: HTMLElement, text: string) {
+  editable.textContent = text
+  const range = document.createRange()
+  range.selectNodeContents(editable)
+  range.collapse(false)
+  const selection = window.getSelection()!
+  selection.removeAllRanges()
+  selection.addRange(range)
+  fireEvent.input(editable)
+}
+
+describe("BlockEditor slash menu", () => {
+  it("preserves visible focus and selection in an incomplete page snapshot", async () => {
+    const onSelectedBlockChange = vi.fn()
+    const onSelectedBlockIdsChange = vi.fn()
+    const onFocusedBlockChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        selectedBlockId="empty-block"
+        onSelectedBlockChange={onSelectedBlockChange}
+        onSelectedBlockIdsChange={onSelectedBlockIdsChange}
+        onFocusedBlockChange={onFocusedBlockChange}
+      />
+    )
+    const row = container.querySelector('[data-block-id="empty-block"]')!
+    const editable = row.querySelector<HTMLElement>("[contenteditable]")!
+
+    editable.focus()
+    fireEvent.pointerDown(row, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      metaKey: true,
+    })
+
+    await waitFor(() => {
+      expect(onFocusedBlockChange).toHaveBeenLastCalledWith("empty-block")
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith(["empty-block"])
+    })
+    expect(onSelectedBlockChange).not.toHaveBeenCalledWith(null)
+  })
+
+  it("clears focus and selections when a block is trashed", async () => {
+    const onSelectedBlockChange = vi.fn()
+    const onSelectedBlockIdsChange = vi.fn()
+    const onFocusedBlockChange = vi.fn()
+    const tree = treeWithEmptyParagraph()
+    const props = {
+      ...editorProps(tree, new Set<string>()),
+      selectedBlockId: "empty-block",
+      onSelectedBlockChange,
+      onSelectedBlockIdsChange,
+      onFocusedBlockChange,
+    }
+    const { container, rerender } = render(<BlockEditor {...props} />)
+    const row = container.querySelector('[data-block-id="empty-block"]')!
+    row.querySelector<HTMLElement>("[contenteditable]")!.focus()
+    fireEvent.pointerDown(row, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      metaKey: true,
+    })
+    await waitFor(() =>
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith(["empty-block"])
+    )
+
+    const trashedTree = applyOperation(tree, {
+      type: "delete_block",
+      opId: "trash-empty",
+      blockId: "empty-block",
+    }).tree
+    rerender(<BlockEditor {...props} tree={trashedTree} />)
+
+    await waitFor(() => {
+      expect(onFocusedBlockChange).toHaveBeenLastCalledWith(null)
+      expect(onSelectedBlockChange).toHaveBeenLastCalledWith(null)
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith([])
+    })
+  })
+
+  it("opens all options for slash and keeps the query when Escape closes it", () => {
+    const { container } = render(
+      <BlockEditor {...editorProps(treeWithEmptyParagraph(), new Set())} />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/")
+
+    expect(screen.getByRole("button", { name: /Texto$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Imagem$/ })).toBeVisible()
+
+    fireEvent.keyDown(editable, { key: "Escape" })
+    expect(screen.queryByRole("button", { name: /Texto$/ })).toBeNull()
+    expect(editable).toHaveTextContent("/")
+  })
+
+  it("filters title aliases and applies the active heading with the keyboard", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/title")
+
+    expect(screen.getByRole("button", { name: /Título 1$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Título 3$/ })).toBeVisible()
+    fireEvent.keyDown(editable, { key: "ArrowDown" })
+    fireEvent.keyDown(editable, { key: "Enter" })
+
+    expect(dispatchBatch).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "empty-block",
+          blockType: "heading2",
+          properties: expect.objectContaining({ text: "" }),
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+
+  it("shows useful options for block and applies a mouse selection", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/block")
+
+    expect(screen.getByRole("button", { name: /Texto$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Imagem$/ })).toBeVisible()
+    fireEvent.mouseDown(screen.getByRole("button", { name: /Citação$/ }))
+
+    expect(dispatchBatch).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "empty-block",
+          blockType: "quote",
+          properties: expect.objectContaining({ text: "" }),
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+    expect(editable).toHaveFocus()
+  })
+
+  it("closes the menu when focus leaves the block", () => {
+    const { container } = render(
+      <div>
+        <button type="button">Outside</button>
+        <BlockEditor {...editorProps(treeWithEmptyParagraph(), new Set())} />
+      </div>
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/title")
+    expect(screen.getByRole("button", { name: /Título 1$/ })).toBeVisible()
+
+    const outside = screen.getByRole("button", { name: "Outside" })
+    fireEvent.blur(editable, { relatedTarget: outside })
+    fireEvent.focus(outside)
+
+    expect(screen.queryByRole("button", { name: /Título 1$/ })).toBeNull()
+  })
+})
 
 describe("BlockEditor drag handle", () => {
   it("renders a centered six-dot handle in the block gutter", () => {
@@ -250,6 +461,63 @@ function editorProps(tree: BlockTree, collapsed: Set<string>) {
   }
 }
 
+function MarkdownEditor() {
+  const page = createPageTree("Markdown", "markdown-root")
+  const initialTree = applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-markdown-target",
+    block: newBlock("paragraph", { text: "" }, "markdown-target"),
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+  const [tree, setTree] = useState(initialTree)
+
+  const dispatchBatch = (operations: Operation[]) => {
+    setTree((current) =>
+      operations.reduce(
+        (next, operation) => applyOperation(next, operation).tree,
+        current
+      )
+    )
+  }
+
+  return (
+    <BlockEditor
+      {...editorProps(tree, new Set())}
+      dispatchBatch={dispatchBatch}
+    />
+  )
+}
+
+describe("BlockEditor Markdown shortcuts", () => {
+  it("converts ### into heading 3 and keeps typing at the caret", async () => {
+    const user = userEvent.setup()
+    const { container } = render(<MarkdownEditor />)
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="markdown-target"] [contenteditable]'
+    )!
+
+    await user.click(editable)
+    editable.textContent = "###\u00a0after"
+    const range = document.createRange()
+    range.setStart(editable.firstChild!, 4)
+    range.collapse(true)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    fireEvent.input(editable)
+
+    expect(
+      container.querySelector('[data-block-id="markdown-target"]')
+    ).toHaveAttribute("data-block-type", "heading3")
+    expect(editable).toHaveTextContent("after")
+    expect(window.getSelection()?.anchorNode).toBe(editable.firstChild)
+    expect(window.getSelection()?.anchorOffset).toBe(0)
+
+    await user.type(editable, "Heading 3 ", { skipClick: true })
+    expect(editable).toHaveTextContent("Heading 3 after")
+  })
+})
+
 function treeWithThreeBlocks() {
   let tree = createPageTree("Selection", "selection-root")
   for (const [index, id] of ["select-a", "select-b", "select-c"].entries()) {
@@ -262,6 +530,14 @@ function treeWithThreeBlocks() {
     }).tree
   }
   return tree
+}
+
+function treeWithMissingRootParent() {
+  const tree = treeWithThreeBlocks()
+  const root = tree.blocks.get(tree.rootId)!
+  const blocks = new Map(tree.blocks)
+  blocks.set(root.id, { ...root, parentId: "missing-container" })
+  return { ...tree, blocks }
 }
 
 describe("BlockEditor block selection", () => {
@@ -399,7 +675,8 @@ describe("BlockEditor block selection", () => {
     expect(screen.getByText("Transformar em")).toBeVisible()
   })
 
-  it("preserves a multi-selection when right-clicking one selected block", async () => {
+  it("preserves a multi-selection after cancelling and copying from the context menu", async () => {
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -410,23 +687,77 @@ describe("BlockEditor block selection", () => {
       )
     }
 
-    const selected = container.querySelector('[data-block-id="select-a"]')!
-    fireEvent.pointerDown(selected, {
-      pointerId: 9,
-      pointerType: "mouse",
-      button: 2,
-      ctrlKey: true,
-    })
-    fireEvent.contextMenu(selected)
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
 
     expect(
       (await screen.findAllByText("2 blocos selecionados")).some(
         (element) => !element.classList.contains("sr-only")
       )
     ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    await waitFor(() =>
+      expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    )
+
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    await Promise.resolve()
+    editable.focus()
+    fireEvent.contextMenu(editable)
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+    await user.click(await screen.findByText("Copiar"))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
   })
 
-  it("leaves native copy untouched while text is selected", () => {
+  it("restores menu focus without revalidating selection through a missing parent", async () => {
+    const user = userEvent.setup()
+    const onSelectedBlockChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithMissingRootParent(), new Set())}
+        onSelectedBlockChange={onSelectedBlockChange}
+      />
+    )
+    await Promise.resolve()
+    for (const id of ["select-a", "select-b"]) {
+      fireEvent.pointerDown(
+        container.querySelector(`[data-block-id="${id}"]`)!,
+        { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+      )
+    }
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    fireEvent.contextMenu(editable)
+    expect(
+      (await screen.findAllByText("2 blocos selecionados")).some(
+        (element) => !element.classList.contains("sr-only")
+      )
+    ).toBe(true)
+
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(document.activeElement).toBe(editable))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(2)
+
+    const third = container.querySelector<HTMLElement>(
+      '[data-block-id="select-c"] [contenteditable]'
+    )!
+    fireEvent.pointerDown(third, { button: 0, pointerType: "mouse" })
+    third.focus()
+    expect(onSelectedBlockChange).toHaveBeenLastCalledWith("select-c")
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(0)
+  })
+
+  it("keeps the native menu when pointerdown starts with selected text", () => {
     const { container } = render(
       <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
     )
@@ -444,9 +775,13 @@ describe("BlockEditor block selection", () => {
     selection.addRange(range)
     const setData = vi.fn()
 
+    fireEvent.pointerDown(editable, { button: 2, pointerType: "mouse" })
+    selection.removeAllRanges()
+    editable.focus()
     expect(fireEvent.contextMenu(editable)).toBe(true)
     expect(document.querySelector('[data-cy="block-context-menu"]')).toBeNull()
 
+    selection.addRange(range)
     const event = new Event("copy", { bubbles: true, cancelable: true })
     Object.defineProperty(event, "clipboardData", {
       value: { setData, getData: () => "", files: [] },
@@ -629,8 +964,9 @@ describe("BlockEditor Markdown paste", () => {
 })
 
 describe("BlockEditor block context menu", () => {
-  it("right-clicking the drag handle opens copy/cut/delete for that block", async () => {
+  it("deletes the focused block through the Radix context menu", async () => {
     const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
     const { container } = render(
       <BlockEditor
         {...editorProps(createTree(), new Set())}
@@ -638,10 +974,11 @@ describe("BlockEditor block context menu", () => {
       />
     )
 
-    const handle = container.querySelector(
-      '[data-cy="block-handle-numbered-item"]'
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
     )!
-    fireEvent.contextMenu(handle)
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
 
     await waitFor(() =>
       expect(
@@ -655,7 +992,7 @@ describe("BlockEditor block context menu", () => {
       document.querySelector('[data-cy="block-menu-cut"]')
     ).toBeInTheDocument()
 
-    fireEvent.click(document.querySelector('[data-cy="block-menu-delete"]')!)
+    await user.click(document.querySelector('[data-cy="block-menu-delete"]')!)
 
     expect(dispatchBatch).toHaveBeenCalledWith(
       [

@@ -20,19 +20,19 @@ export const SLASH_ITEMS: SlashItem[] = [
     type: "heading1",
     icon: "H1",
     label: "Título 1",
-    keywords: "heading titulo h1",
+    keywords: "heading title titulo h1",
   },
   {
     type: "heading2",
     icon: "H2",
     label: "Título 2",
-    keywords: "heading titulo h2",
+    keywords: "heading title titulo h2",
   },
   {
     type: "heading3",
     icon: "H3",
     label: "Título 3",
-    keywords: "heading titulo h3",
+    keywords: "heading title titulo h3",
   },
   {
     type: "bulleted_list_item",
@@ -79,7 +79,9 @@ interface SlashMenuProps {
 
 export function filteredSlashItems(query: string): SlashItem[] {
   const normalized = query.trim().toLowerCase()
-  if (!normalized) return SLASH_ITEMS
+  if (!normalized || normalized === "block" || normalized === "bloco") {
+    return SLASH_ITEMS
+  }
   return SLASH_ITEMS.filter((item) =>
     `${item.label} ${item.keywords}`.toLowerCase().includes(normalized)
   )
