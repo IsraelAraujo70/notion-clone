@@ -171,7 +171,8 @@ export function detectMarkdownShortcut(
   caretOffset: number
 ): MarkdownShortcut | null {
   for (const [prefix, blockType] of SPACE_PREFIXES) {
-    if (caretOffset === prefix.length && text.startsWith(prefix)) {
+    const typedPrefix = text.slice(0, prefix.length).replaceAll("\u00a0", " ")
+    if (caretOffset === prefix.length && typedPrefix === prefix) {
       return { blockType, text: text.slice(prefix.length) }
     }
   }

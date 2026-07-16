@@ -34,6 +34,13 @@ describe("detectMarkdownShortcut", () => {
     })
   })
 
+  it("accepts the non-breaking trailing space emitted by contenteditable", () => {
+    expect(detectMarkdownShortcut("###\u00a0", 4)).toEqual({
+      blockType: "heading3",
+      text: "",
+    })
+  })
+
   it("ignores prefixes away from the caret", () => {
     expect(detectMarkdownShortcut("# title", 1)).toBeNull()
     expect(detectMarkdownShortcut("hello # ", 8)).toBeNull()

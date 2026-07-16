@@ -53,15 +53,15 @@ describe("block editor", () => {
     firstBlock().should("have.text", "Teste de digitação")
   })
 
-  it("keeps symbol-heavy typing stable", () => {
+  it("keeps existing markdown shortcuts working", () => {
     firstBlock().click().type("# Título grande")
-    firstBlock().should("have.text", "# Título grande")
+    cy.get('[data-block-type="heading1"] [contenteditable="true"]')
+      .should("have.text", "Título grande")
 
-    firstBlock().type("{enter}- item de lista")
-    cy.get('[data-block-type="paragraph"]').should("have.length", 2)
-    cy.get('[data-block-type="paragraph"]')
-      .eq(1)
-      .should("have.text", "- item de lista")
+    cy.get('[data-block-type="heading1"] [contenteditable="true"]')
+      .type("{enter}- item de lista")
+    cy.get('[data-block-type="bulleted_list_item"] [contenteditable="true"]')
+      .should("have.text", "item de lista")
   })
 
   it("persists title and blocks across a reload", () => {
@@ -83,6 +83,21 @@ describe("block editor", () => {
       "contain.text",
       "Notas de lançamento"
     )
+  })
+
+  it("converts ### to heading 3 and persists subsequent text", () => {
+    firstBlock().click().type("### Título nível 3")
+
+    cy.get('[data-block-type="heading3"] [contenteditable="true"]')
+      .should("have.text", "Título nível 3")
+      .type(" persistido")
+      .should("have.text", "Título nível 3 persistido")
+    saved()
+
+    cy.reload()
+
+    cy.get('[data-block-type="heading3"] [contenteditable="true"]')
+      .should("have.text", "Título nível 3 persistido")
   })
 
   it("debounces rapid text edits and character deletion", () => {
