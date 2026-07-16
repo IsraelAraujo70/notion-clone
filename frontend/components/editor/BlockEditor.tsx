@@ -344,7 +344,7 @@ export function BlockEditor({
         selectionRef.current = nextSelection
         setSelection(nextSelection)
       }
-      if (slash && !isActiveBlock(slash.blockId)) setSlash(null)
+      if (slash && !visibleIdSet.has(slash.blockId)) setSlash(null)
     })
     return () => {
       active = false
