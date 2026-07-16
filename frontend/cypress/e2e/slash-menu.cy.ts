@@ -3,6 +3,12 @@ describe("slash block menu", () => {
     return cy.get('[data-block-type] [contenteditable="true"]').first()
   }
 
+  function saved() {
+    return cy
+      .get('[data-cy="save-state"]')
+      .should("have.attr", "data-state", "saved")
+  }
+
   beforeEach(() => {
     const id = Date.now()
     cy.visit("/signup")
@@ -41,6 +47,12 @@ describe("slash block menu", () => {
     cy.contains("button", "Texto").should("be.visible")
     cy.contains("button", "Imagem").should("exist")
     cy.contains("button", "Citação").click()
+    cy.get('[data-block-type="quote"] [contenteditable="true"]')
+      .first()
+      .should("have.text", "")
+    saved()
+
+    cy.reload()
     cy.get('[data-block-type="quote"] [contenteditable="true"]')
       .first()
       .should("have.text", "")

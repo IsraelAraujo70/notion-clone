@@ -81,6 +81,76 @@ function setEditableText(editable: HTMLElement, text: string) {
 }
 
 describe("BlockEditor slash menu", () => {
+  it("preserves visible focus and selection in an incomplete page snapshot", async () => {
+    const onSelectedBlockChange = vi.fn()
+    const onSelectedBlockIdsChange = vi.fn()
+    const onFocusedBlockChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        selectedBlockId="empty-block"
+        onSelectedBlockChange={onSelectedBlockChange}
+        onSelectedBlockIdsChange={onSelectedBlockIdsChange}
+        onFocusedBlockChange={onFocusedBlockChange}
+      />
+    )
+    const row = container.querySelector('[data-block-id="empty-block"]')!
+    const editable = row.querySelector<HTMLElement>("[contenteditable]")!
+
+    editable.focus()
+    fireEvent.pointerDown(row, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      metaKey: true,
+    })
+
+    await waitFor(() => {
+      expect(onFocusedBlockChange).toHaveBeenLastCalledWith("empty-block")
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith(["empty-block"])
+    })
+    expect(onSelectedBlockChange).not.toHaveBeenCalledWith(null)
+  })
+
+  it("clears focus and selections when a block is trashed", async () => {
+    const onSelectedBlockChange = vi.fn()
+    const onSelectedBlockIdsChange = vi.fn()
+    const onFocusedBlockChange = vi.fn()
+    const tree = treeWithEmptyParagraph()
+    const props = {
+      ...editorProps(tree, new Set<string>()),
+      selectedBlockId: "empty-block",
+      onSelectedBlockChange,
+      onSelectedBlockIdsChange,
+      onFocusedBlockChange,
+    }
+    const { container, rerender } = render(<BlockEditor {...props} />)
+    const row = container.querySelector('[data-block-id="empty-block"]')!
+    row.querySelector<HTMLElement>("[contenteditable]")!.focus()
+    fireEvent.pointerDown(row, {
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      metaKey: true,
+    })
+    await waitFor(() =>
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith(["empty-block"])
+    )
+
+    const trashedTree = applyOperation(tree, {
+      type: "delete_block",
+      opId: "trash-empty",
+      blockId: "empty-block",
+    }).tree
+    rerender(<BlockEditor {...props} tree={trashedTree} />)
+
+    await waitFor(() => {
+      expect(onFocusedBlockChange).toHaveBeenLastCalledWith(null)
+      expect(onSelectedBlockChange).toHaveBeenLastCalledWith(null)
+      expect(onSelectedBlockIdsChange).toHaveBeenLastCalledWith([])
+    })
+  })
+
   it("opens all options for slash and keeps the query when Escape closes it", () => {
     const { container } = render(
       <BlockEditor {...editorProps(treeWithEmptyParagraph(), new Set())} />
@@ -163,6 +233,29 @@ describe("BlockEditor slash menu", () => {
       ],
       { breakCoalescing: true }
     )
+    expect(editable).toHaveFocus()
+  })
+
+  it("closes the menu when focus leaves the block", () => {
+    const { container } = render(
+      <div>
+        <button type="button">Outside</button>
+        <BlockEditor {...editorProps(treeWithEmptyParagraph(), new Set())} />
+      </div>
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/title")
+    expect(screen.getByRole("button", { name: /Título 1$/ })).toBeVisible()
+
+    const outside = screen.getByRole("button", { name: "Outside" })
+    fireEvent.blur(editable, { relatedTarget: outside })
+    fireEvent.focus(outside)
+
+    expect(screen.queryByRole("button", { name: /Título 1$/ })).toBeNull()
   })
 })
 
