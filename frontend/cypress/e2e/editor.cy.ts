@@ -15,6 +15,32 @@ describe("block editor", () => {
       .should("have.attr", "data-state", "saved")
   }
 
+  function openBlockContextMenu(editable: HTMLElement) {
+    editable.ownerDocument.getSelection()?.removeAllRanges()
+    return cy
+      .wrap(editable)
+      .then(($editable) => {
+        const target = $editable[0]
+        target.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 9,
+            pointerType: "mouse",
+            button: 2,
+            buttons: 2,
+          })
+        )
+        target.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            button: 2,
+            buttons: 2,
+          })
+        )
+      })
+  }
+
   beforeEach(() => {
     const id = Date.now()
     cy.visit("/signup")
@@ -119,7 +145,7 @@ describe("block editor", () => {
     })
   })
 
-  it("draws a marquee and keeps a multi-selection in the custom menu", () => {
+  it("keeps a marquee selection through Chromium focus and duplicates both blocks", () => {
     firstBlock().click().type("Alpha{enter}Bravo{enter}Charlie")
     saved()
 
@@ -169,20 +195,84 @@ describe("block editor", () => {
         row.classList.contains("bg-primary/15")
       )
       expect(selected).to.have.length(2)
-      const rect = selected[0].getBoundingClientRect()
-      selected[0].dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          button: 2,
-          clientX: rect.left + 20,
-          clientY: rect.top + 10,
-        })
+      return openBlockContextMenu(
+        selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
       )
     })
     cy.contains("2 blocos selecionados").should("be.visible")
     cy.contains("Duplicar").should("be.visible")
     cy.contains("Transformar em").should("be.visible")
+    cy.contains("Duplicar").click()
+    cy.get('[data-block-id] [contenteditable="true"]').should(($editables) => {
+      expect([...$editables].map((editable) => editable.textContent)).to.deep.equal([
+        "Alpha",
+        "Alpha",
+        "Bravo",
+        "Bravo",
+        "Charlie",
+      ])
+    })
+    saved()
+    cy.reload()
+    cy.get('[data-block-id]').then(($rows) => {
+      const first = $rows[0].getBoundingClientRect()
+      const second = $rows[1].getBoundingClientRect()
+      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
+        const editor = $editor[0]
+        editor.setPointerCapture = () => {}
+        editor.releasePointerCapture = () => {}
+        editor.hasPointerCapture = () => true
+        editor.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 11,
+            pointerType: "mouse",
+            button: 0,
+            clientX: first.left - 12,
+            clientY: first.top - 4,
+          })
+        )
+        editor.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            pointerId: 11,
+            pointerType: "mouse",
+            buttons: 1,
+            clientX: first.right + 8,
+            clientY: second.bottom + 4,
+          })
+        )
+      })
+      cy.get('[data-cy="block-selection-marquee"]').should("be.visible")
+      cy.get<HTMLElement>('[data-cy="block-editor"]').then(($editor) => {
+        $editor[0].dispatchEvent(
+          new PointerEvent("pointerup", {
+            bubbles: true,
+            pointerId: 11,
+            pointerType: "mouse",
+          })
+        )
+      })
+    })
+    cy.get('[data-block-id].bg-primary\\/15').should("have.length", 2)
+    cy.get('[data-block-id].bg-primary\\/15').then(($selected) => {
+      return openBlockContextMenu(
+        $selected[0].querySelector<HTMLElement>('[contenteditable="true"]')!
+      )
+    })
+    cy.contains("2 blocos selecionados").should("be.visible")
+    cy.get<HTMLElement>('[data-cy="block-context-menu"]').then(($menu) => {
+      $menu[0].dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    })
+    cy.get('[data-cy="block-context-menu"]').should("not.exist")
+    cy.get('[data-block-id].bg-primary\\/15').should("have.length", 2)
   })
 
   it("creates a nested page, navigates by breadcrumb, and persists its content", () => {

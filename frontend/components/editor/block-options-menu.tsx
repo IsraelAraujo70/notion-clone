@@ -53,6 +53,7 @@ interface Props {
   canWrite: boolean
   canContinue: boolean
   canPaste: boolean
+  onCloseAutoFocus?: (event: Event) => void
   onAction: (action: BlockMenuAction) => void
   onTurnInto: (blockType: BlockType) => void
 }
@@ -67,6 +68,7 @@ export function BlockContextOptionsContent(props: Props) {
       data-cy="block-context-menu"
       aria-label="Opções dos blocos"
       className="min-w-60"
+      onCloseAutoFocus={props.onCloseAutoFocus}
     >
       <ContextMenuLabel>
         {props.count === 1 ? "1 bloco selecionado" : `${props.count} blocos selecionados`}
