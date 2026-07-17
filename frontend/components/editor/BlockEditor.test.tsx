@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { toast } from "sonner"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import type { Operation } from "@reason/core/contracts"
@@ -11,7 +12,22 @@ import {
   newBlock,
   type BlockTree,
 } from "@reason/core/engine/tree"
-import { BLOCK_CLIPBOARD_MIME } from "@/lib/editor/block-clipboard"
+import {
+  BLOCK_CLIPBOARD_MIME,
+  writeClipboardEvent,
+} from "@/lib/editor/block-clipboard"
+
+const writeNavigatorClipboardMock = vi.hoisted(() => vi.fn())
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }))
+vi.mock("@/lib/editor/block-clipboard", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/editor/block-clipboard")>()
+  return {
+    ...actual,
+    writeNavigatorClipboard: writeNavigatorClipboardMock,
+  }
+})
 
 const restoreDocumentProperties: Array<() => void> = []
 
@@ -65,6 +81,23 @@ function treeWithTwoParagraphs(): BlockTree {
       index: 1,
     }
   ).tree
+}
+
+function treeWithDeepSubtree(): BlockTree {
+  let tree = createPageTree("Deep", "page-root")
+  let parentId = tree.rootId
+  for (let depth = 0; depth < 21; depth += 1) {
+    const id = `deep-${depth}`
+    tree = applyOperation(tree, {
+      type: "insert_block",
+      opId: `insert-${id}`,
+      block: newBlock("paragraph", { text: id }, id),
+      parentId,
+      index: 0,
+    }).tree
+    parentId = id
+  }
+  return tree
 }
 
 function treeWithEmptyParagraph(): BlockTree {
@@ -886,6 +919,141 @@ describe("BlockEditor block selection", () => {
     })
   })
 
+  it("deletes selected blocks only after a keyboard cut populates the event clipboard", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithThreeBlocks(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    fireEvent.pointerDown(
+      container.querySelector('[data-block-id="select-a"]')!,
+      { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+    )
+    window.getSelection()?.removeAllRanges()
+    const values = new Map<string, string>()
+
+    fireEvent.cut(window, {
+      clipboardData: {
+        files: [],
+        setData: (type: string, value: string) => values.set(type, value),
+        getData: (type: string) => values.get(type) ?? "",
+      },
+    })
+
+    expect(values.get("text/plain")).toBe("select-a")
+    expect(values.get(BLOCK_CLIPBOARD_MIME)).toBeTruthy()
+    expect(dispatchBatch).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          type: "delete_block",
+          blockId: "select-a",
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+
+  it("keeps selected blocks when the keyboard cut event cannot write clipboard data", () => {
+    vi.mocked(toast.error).mockClear()
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithThreeBlocks(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    fireEvent.pointerDown(
+      container.querySelector('[data-block-id="select-a"]')!,
+      { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+    )
+    window.getSelection()?.removeAllRanges()
+
+    fireEvent.cut(window, {
+      clipboardData: {
+        files: [],
+        setData: () => {
+          throw new Error("denied")
+        },
+        getData: () => "",
+      },
+    })
+
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+    expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(1)
+    expect(toast.error).toHaveBeenCalledWith(
+      "Could not cut the blocks. They were not deleted."
+    )
+  })
+
+  it("does not cut blocks when the event clipboard accepts only lossy text", () => {
+    vi.mocked(toast.error).mockClear()
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithThreeBlocks(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    fireEvent.pointerDown(
+      container.querySelector('[data-block-id="select-a"]')!,
+      { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+    )
+    window.getSelection()?.removeAllRanges()
+    const values = new Map<string, string>()
+
+    fireEvent.cut(window, {
+      clipboardData: {
+        files: [],
+        setData: (type: string, value: string) => {
+          if (type === BLOCK_CLIPBOARD_MIME) throw new Error("unsupported")
+          values.set(type, value)
+        },
+        getData: (type: string) => values.get(type) ?? "",
+      },
+    })
+
+    expect(values.get("text/plain")).toBe("select-a")
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+    expect(toast.error).toHaveBeenCalledWith(
+      "Could not cut the blocks. They were not deleted."
+    )
+  })
+
+  it("does not cut a subtree deeper than structured paste can recreate", () => {
+    vi.mocked(toast.error).mockClear()
+    const dispatchBatch = vi.fn()
+    const setData = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithDeepSubtree(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    fireEvent.pointerDown(
+      container.querySelector('[data-block-id="deep-0"]')!,
+      { pointerId: 1, pointerType: "mouse", button: 0, metaKey: true }
+    )
+    window.getSelection()?.removeAllRanges()
+
+    fireEvent.cut(window, {
+      clipboardData: { files: [], setData, getData: () => "" },
+    })
+
+    expect(setData).not.toHaveBeenCalled()
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+    expect(toast.error).toHaveBeenCalledWith(
+      "Could not cut the blocks. They were not deleted."
+    )
+  })
+
   it("opens custom options from a handle click", async () => {
     const { container } = render(
       <BlockEditor {...editorProps(createTree(), new Set())} />
@@ -986,9 +1154,13 @@ describe("BlockEditor block selection", () => {
     expect(container.querySelectorAll(".bg-primary\\/15")).toHaveLength(0)
   })
 
-  it("keeps the native menu when pointerdown starts with selected text", () => {
+  it("keeps native text cut when pointerdown starts with selected text", () => {
+    const dispatchBatch = vi.fn()
     const { container } = render(
-      <BlockEditor {...editorProps(treeWithThreeBlocks(), new Set())} />
+      <BlockEditor
+        {...editorProps(treeWithThreeBlocks(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
     )
     fireEvent.pointerDown(
       container.querySelector('[data-block-id="select-a"]')!,
@@ -1011,7 +1183,7 @@ describe("BlockEditor block selection", () => {
     expect(document.querySelector('[data-cy="block-context-menu"]')).toBeNull()
 
     selection.addRange(range)
-    const event = new Event("copy", { bubbles: true, cancelable: true })
+    const event = new Event("cut", { bubbles: true, cancelable: true })
     Object.defineProperty(event, "clipboardData", {
       value: { setData, getData: () => "", files: [] },
     })
@@ -1019,6 +1191,9 @@ describe("BlockEditor block selection", () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(setData).not.toHaveBeenCalled()
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
     selection.removeAllRanges()
   })
 
@@ -1190,6 +1365,51 @@ describe("BlockEditor Markdown paste", () => {
       block: { type: "to_do", properties: { text: "Done", checked: true } },
     })
   })
+
+  it("leaves an unrecoverable same-session structured paste to the browser", () => {
+    const tree = treeWithEmptyParagraph()
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(tree, new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const payload = {
+      version: 1 as const,
+      blocks: Array.from({ length: 201 }, (_, index) => ({
+        type: "paragraph" as const,
+        properties: { text: `block-${index}` },
+        children: [],
+      })),
+    }
+    const values = new Map<string, string>()
+    writeClipboardEvent(
+      {
+        setData: (type: string, value: string) => {
+          values.set(type, value)
+        },
+      } as DataTransfer,
+      payload
+    )
+    const event = new Event("paste", { bubbles: true, cancelable: true })
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        files: [],
+        getData: (type: string) =>
+          type === BLOCK_CLIPBOARD_MIME
+            ? (values.get(BLOCK_CLIPBOARD_MIME) ?? "")
+            : "",
+      },
+    })
+
+    container
+      .querySelector('[data-block-id="empty-block"] [contenteditable]')!
+      .dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(dispatchBatch).not.toHaveBeenCalled()
+  })
 })
 
 describe("BlockEditor block context menu", () => {
@@ -1232,6 +1452,194 @@ describe("BlockEditor block context menu", () => {
       ],
       { breakCoalescing: true }
     )
+  })
+
+  it("cuts from the menu only after the Clipboard API confirms the write", async () => {
+    writeNavigatorClipboardMock.mockClear()
+    writeNavigatorClipboardMock.mockResolvedValueOnce("structured")
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(createTree(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
+    )!
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-cy="block-context-menu"]')
+      ).toBeInTheDocument()
+    )
+    await user.click(document.querySelector('[data-cy="block-menu-cut"]')!)
+
+    await waitFor(() => expect(writeNavigatorClipboardMock).toHaveBeenCalled())
+    expect(dispatchBatch).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          type: "delete_block",
+          blockId: "numbered-item",
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+
+  it("does not delete after a lossy writeText fallback", async () => {
+    vi.mocked(toast.error).mockClear()
+    writeNavigatorClipboardMock.mockClear()
+    writeNavigatorClipboardMock.mockResolvedValueOnce("text")
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(createTree(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
+    )!
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await user.click(await screen.findByText("Cut"))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Could not cut the blocks. They were not deleted."
+      )
+    )
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+  })
+
+  it("keeps blocks that change while clipboard permission is pending", async () => {
+    vi.mocked(toast.error).mockClear()
+    writeNavigatorClipboardMock.mockClear()
+    let resolveWrite!: (result: "structured") => void
+    writeNavigatorClipboardMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveWrite = resolve
+      })
+    )
+    const tree = createTree()
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    const props = {
+      ...editorProps(tree, new Set<string>()),
+      dispatchBatch,
+    }
+    const { container, rerender } = render(<BlockEditor {...props} />)
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
+    )!
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await user.click(await screen.findByText("Cut"))
+    await waitFor(() => expect(writeNavigatorClipboardMock).toHaveBeenCalled())
+
+    const changedTree = applyOperation(tree, {
+      type: "update_block",
+      opId: "remote-edit",
+      blockId: "numbered-item",
+      properties: { text: "Alterada remotamente" },
+    }).tree
+    rerender(<BlockEditor {...props} tree={changedTree} />)
+    await act(async () => resolveWrite("structured"))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "The blocks changed before they could be cut. They were not deleted."
+      )
+    )
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+  })
+
+  it("allows only one menu cut while a clipboard write is pending", async () => {
+    writeNavigatorClipboardMock.mockClear()
+    let resolveWrite!: (result: "structured") => void
+    writeNavigatorClipboardMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveWrite = resolve
+      })
+    )
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(createTree(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
+    )!
+
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await user.click(await screen.findByText("Cut"))
+    await waitFor(() =>
+      expect(writeNavigatorClipboardMock).toHaveBeenCalledOnce()
+    )
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await user.click(await screen.findByText("Cut"))
+    expect(writeNavigatorClipboardMock).toHaveBeenCalledOnce()
+
+    await act(async () => resolveWrite("structured"))
+    await waitFor(() =>
+      expect(
+        dispatchBatch.mock.calls
+          .flatMap(([operations]) => operations)
+          .filter((operation) => operation.type === "delete_block")
+      ).toHaveLength(1)
+    )
+  })
+
+  it("keeps blocks and reports an error when menu clipboard permission is denied", async () => {
+    vi.mocked(toast.error).mockClear()
+    writeNavigatorClipboardMock.mockClear()
+    writeNavigatorClipboardMock.mockRejectedValueOnce(new Error("denied"))
+    const dispatchBatch = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(createTree(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="numbered-item"] [contenteditable]'
+    )!
+    await user.click(editable)
+    await user.pointer({ keys: "[MouseRight]", target: editable })
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-cy="block-context-menu"]')
+      ).toBeInTheDocument()
+    )
+    await user.click(document.querySelector('[data-cy="block-menu-cut"]')!)
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Could not cut the blocks. They were not deleted."
+      )
+    )
+    expect(
+      dispatchBatch.mock.calls.flatMap(([operations]) => operations)
+    ).not.toContainEqual(expect.objectContaining({ type: "delete_block" }))
+    expect(
+      container.querySelector('[data-block-id="numbered-item"]')
+    ).toBeTruthy()
   })
 
   it("exposes the current block to AI through an explicit callback", async () => {

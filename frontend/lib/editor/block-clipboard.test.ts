@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   applyOperation,
   createPageTree,
@@ -6,13 +6,17 @@ import {
 } from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
+  type ClipboardBlock,
   clearFallbackBlockClipboard,
+  clipboardPlainText,
   createClipboardInsertOperations,
   crossBlockSelectionMarkdown,
   fallbackBlockClipboard,
+  isRecoverableBlockClipboard,
   readClipboardEvent,
   serializeBlocks,
   writeClipboardEvent,
+  writeNavigatorClipboard,
 } from "./block-clipboard"
 
 describe("block clipboard", () => {
@@ -211,5 +215,150 @@ describe("block clipboard", () => {
         )
       )
     ).toBeNull()
+  })
+
+  it("exports text/plain as Markdown", () => {
+    expect(
+      clipboardPlainText({
+        version: 1,
+        blocks: [
+          { type: "heading2", properties: { text: "Plan" }, children: [] },
+          {
+            type: "to_do",
+            properties: { text: "Ship", checked: true },
+            children: [],
+          },
+          {
+            type: "code",
+            properties: { text: "const ready = true", language: "typescript" },
+            children: [],
+          },
+        ],
+      })
+    ).toBe("## Plan\n- [x] Ship\n```typescript\nconst ready = true\n```")
+  })
+
+  it("uses plain text when an event clipboard rejects the structured MIME", () => {
+    const values = new Map<string, string>()
+    writeClipboardEvent(
+      {
+        setData: (type: string, value: string) => {
+          if (type === BLOCK_CLIPBOARD_MIME) throw new Error("unsupported")
+          values.set(type, value)
+        },
+      } as DataTransfer,
+      {
+        version: 1,
+        blocks: [
+          { type: "paragraph", properties: { text: "safe" }, children: [] },
+        ],
+      }
+    )
+
+    expect(values.get("text/plain")).toBe("safe")
+  })
+
+  it("rejects payloads that cannot be recreated by structured paste", () => {
+    const paragraph = {
+      type: "paragraph" as const,
+      properties: { text: "block" },
+      children: [],
+    }
+    const tooMany = {
+      version: 1 as const,
+      blocks: Array.from({ length: 201 }, () => ({ ...paragraph })),
+    }
+    let nested: ClipboardBlock = paragraph
+    for (let depth = 1; depth < 21; depth += 1) {
+      nested = { ...paragraph, children: [nested] }
+    }
+
+    expect(isRecoverableBlockClipboard(tooMany)).toBe(false)
+    expect(isRecoverableBlockClipboard({ version: 1, blocks: [nested] })).toBe(
+      false
+    )
+    expect(
+      isRecoverableBlockClipboard({
+        version: 1,
+        blocks: [
+          {
+            type: "image",
+            properties: { url: "https://example.com/image.png" },
+            children: [],
+          },
+        ],
+      })
+    ).toBe(false)
+    expect(
+      isRecoverableBlockClipboard({
+        version: 1,
+        blocks: [
+          {
+            type: "toggle",
+            properties: { text: "Details" },
+            children: [{ type: "divider", properties: {}, children: [] }],
+          },
+        ],
+      })
+    ).toBe(true)
+  })
+
+  it("labels writeText fallback as lossy for nested and non-text blocks", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    const payload = {
+      version: 1 as const,
+      blocks: [
+        {
+          type: "toggle" as const,
+          properties: { text: "Details" },
+          children: [
+            { type: "divider" as const, properties: {}, children: [] },
+          ],
+        },
+      ],
+    }
+
+    try {
+      await expect(writeNavigatorClipboard(payload)).resolves.toBe("text")
+      expect(writeText).toHaveBeenCalledWith("Details\n---")
+      expect(fallbackBlockClipboard()).toEqual(payload)
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor)
+      else Reflect.deleteProperty(navigator, "clipboard")
+    }
+  })
+
+  it("does not authorize an in-memory fallback when the Clipboard API rejects", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    })
+
+    try {
+      await expect(
+        writeNavigatorClipboard({
+          version: 1,
+          blocks: [
+            {
+              type: "paragraph",
+              properties: { text: "not copied" },
+              children: [],
+            },
+          ],
+        })
+      ).rejects.toThrow("denied")
+      expect(fallbackBlockClipboard()?.blocks[0]?.properties.text).not.toBe(
+        "not copied"
+      )
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor)
+      else Reflect.deleteProperty(navigator, "clipboard")
+    }
   })
 })

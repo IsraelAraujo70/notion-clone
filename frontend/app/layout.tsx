@@ -4,6 +4,7 @@ import { Bricolage_Grotesque, IBM_Plex_Mono, Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/lib/auth"
 import { I18nProvider } from "@/lib/i18n/i18n-provider"
 import { cn } from "@/lib/utils"
@@ -51,6 +52,7 @@ export default function RootLayout({
           <ThemeProvider>
             <TooltipProvider>
               <AuthProvider>{children}</AuthProvider>
+              <Toaster />
             </TooltipProvider>
           </ThemeProvider>
         </I18nProvider>
