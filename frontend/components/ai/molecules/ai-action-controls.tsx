@@ -58,8 +58,8 @@ export function AiActionControls({
         onClick={() =>
           onAction(
             {
-              type: "transform_selection",
-              block_ids: pageBlockIds,
+              type: "transform_page",
+              page_id: pageId,
               instruction: t("Improve the page structure and formatting"),
             },
             t("Improve the page structure and formatting")

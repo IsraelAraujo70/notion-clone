@@ -83,7 +83,7 @@ Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão perm
 | GET | `/workspaces/{workspace_id}/ai/runs/{run_id}` | Consulta uma execução do usuário. |
 | POST | `/workspaces/{workspace_id}/ai/actions/{action}` | Executa uma ação e retorna SSE. |
 
-`action` aceita `continue_writing`, `summarize_page`, `transform_selection` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo.
+`action` aceita `continue_writing`, `summarize_page`, `transform_selection`, `transform_page` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo. `transform_page` recebe `pageId` e o servidor deriva a subárvore mutável completa; `transform_selection` continua restrito aos IDs de `selection`.
 
 O stream SSE envia `run`, `text`, `tool`, `usage`, `completion` ou `run_failed`, além de keep-alive.
 

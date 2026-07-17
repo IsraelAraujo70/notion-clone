@@ -32,6 +32,7 @@ const MAX_RUN_TIME: Duration = Duration::from_secs(45);
 const TITLE_RUN_TIME: Duration = Duration::from_secs(10);
 const RUN_RECOVERY_GRACE: Duration = Duration::from_secs(30);
 const CONTEXT_BUDGET_TOKENS: usize = 8_000;
+const PAGE_FORMAT_CONTEXT_BUDGET_TOKENS: usize = CONTEXT_BUDGET_TOKENS - MAX_PROMPT_TOKENS - 256;
 const PAGE_READ_BUDGET_TOKENS: usize = 4_000;
 const SOURCE_TEXT_CHARS: usize = 500;
 pub const MAX_PROMPT_TOKENS: usize = 2_048;
@@ -345,7 +346,7 @@ impl AiUseCases {
             "workspace_agent" => {
                 require_member(&self.workspaces, workspace, user).await?;
             }
-            "continue_writing" | "summarize_page" | "transform_selection" => {
+            "continue_writing" | "summarize_page" | "transform_selection" | "transform_page" => {
                 require_writer(&self.workspaces, workspace, user).await?;
             }
             _ => return Err(DomainError::Validation("Unknown AI action").into()),
@@ -489,6 +490,12 @@ impl AiUseCases {
             .map(|view| view.page.clone())
             .collect::<Vec<_>>();
         let mut scope = action_scope(action, page.as_ref(), &input.selection)?;
+        let context_selection = match &scope {
+            ActionScope::Transform { selected, .. } if action == "transform_page" => {
+                selected.iter().copied().collect::<Vec<_>>()
+            }
+            _ => input.selection.clone(),
+        };
         let semantic = self
             .semantic
             .search(workspace, user, &input.prompt, 8)
@@ -497,7 +504,7 @@ impl AiUseCases {
             task: &input.prompt,
             page: page.as_ref().map(|view| &view.page),
             mentioned_pages: &mentioned_page_trees,
-            selection: &input.selection,
+            selection: &context_selection,
             ancestors: page
                 .as_ref()
                 .map(|view| view.breadcrumbs.as_slice())
@@ -519,20 +526,7 @@ impl AiUseCases {
                 .iter()
                 .any(|view| view.page.blocks.iter().any(block_has_citable_text))
             || !semantic.is_empty();
-        let action_rule = match action {
-            "continue_writing" => {
-                "Insert new blocks immediately below the selected anchor in its parent."
-            }
-            "summarize_page" => {
-                "Insert exactly one concise callout summary at index 0 of the page."
-            }
-            "transform_selection" => {
-                "Change only selected roots, using replacements in their existing parents."
-            }
-            _ => {
-                "Investigate before answering. Start with explicitly MENTIONED PAGE IDs when present; otherwise, when the current page ID is available, call read_page for it first; if neither exists, begin with search_workspace. Follow child-page links and use search_workspace with new queries until you find the final answer or exhaust useful leads; never stop at an intermediate location or clue. Call select_citations only after finding the answer. Answer only from authorized tool results, do not emit inline citation markers, and never mutate content."
-            }
-        };
+        let action_rule = action_rule(action);
         let current_page_id = page
             .as_ref()
             .map(|view| view.page.root_id.to_string())
@@ -1100,7 +1094,7 @@ fn validate_input(input: &AiActionInput) -> Result<(), AppError> {
 fn apply_operations_schema(action: &str) -> Value {
     let variants = match action {
         "continue_writing" | "summarize_page" => vec![insert_operation_schema()],
-        "transform_selection" => vec![
+        "transform_selection" | "transform_page" => vec![
             insert_operation_schema(),
             update_operation_schema(),
             move_operation_schema(),
@@ -1248,6 +1242,24 @@ fn trusted_scope_instructions(scope: &ActionScope) -> String {
             )
         }
         ActionScope::Workspace => "No mutation operations are allowed.".into(),
+    }
+}
+
+fn action_rule(action: &str) -> &'static str {
+    match action {
+        "continue_writing" => {
+            "Insert new blocks immediately below the selected anchor in its parent."
+        }
+        "summarize_page" => "Insert exactly one concise callout summary at index 0 of the page.",
+        "transform_selection" => {
+            "Format only the selected roots. Inspect the complete selected scope, preserve all meaning and content, and use appropriate headings, lists, and paragraphs instead of making an isolated cosmetic change. Do not claim completion unless you handled the complete selected scope."
+        }
+        "transform_page" => {
+            "Format the whole mutable page scope. Inspect every block in the scope, preserve all meaning and content, and meaningfully structure the page with appropriate headings, lists, and paragraphs. Do not stop after one cosmetic operation or claim completion unless the complete scope was handled."
+        }
+        _ => {
+            "Investigate before answering. Start with explicitly MENTIONED PAGE IDs when present; otherwise, when the current page ID is available, call read_page for it first; if neither exists, begin with search_workspace. Follow child-page links and use search_workspace with new queries until you find the final answer or exhaust useful leads; never stop at an intermediate location or clue. Call select_citations only after finding the answer. Answer only from authorized tool results, do not emit inline citation markers, and never mutate content."
+        }
     }
 }
 
@@ -1421,9 +1433,85 @@ fn action_scope(
                 replacement_indexes,
             })
         }
+        "transform_page" => {
+            if !selection.is_empty() {
+                return Err(DomainError::Validation(
+                    "Page transform does not accept a client selection",
+                )
+                .into());
+            }
+            let page = page.ok_or(DomainError::Validation("Page transform requires a page"))?;
+            let selected = mutable_page_subtree(page)?;
+            if selected.is_empty() {
+                return Err(DomainError::Validation("Page has no mutable content").into());
+            }
+            if selected.len() > MAX_SELECTION_BLOCKS {
+                return Err(
+                    DomainError::Validation("Page is too large to format completely").into(),
+                );
+            }
+            let selected_ids = selected.iter().copied().collect::<Vec<_>>();
+            let complete_context = build_page_context(page, &selected_ids, usize::MAX);
+            if estimate_tokens(&complete_context) > PAGE_FORMAT_CONTEXT_BUDGET_TOKENS {
+                return Err(
+                    DomainError::Validation("Page is too large to format completely").into(),
+                );
+            }
+            let mut replacement_indexes: HashMap<Uuid, HashSet<i64>> = HashMap::new();
+            for id in &selected {
+                let block = by_id[id];
+                let parent_id = block
+                    .parent_id
+                    .ok_or(DomainError::Validation("Page root cannot be transformed"))?;
+                let index = by_id
+                    .get(&parent_id)
+                    .and_then(|parent| parent.content.iter().position(|child| child == id))
+                    .ok_or(DomainError::Validation("Invalid page subtree"))?;
+                replacement_indexes
+                    .entry(parent_id)
+                    .or_default()
+                    .insert(index as i64);
+            }
+            Ok(ActionScope::Transform {
+                selected,
+                replacement_indexes,
+            })
+        }
         "workspace_agent" => Ok(ActionScope::Workspace),
         _ => Err(DomainError::Validation("Unknown AI action").into()),
     }
+}
+
+fn mutable_page_subtree(
+    page: &crate::application::ports::page::PageTree,
+) -> Result<HashSet<Uuid>, AppError> {
+    let by_id = page
+        .blocks
+        .iter()
+        .map(|block| (block.id, block))
+        .collect::<HashMap<_, _>>();
+    let root = by_id
+        .get(&page.root_id)
+        .ok_or(DomainError::Validation("Page root is missing"))?;
+    let mut selected = HashSet::new();
+    let mut pending = root.content.clone();
+    let mut visited = HashSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            return Err(DomainError::Validation("Invalid page subtree").into());
+        }
+        let block = by_id
+            .get(&id)
+            .ok_or(DomainError::Validation("Invalid page subtree"))?;
+        if block.trashed_at.is_some() || block.block_type == BlockType::Page {
+            continue;
+        }
+        if is_generated_block_type(block.block_type) {
+            selected.insert(id);
+        }
+        pending.extend(block.content.iter().rev().copied());
+    }
+    Ok(selected)
 }
 
 fn validate_operations(
@@ -2097,6 +2185,7 @@ mod tests {
     fn action_schema_exposes_only_scope_allowed_variants() {
         let summarize = apply_operations_schema("summarize_page");
         let transform = apply_operations_schema("transform_selection");
+        let transform_page = apply_operations_schema("transform_page");
         assert_eq!(
             summarize["properties"]["operations"]["items"]["oneOf"]
                 .as_array()
@@ -2111,10 +2200,123 @@ mod tests {
                 .len(),
             4
         );
+        assert_eq!(transform_page, transform);
         assert_eq!(
             summarize["properties"]["operations"]["items"]["oneOf"][0]["additionalProperties"],
             false
         );
+    }
+
+    #[test]
+    fn page_format_scope_contains_the_complete_mutable_subtree_only() {
+        let workspace = Uuid::new_v4();
+        let root = Uuid::new_v4();
+        let section = Uuid::new_v4();
+        let nested = Uuid::new_v4();
+        let child_page = Uuid::new_v4();
+        let child_page_content = Uuid::new_v4();
+        let trashed = Uuid::new_v4();
+
+        let mut root_block = block(root, workspace, None, vec![section, child_page, trashed]);
+        root_block.block_type = BlockType::Page;
+        let section_block = block(section, workspace, Some(root), vec![nested]);
+        let nested_block = block(nested, workspace, Some(section), vec![]);
+        let mut child_page_block =
+            block(child_page, workspace, Some(root), vec![child_page_content]);
+        child_page_block.block_type = BlockType::Page;
+        let child_page_content_block =
+            block(child_page_content, workspace, Some(child_page), vec![]);
+        let mut trashed_block = block(trashed, workspace, Some(root), vec![]);
+        trashed_block.trashed_at = Some(Utc::now());
+        let view = PageView {
+            page: crate::application::ports::page::PageTree {
+                root_id: root,
+                blocks: vec![
+                    root_block,
+                    section_block,
+                    nested_block,
+                    child_page_block,
+                    child_page_content_block,
+                    trashed_block,
+                ],
+            },
+            breadcrumbs: vec![],
+            seq: 0,
+            recent_editors: vec![],
+        };
+
+        let scope = action_scope("transform_page", Some(&view), &[]).unwrap();
+        let ActionScope::Transform { selected, .. } = scope else {
+            panic!("expected transform scope");
+        };
+        assert_eq!(selected, HashSet::from([section, nested]));
+
+        let selection_scope = action_scope("transform_selection", Some(&view), &[nested]).unwrap();
+        let ActionScope::Transform { selected, .. } = selection_scope else {
+            panic!("expected selection transform scope");
+        };
+        assert_eq!(selected, HashSet::from([nested]));
+    }
+
+    #[test]
+    fn page_format_rejects_oversized_scope_before_provider_execution() {
+        let workspace = Uuid::new_v4();
+        let root = Uuid::new_v4();
+        let ids = (0..=MAX_SELECTION_BLOCKS)
+            .map(|_| Uuid::new_v4())
+            .collect::<Vec<_>>();
+        let mut root_block = block(root, workspace, None, ids.clone());
+        root_block.block_type = BlockType::Page;
+        let mut blocks = vec![root_block];
+        blocks.extend(
+            ids.into_iter()
+                .map(|id| block(id, workspace, Some(root), vec![])),
+        );
+        let view = PageView {
+            page: crate::application::ports::page::PageTree {
+                root_id: root,
+                blocks,
+            },
+            breadcrumbs: vec![],
+            seq: 0,
+            recent_editors: vec![],
+        };
+
+        assert!(action_scope("transform_page", Some(&view), &[]).is_err());
+
+        let content = Uuid::new_v4();
+        let mut root_block = block(root, workspace, None, vec![content]);
+        root_block.block_type = BlockType::Page;
+        let mut content_block = block(content, workspace, Some(root), vec![]);
+        content_block.properties.insert(
+            "text".into(),
+            json!("x".repeat(PAGE_FORMAT_CONTEXT_BUDGET_TOKENS + 1)),
+        );
+        let view = PageView {
+            page: crate::application::ports::page::PageTree {
+                root_id: root,
+                blocks: vec![root_block, content_block],
+            },
+            breadcrumbs: vec![],
+            seq: 0,
+            recent_editors: vec![],
+        };
+        assert!(action_scope("transform_page", Some(&view), &[]).is_err());
+    }
+
+    #[test]
+    fn formatting_prompts_require_complete_scope_and_meaningful_structure() {
+        let page_rule = action_rule("transform_page");
+        assert!(page_rule.contains("whole mutable page scope"));
+        assert!(page_rule.contains("Inspect every block"));
+        assert!(page_rule.contains("preserve all meaning and content"));
+        assert!(page_rule.contains("headings, lists, and paragraphs"));
+        assert!(page_rule.contains("Do not stop after one cosmetic operation"));
+        assert!(page_rule.contains("complete scope"));
+
+        let selection_rule = action_rule("transform_selection");
+        assert!(selection_rule.contains("only the selected roots"));
+        assert!(!selection_rule.contains("whole mutable page scope"));
     }
 
     #[test]
