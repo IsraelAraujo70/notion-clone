@@ -24,6 +24,10 @@ import type { Operation } from "@reason/core/contracts"
 import { newBlock } from "@reason/core/engine/tree"
 import { createId } from "@reason/core/id"
 
+export const PAGE_DRAG_MIME = "application/x-reason-page+json"
+
+export type PageDrag = Pick<PageSummary, "id" | "title" | "icon">
+
 type PageContextValue = {
   pages: PageSummary[]
   /** Container invisível do workspace: pai das páginas de topo, nunca navegável. */
@@ -44,6 +48,14 @@ type PageContextValue = {
     pageId: string,
     destinationWorkspaceId: string
   ) => Promise<void>
+  movePageWithinWorkspace: (
+    pageId: string,
+    newParentId: string,
+    index: number
+  ) => Promise<void>
+  pageDrag: PageDrag | null
+  startPageDrag: (page: PageDrag) => void
+  endPageDrag: () => void
   trash: TrashEntry[]
   refreshTrash: () => Promise<void>
   restore: (blockId: string) => Promise<void>
@@ -77,6 +89,7 @@ export function PageProvider({
   const [trash, setTrash] = useState<TrashEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [pageRevision, setPageRevision] = useState(0)
+  const [pageDrag, setPageDrag] = useState<PageDrag | null>(null)
   const pendingTransfers = useRef(new Map<string, string>())
 
   const canWrite = Boolean(
@@ -238,6 +251,24 @@ export function PageProvider({
     [activeWorkspaceId, loadPages, token]
   )
 
+  const movePageWithinWorkspace = useCallback(
+    async (pageId: string, newParentId: string, index: number) => {
+      if (!token || !activeWorkspaceId) throw new Error("No active workspace")
+      await api.applyOperation(token, activeWorkspaceId, {
+        type: "move_block",
+        opId: createId(),
+        blockId: pageId,
+        newParentId,
+        index,
+      })
+      // A operação já foi confirmada; uma falha de refresh não deve sugerir que
+      // o usuário repita a intenção com outro opId.
+      await loadPages().catch(() => undefined)
+      setPageRevision((revision) => revision + 1)
+    },
+    [activeWorkspaceId, loadPages, token]
+  )
+
   const createTopLevelPage = useCallback(async () => {
     if (!containerPageId) throw new Error("No workspace container")
     return createChildPage(containerPageId)
@@ -291,6 +322,10 @@ export function PageProvider({
       setPageIcon,
       deletePage,
       movePageToWorkspace,
+      movePageWithinWorkspace,
+      pageDrag,
+      startPageDrag: setPageDrag,
+      endPageDrag: () => setPageDrag(null),
       trash,
       refreshTrash,
       restore,
@@ -303,11 +338,13 @@ export function PageProvider({
       createChildPage,
       createTopLevelPage,
       deletePage,
+      movePageWithinWorkspace,
       movePageToWorkspace,
       loadPages,
       loading,
       pageId,
       pageRevision,
+      pageDrag,
       pages,
       refreshTrash,
       renamePage,

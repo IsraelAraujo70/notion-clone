@@ -122,4 +122,78 @@ describe("editor and sidebar UX eval", () => {
     cy.get("html").should("have.class", "dark")
     cy.screenshot("editor-sidebar-ux-dark")
   })
+
+  it("moves a subpage through the sidebar into a previewed editor slot", () => {
+    currentPageId().as("sourceParentId")
+    cy.get('[data-cy="page-title"]').click().type("Origem")
+    cy.get('[data-cy="page-title"]').blur()
+    saved()
+
+    cy.get("@sourceParentId").then((sourceParentId) => {
+      cy.get(`[data-cy="nav-page-plus-${sourceParentId}"]`).click({
+        force: true,
+      })
+      cy.location("pathname").should(
+        "not.eq",
+        `/dashboard/pages/${sourceParentId}`
+      )
+    })
+    cy.get('[data-cy="page-title"]').should("be.visible")
+    currentPageId().as("draggedPageId")
+    cy.get('[data-cy="page-title"]').click().type("Página arrastada")
+    cy.get('[data-cy="page-title"]').blur()
+    saved()
+
+    cy.get("@draggedPageId").then((draggedPageId) => {
+      cy.get('[data-cy="nav-pages-create"]').click()
+      cy.location("pathname").should(
+        "not.eq",
+        `/dashboard/pages/${draggedPageId}`
+      )
+    })
+    cy.get('[data-cy="page-title"]').should("be.visible")
+    currentPageId().as("destinationPageId")
+    cy.get('[data-cy="page-title"]').click().type("Destino")
+    cy.get('[data-cy="page-title"]').blur()
+    saved()
+
+    cy.get("@draggedPageId").then((draggedPageId) => {
+      cy.get("@destinationPageId").then((destinationPageId) => {
+        cy.window().then((window) => {
+          const dataTransfer = new window.DataTransfer()
+          cy.get(`[data-cy="nav-page-${draggedPageId}"]`).trigger("dragstart", {
+            dataTransfer,
+          })
+          cy.get(`[data-cy="nav-page-${destinationPageId}"]`).trigger(
+            "dragover",
+            { dataTransfer }
+          )
+          cy.wait(650)
+          cy.location("pathname").should(
+            "eq",
+            `/dashboard/pages/${destinationPageId}`
+          )
+
+          cy.get('[data-cy="block-editor"] [data-block-id]')
+            .first()
+            .then(($target) => {
+              const clientY = $target[0].getBoundingClientRect().top + 2
+              cy.wrap($target).trigger("dragover", { dataTransfer, clientY })
+              cy.get('[data-cy="page-drop-preview"]')
+                .should("be.visible")
+                .and("contain.text", "Página arrastada")
+              cy.wrap($target).trigger("drop", { dataTransfer, clientY })
+            })
+
+          cy.get(`[data-cy="page-link-${draggedPageId}"]`).should("be.visible")
+          cy.reload()
+          cy.get(`[data-cy="page-link-${draggedPageId}"]`).should("be.visible")
+          cy.get(`[data-cy="nav-page-toggle-${destinationPageId}"]`).should(
+            "exist"
+          )
+          cy.get(`[data-cy="nav-page-${draggedPageId}"]`).should("exist")
+        })
+      })
+    })
+  })
 })

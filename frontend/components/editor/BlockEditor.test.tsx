@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  act,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StrictMode, useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -432,6 +439,73 @@ describe("BlockEditor drag handle", () => {
       ],
       { breakCoalescing: true }
     )
+  })
+
+  it("previews and drops an external page above a block", () => {
+    const onExternalPageDrop = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithTwoParagraphs(), new Set())}
+        externalPageDrag={{ id: "external-page", title: "Projeto", icon: "📌" }}
+        onExternalPageDrop={onExternalPageDrop}
+      />
+    )
+    const target = container.querySelector(
+      '[data-block-id="block-a"]'
+    ) as HTMLElement
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    } as DOMRect)
+    const dataTransfer = { dropEffect: "none" }
+
+    const dragOver = createEvent.dragOver(target, { dataTransfer })
+    Object.defineProperty(dragOver, "clientY", { value: 105 })
+    fireEvent(target, dragOver)
+
+    expect(
+      screen.getByRole("status", { name: "Drop page here" })
+    ).toHaveTextContent("📌Projeto")
+    const drop = createEvent.drop(target, { dataTransfer })
+    Object.defineProperty(drop, "clientY", { value: 105 })
+    fireEvent(target, drop)
+    expect(onExternalPageDrop).toHaveBeenCalledWith({
+      parentId: "page-root",
+      index: 0,
+    })
+  })
+
+  it("drops an external page at the end of the open page", () => {
+    const onExternalPageDrop = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithTwoParagraphs(), new Set())}
+        externalPageDrag={{ id: "external-page", title: "Projeto", icon: "" }}
+        onExternalPageDrop={onExternalPageDrop}
+      />
+    )
+    const editor = container.querySelector(
+      '[data-cy="block-editor"]'
+    ) as HTMLElement
+    const dataTransfer = { dropEffect: "none" }
+
+    fireEvent.dragOver(editor, { dataTransfer })
+    expect(
+      container.querySelector('[data-cy="page-drop-preview"]')
+    ).toBeVisible()
+    fireEvent.drop(editor, { dataTransfer })
+
+    expect(onExternalPageDrop).toHaveBeenCalledWith({
+      parentId: "page-root",
+      index: 2,
+    })
   })
 })
 
