@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::application::ai::context::{
-    ContextInput, build_context, build_page_context, estimate_tokens,
+    ContextInput, build_context, build_page_context, build_structured_page_context, estimate_tokens,
 };
 use crate::application::ports::{
     ai::*,
@@ -121,6 +121,8 @@ enum ActionScope {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ApplyOperationsDraft {
     operations: Vec<OperationDraft>,
+    #[serde(default, rename = "reviewedBlockIds")]
+    _reviewed_block_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -505,6 +507,7 @@ impl AiUseCases {
             page: page.as_ref().map(|view| &view.page),
             mentioned_pages: &mentioned_page_trees,
             selection: &context_selection,
+            structured_page: action == "transform_page",
             ancestors: page
                 .as_ref()
                 .map(|view| view.breadcrumbs.as_slice())
@@ -782,6 +785,20 @@ impl AiUseCases {
                         serde_json::to_string(&found).map_err(|_| AppError::Internal)?
                     }
                     "apply_operations" => {
+                        if validate_transform_coverage(action, &scope, &call.arguments).is_err() {
+                            messages.push(tool_result_message(
+                                call.id,
+                                tool_error(
+                                    "Review the complete page scope and provide every exact mutable block ID once in reviewedBlockIds. Do not include IDs outside the trusted scope.",
+                                ),
+                            ));
+                            let _ = tx
+                                .send(AiEvent::Tool {
+                                    name: call.name.clone(),
+                                })
+                                .await;
+                            continue;
+                        }
                         let operations = match compile_operations(&call.arguments, workspace) {
                             Ok(operations) => operations,
                             Err(message) => {
@@ -822,6 +839,17 @@ impl AiUseCases {
                                 .await;
                             continue;
                         }
+                        let expected_workspace_seq = if action == "transform_page" {
+                            let initial = page
+                                .as_ref()
+                                .ok_or(DomainError::Validation("Page transform requires a page"))?;
+                            let current =
+                                self.pages.get_page(workspace, initial.page.root_id).await?;
+                            revalidate_page_snapshot(initial, &current, &scope)?;
+                            Some(initial.seq)
+                        } else {
+                            None
+                        };
                         let id = *group_id.get_or_insert_with(Uuid::new_v4);
                         let group = OperationGroup {
                             id,
@@ -832,7 +860,13 @@ impl AiUseCases {
                         for batch in operation_commit_batches(action, operations) {
                             let acks = self
                                 .apply
-                                .execute_batch(user, workspace, batch, Some(group.clone()))
+                                .execute_batch_at_seq(
+                                    user,
+                                    workspace,
+                                    batch,
+                                    Some(group.clone()),
+                                    expected_workspace_seq,
+                                )
                                 .await?;
                             applied_count += acks.len();
                             last_seq = acks.iter().map(|ack| ack.seq).chain(last_seq).max();
@@ -1108,12 +1142,26 @@ fn apply_operations_schema(action: &str) -> Value {
             restore_operation_schema(),
         ],
     };
-    json!({
+    let mut schema = json!({
         "type":"object",
         "properties":{"operations":{"type":"array","minItems":1,"maxItems":MAX_OPERATIONS,"items":{"oneOf":variants}}},
         "required":["operations"],
         "additionalProperties":false
-    })
+    });
+    if action == "transform_page" {
+        schema["properties"]["reviewedBlockIds"] = json!({
+            "type":"array",
+            "minItems":1,
+            "maxItems":MAX_SELECTION_BLOCKS,
+            "uniqueItems":true,
+            "items":{"type":"string","format":"uuid"}
+        });
+        schema["required"]
+            .as_array_mut()
+            .expect("schema required is an array")
+            .push(json!("reviewedBlockIds"));
+    }
+    schema
 }
 
 fn content_block_type_schema() -> Value {
@@ -1255,7 +1303,7 @@ fn action_rule(action: &str) -> &'static str {
             "Format only the selected roots. Inspect the complete selected scope, preserve all meaning and content, and use appropriate headings, lists, and paragraphs instead of making an isolated cosmetic change. Do not claim completion unless you handled the complete selected scope."
         }
         "transform_page" => {
-            "Format the whole mutable page scope. Inspect every block in the scope, preserve all meaning and content, and meaningfully structure the page with appropriate headings, lists, and paragraphs. Do not stop after one cosmetic operation or claim completion unless the complete scope was handled."
+            "Format the whole mutable page scope. Inspect every block in the scope, preserve all meaning and content, and meaningfully structure the page with appropriate headings, lists, and paragraphs. Include every mutable scope ID exactly once in reviewedBlockIds when applying operations. Blocks that are already correctly formatted need no pointless mutation, but must still be listed as reviewed. Do not stop after one cosmetic operation or claim completion unless the complete scope was handled."
         }
         _ => {
             "Investigate before answering. Start with explicitly MENTIONED PAGE IDs when present; otherwise, when the current page ID is available, call read_page for it first; if neither exists, begin with search_workspace. Follow child-page links and use search_workspace with new queries until you find the final answer or exhaust useful leads; never stop at an intermediate location or clue. Call select_citations only after finding the answer. Answer only from authorized tool results, do not emit inline citation markers, and never mutate content."
@@ -1273,6 +1321,38 @@ fn compile_operations(arguments: &Value, workspace: Uuid) -> Result<Vec<Operatio
         .into_iter()
         .map(|operation| compile_operation(operation, workspace))
         .collect()
+}
+
+fn validate_transform_coverage(
+    action: &str,
+    scope: &ActionScope,
+    arguments: &Value,
+) -> Result<(), AppError> {
+    if action != "transform_page" {
+        return Ok(());
+    }
+    let ActionScope::Transform { selected, .. } = scope else {
+        return Err(DomainError::Validation("Page transform requires transform scope").into());
+    };
+    let reviewed = arguments
+        .get("reviewedBlockIds")
+        .and_then(Value::as_array)
+        .ok_or(DomainError::Validation(
+            "Page transform requires reviewed block IDs",
+        ))?;
+    let reviewed_ids = reviewed
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or(DomainError::Validation("Invalid reviewed block ID"))
+        })
+        .collect::<Result<HashSet<_>, _>>()?;
+    if reviewed.len() != selected.len() || &reviewed_ids != selected {
+        return Err(DomainError::Validation("Page transform coverage is incomplete").into());
+    }
+    Ok(())
 }
 
 fn compile_operation(operation: OperationDraft, workspace: Uuid) -> Result<Operation, String> {
@@ -1451,7 +1531,7 @@ fn action_scope(
                 );
             }
             let selected_ids = selected.iter().copied().collect::<Vec<_>>();
-            let complete_context = build_page_context(page, &selected_ids, usize::MAX);
+            let complete_context = build_structured_page_context(page, &selected_ids, usize::MAX);
             if estimate_tokens(&complete_context) > PAGE_FORMAT_CONTEXT_BUDGET_TOKENS {
                 return Err(
                     DomainError::Validation("Page is too large to format completely").into(),
@@ -1512,6 +1592,45 @@ fn mutable_page_subtree(
         pending.extend(block.content.iter().rev().copied());
     }
     Ok(selected)
+}
+
+fn revalidate_page_snapshot(
+    initial: &PageView,
+    current: &PageView,
+    scope: &ActionScope,
+) -> Result<(), AppError> {
+    let unchanged = initial.seq == current.seq
+        && initial.page.root_id == current.page.root_id
+        && initial
+            .page
+            .blocks
+            .iter()
+            .map(|block| (block.id, block))
+            .collect::<HashMap<_, _>>()
+            == current
+                .page
+                .blocks
+                .iter()
+                .map(|block| (block.id, block))
+                .collect::<HashMap<_, _>>();
+    let current_scope = action_scope("transform_page", Some(current), &[])?;
+    let same_scope = match (scope, current_scope) {
+        (
+            ActionScope::Transform {
+                selected,
+                replacement_indexes,
+            },
+            ActionScope::Transform {
+                selected: current_selected,
+                replacement_indexes: current_indexes,
+            },
+        ) => selected == &current_selected && replacement_indexes == &current_indexes,
+        _ => false,
+    };
+    if !unchanged || !same_scope {
+        return Err(DomainError::Validation("Page changed while the AI was formatting it").into());
+    }
+    Ok(())
 }
 
 fn validate_operations(
@@ -2200,7 +2319,20 @@ mod tests {
                 .len(),
             4
         );
-        assert_eq!(transform_page, transform);
+        assert_eq!(
+            transform_page["properties"]["operations"],
+            transform["properties"]["operations"]
+        );
+        assert_eq!(
+            transform_page["properties"]["reviewedBlockIds"]["uniqueItems"],
+            true
+        );
+        assert!(
+            transform_page["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("reviewedBlockIds"))
+        );
         assert_eq!(
             summarize["properties"]["operations"]["items"]["oneOf"][0]["additionalProperties"],
             false
@@ -2313,10 +2445,94 @@ mod tests {
         assert!(page_rule.contains("headings, lists, and paragraphs"));
         assert!(page_rule.contains("Do not stop after one cosmetic operation"));
         assert!(page_rule.contains("complete scope"));
+        assert!(page_rule.contains("reviewedBlockIds"));
+        assert!(page_rule.contains("need no pointless mutation"));
 
         let selection_rule = action_rule("transform_selection");
         assert!(selection_rule.contains("only the selected roots"));
         assert!(!selection_rule.contains("whole mutable page scope"));
+    }
+
+    #[test]
+    fn page_format_requires_exact_reviewed_scope_without_requiring_every_block_to_mutate() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let scope = ActionScope::Transform {
+            selected: HashSet::from([first, second]),
+            replacement_indexes: HashMap::new(),
+        };
+
+        assert!(
+            validate_transform_coverage(
+                "transform_page",
+                &scope,
+                &json!({"reviewedBlockIds":[first, second],"operations":[{
+                    "type":"update_block","blockId":first,"properties":{"text":"Changed"}
+                }]})
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_transform_coverage(
+                "transform_page",
+                &scope,
+                &json!({"reviewedBlockIds":[first]})
+            )
+            .is_err()
+        );
+        assert!(
+            validate_transform_coverage(
+                "transform_page",
+                &scope,
+                &json!({"reviewedBlockIds":[first, first]})
+            )
+            .is_err()
+        );
+        assert!(validate_transform_coverage("transform_selection", &scope, &json!({})).is_ok());
+    }
+
+    #[test]
+    fn page_format_revalidation_rejects_concurrent_content_and_membership_changes() {
+        let workspace = Uuid::new_v4();
+        let root = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        let mut root_block = block(root, workspace, None, vec![child]);
+        root_block.block_type = BlockType::Page;
+        let mut child_block = block(child, workspace, Some(root), vec![]);
+        child_block
+            .properties
+            .insert("text".into(), json!("Original"));
+        child_block.prop_versions.insert("text".into(), 3);
+        let initial = PageView {
+            page: crate::application::ports::page::PageTree {
+                root_id: root,
+                blocks: vec![root_block.clone(), child_block.clone()],
+            },
+            breadcrumbs: vec![],
+            seq: 9,
+            recent_editors: vec![],
+        };
+        let scope = action_scope("transform_page", Some(&initial), &[]).unwrap();
+        assert!(revalidate_page_snapshot(&initial, &initial, &scope).is_ok());
+
+        let mut edited = initial.clone();
+        edited.seq = 10;
+        edited.page.blocks[1]
+            .properties
+            .insert("text".into(), json!("Concurrent"));
+        edited.page.blocks[1].prop_versions.insert("text".into(), 4);
+        assert!(revalidate_page_snapshot(&initial, &edited, &scope).is_err());
+
+        let moved = PageView {
+            page: crate::application::ports::page::PageTree {
+                root_id: root,
+                blocks: vec![root_block],
+            },
+            breadcrumbs: vec![],
+            seq: 10,
+            recent_editors: vec![],
+        };
+        assert!(revalidate_page_snapshot(&initial, &moved, &scope).is_err());
     }
 
     #[test]
