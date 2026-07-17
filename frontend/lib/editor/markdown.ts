@@ -56,13 +56,16 @@ function codeLanguage(value: string) {
 export function isStructuredMarkdownPaste(text: string) {
   return (
     /[\r\n\u0085\u2028\u2029]/.test(text) ||
-    /^[ \t]*(?:\\(?:\\|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|```|---\s*$)/.test(
+    /^[ \t]*(?:\\(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|```|---\s*$)/.test(
       text
     )
   )
 }
 
-export function parseMarkdownBlocks(markdown: string): MarkdownBlockDraft[] {
+export function parseMarkdownBlocks(
+  markdown: string,
+  decodeEscapedBackslash = false
+): MarkdownBlockDraft[] {
   const lines = markdown
     .replace(/\r\n?|[\u0085\u2028\u2029]/g, "\n")
     .split("\n")
@@ -84,7 +87,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlockDraft[] {
       /^([ \t]*)\\(\\|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)(.*)$/.exec(
         line
       )
-    if (escaped) {
+    if (escaped && (escaped[2] !== "\\" || decodeEscapedBackslash)) {
       paragraph.push(`${escaped[1]}${escaped[2]}${escaped[3]}`)
       continue
     }

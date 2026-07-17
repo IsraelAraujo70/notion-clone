@@ -14,6 +14,7 @@ import {
 } from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
+  CROSS_BLOCK_MARKDOWN_MIME,
   writeClipboardEvent,
 } from "@/lib/editor/block-clipboard"
 
@@ -695,6 +696,9 @@ describe("BlockEditor block selection", () => {
       },
     })
     expect(clipboardValues.get("text/plain")).toBe("lect-a\n\nsel")
+    expect(clipboardValues.get(CROSS_BLOCK_MARKDOWN_MIME)).toBe(
+      "lect-a\n\nsel"
+    )
     expect(clipboardValues.has(BLOCK_CLIPBOARD_MIME)).toBe(false)
 
     rerender(

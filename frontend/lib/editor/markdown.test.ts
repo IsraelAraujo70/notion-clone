@@ -131,6 +131,17 @@ const answer = 43
     ])
   })
 
+  it("does not reinterpret an ordinary leading double backslash", () => {
+    const uncPath = "\\\\server\\share"
+    expect(isStructuredMarkdownPaste(uncPath)).toBe(false)
+    expect(parseMarkdownBlocks(uncPath)).toEqual([
+      { blockType: "paragraph", properties: { text: uncPath } },
+    ])
+    expect(parseMarkdownBlocks("\\\\# literal", true)).toEqual([
+      { blockType: "paragraph", properties: { text: "\\# literal" } },
+    ])
+  })
+
   it("detects multiline text and single-line block syntax", () => {
     expect(isStructuredMarkdownPaste("plain text")).toBe(false)
     expect(isStructuredMarkdownPaste("plain\ntext")).toBe(true)

@@ -201,6 +201,9 @@ describe("block editor", () => {
         .dispatchEvent(event)
       expect(event.defaultPrevented).to.eq(true)
       expect(clipboardData.getData("text/plain")).to.eq("pha\n\nbeta\n\nga")
+      expect(
+        clipboardData.getData("application/x-reason-markdown")
+      ).to.eq("pha\n\nbeta\n\nga")
       expect(clipboardData.getData("application/x-reason-blocks+json")).to.eq(
         ""
       )

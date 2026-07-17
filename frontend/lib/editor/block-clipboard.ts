@@ -7,6 +7,7 @@ import { newBlock, type BlockTree } from "@reason/core/engine/tree"
 import { blockText, type VisibleBlock } from "@/lib/editor/tree-view"
 
 export const BLOCK_CLIPBOARD_MIME = "application/x-reason-blocks+json"
+export const CROSS_BLOCK_MARKDOWN_MIME = "application/x-reason-markdown"
 const MAX_CLIPBOARD_BLOCKS = 200
 const MAX_CLIPBOARD_DEPTH = 20
 const MAX_CLIPBOARD_BYTES = 1_000_000
