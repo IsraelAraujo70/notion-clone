@@ -81,7 +81,8 @@ services:
   web:
     profiles: ["docker-web"]
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       target: dev
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:18080
@@ -94,7 +95,7 @@ services:
       watch:
         - action: sync
           path: ./frontend
-          target: /app
+          target: /workspace/frontend
           initial_sync: true
           ignore:
             - node_modules/
@@ -103,6 +104,9 @@ services:
           path: ./frontend/package.json
         - action: rebuild
           path: ./frontend/package-lock.json
+        - action: sync+restart
+          path: ./packages/core
+          target: /workspace/packages/core
 
   api-e2e:
     profiles: ["e2e"]
