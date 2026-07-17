@@ -1,4 +1,60 @@
 describe("auth and dashboard shell", () => {
+  it("keeps the sidebar mounted when navigating between pages", () => {
+    const id = Date.now()
+    let workspaceListRequests = 0
+    let pageListRequests = 0
+
+    cy.intercept("GET", "**/workspaces", () => {
+      workspaceListRequests += 1
+    })
+    cy.intercept("GET", /\/workspaces\/[^/]+\/pages(?:\?.*)?$/, () => {
+      pageListRequests += 1
+    })
+
+    cy.signupByApi(`sidebar-${id}@example.com`).then(({ token }) => {
+      cy.authenticatedVisit("/dashboard", token)
+      cy.location("pathname").should("match", /^\/dashboard\/pages\//)
+      cy.get('[data-cy="page-title"]').should("be.visible")
+
+      cy.location("pathname").then((firstPath) => {
+        const firstPageId = firstPath.split("/").pop()!
+
+        cy.get('[data-cy="nav-pages-create"]').click()
+        cy.location("pathname").should("not.eq", firstPath)
+        cy.get('[data-cy="page-title"]').should("be.visible")
+        cy.get(`[data-cy="nav-page-${firstPageId}"]`).should("be.visible")
+
+        cy.then(() => {
+          workspaceListRequests = 0
+          pageListRequests = 0
+        })
+
+        cy.get('[data-slot="sidebar-container"]').then(($sidebar) => {
+          const sidebar = $sidebar[0]
+
+          cy.get(`[data-cy="nav-page-${firstPageId}"]`).click()
+          cy.location("pathname").should("eq", firstPath)
+          cy.get(`[data-cy="nav-page-${firstPageId}"]`).should(
+            "have.attr",
+            "data-active",
+            "true"
+          )
+          cy.get('[data-slot="sidebar-container"]')
+            .should(($current) => {
+              expect($current[0]).to.equal(sidebar)
+            })
+            .find('[data-slot="skeleton"]')
+            .should("not.exist")
+
+          cy.then(() => {
+            expect(workspaceListRequests).to.equal(0)
+            expect(pageListRequests).to.equal(0)
+          })
+        })
+      })
+    })
+  })
+
   it("signs up through the UI, logs out, logs in, and opens command palette", () => {
     const id = Date.now()
     const email = `starter-${id}@example.com`
