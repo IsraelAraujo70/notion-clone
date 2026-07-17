@@ -66,7 +66,10 @@ export function intersectsSelectionRect(
   )
 }
 
-export function hasNativeTextSelection(container: HTMLElement | null) {
+export function hasNativeTextSelection(
+  container: HTMLElement | null,
+  target?: HTMLElement
+) {
   const selection = window.getSelection()
   if (
     !container ||
@@ -76,10 +79,11 @@ export function hasNativeTextSelection(container: HTMLElement | null) {
   )
     return false
   const range = selection.getRangeAt(0)
-  return (
+  const isInsideContainer =
     container.contains(range.startContainer) &&
     container.contains(range.endContainer)
-  )
+  if (!isInsideContainer) return false
+  return !target || (container.contains(target) && range.intersectsNode(target))
 }
 
 export function planMultiBlockMove(
