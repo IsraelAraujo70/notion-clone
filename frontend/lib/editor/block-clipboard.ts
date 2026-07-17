@@ -4,7 +4,7 @@ import type {
   Operation,
 } from "@reason/core/contracts"
 import { newBlock, type BlockTree } from "@reason/core/engine/tree"
-import { blockText } from "@/lib/editor/tree-view"
+import { blockText, type VisibleBlock } from "@/lib/editor/tree-view"
 
 export const BLOCK_CLIPBOARD_MIME = "application/x-reason-blocks+json"
 const MAX_CLIPBOARD_BLOCKS = 200
@@ -41,8 +41,101 @@ export interface BlockClipboardPayload {
 
 export type ClipboardWriteResult = "structured" | "text"
 
+const TEXT_EDITOR_SELECTOR = '[data-block-text-editor="true"]'
+
+function selectionEditable(container: HTMLElement, node: Node) {
+  const element =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : node.parentElement
+  const editable = element?.closest<HTMLElement>(TEXT_EDITOR_SELECTOR) ?? null
+  return editable && container.contains(editable) ? editable : null
+}
+
+function prefixedMarkdown(text: string, first: string, continuation: string) {
+  return `${first}${text.replaceAll("\n", `\n${continuation}`)}`
+}
+
+function selectionBlockMarkdown(
+  row: Pick<VisibleBlock, "block" | "depth">,
+  text: string
+) {
+  const indent = "  ".repeat(row.depth)
+  switch (row.block.type) {
+    case "heading1":
+      return `${indent}# ${text}`
+    case "heading2":
+      return `${indent}## ${text}`
+    case "heading3":
+      return `${indent}### ${text}`
+    case "bulleted_list_item":
+    case "toggle":
+      return prefixedMarkdown(text, `${indent}- `, `${indent}  `)
+    case "numbered_list_item":
+      return prefixedMarkdown(text, `${indent}1. `, `${indent}   `)
+    case "to_do":
+      return prefixedMarkdown(
+        text,
+        `${indent}- [${row.block.properties.checked === true ? "x" : " "}] `,
+        `${indent}  `
+      )
+    case "quote":
+    case "callout":
+      return prefixedMarkdown(text, `${indent}> `, `${indent}> `)
+    default:
+      return `${indent}${text}`
+  }
+}
+
+export function crossBlockSelectionMarkdown(
+  container: HTMLElement | null,
+  rows: ReadonlyArray<Pick<VisibleBlock, "block" | "depth">>,
+  selection: Selection | null = window.getSelection()
+) {
+  if (
+    !container ||
+    !selection ||
+    selection.isCollapsed ||
+    selection.rangeCount === 0
+  )
+    return null
+
+  const range = selection.getRangeAt(0)
+  const firstEditable = selectionEditable(container, range.startContainer)
+  const lastEditable = selectionEditable(container, range.endContainer)
+  if (!firstEditable || !lastEditable || firstEditable === lastEditable)
+    return null
+
+  const rowsById = new Map(rows.map((row) => [row.block.id, row]))
+  const markdown: string[] = []
+  for (const editable of container.querySelectorAll<HTMLElement>(
+    TEXT_EDITOR_SELECTOR
+  )) {
+    if (!range.intersectsNode(editable)) continue
+    const blockId =
+      editable.closest<HTMLElement>("[data-block-id]")?.dataset.blockId
+    const row = blockId ? rowsById.get(blockId) : undefined
+    if (!row) continue
+
+    const intersection = editable.ownerDocument.createRange()
+    intersection.selectNodeContents(editable)
+    if (editable.contains(range.startContainer)) {
+      intersection.setStart(range.startContainer, range.startOffset)
+    }
+    if (editable.contains(range.endContainer)) {
+      intersection.setEnd(range.endContainer, range.endOffset)
+    }
+    markdown.push(selectionBlockMarkdown(row, intersection.toString()))
+  }
+  return markdown.length > 1 ? markdown.join("\n") : null
+}
+
 let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null =
   null
+
+export function clearFallbackBlockClipboard() {
+  fallbackClipboard = null
+}
 
 function serializeBlock(
   tree: BlockTree,

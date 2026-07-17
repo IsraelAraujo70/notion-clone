@@ -7,8 +7,10 @@ import {
 import {
   BLOCK_CLIPBOARD_MIME,
   type ClipboardBlock,
+  clearFallbackBlockClipboard,
   clipboardPlainText,
   createClipboardInsertOperations,
+  crossBlockSelectionMarkdown,
   fallbackBlockClipboard,
   isRecoverableBlockClipboard,
   readClipboardEvent,
@@ -18,6 +20,108 @@ import {
 } from "./block-clipboard"
 
 describe("block clipboard", () => {
+  it("clears a previous structured fallback before textual copy", () => {
+    const payload = {
+      version: 1 as const,
+      blocks: [
+        {
+          type: "paragraph" as const,
+          properties: { text: "alpha" },
+          children: [],
+        },
+      ],
+    }
+    const values = new Map<string, string>()
+    writeClipboardEvent(
+      {
+        files: [],
+        setData: (type: string, value: string) => values.set(type, value),
+        getData: (type: string) => values.get(type) ?? "",
+      } as unknown as DataTransfer,
+      payload
+    )
+    expect(fallbackBlockClipboard()).not.toBeNull()
+
+    clearFallbackBlockClipboard()
+
+    expect(fallbackBlockClipboard()).toBeNull()
+  })
+
+  it("serializes partial nested and ordered text selections as Markdown", () => {
+    const heading = newBlock("heading1", { text: "Roadmap" }, "heading")
+    const bullet = newBlock(
+      "bulleted_list_item",
+      { text: "Nested item" },
+      "bullet"
+    )
+    const numbered = newBlock(
+      "numbered_list_item",
+      { text: "Ordered item" },
+      "numbered"
+    )
+    const container = document.createElement("div")
+    for (const block of [heading, bullet, numbered]) {
+      const row = document.createElement("div")
+      row.dataset.blockId = block.id
+      const editable = document.createElement("div")
+      editable.dataset.blockTextEditor = "true"
+      editable.textContent = String(block.properties.text)
+      row.append(editable)
+      container.append(row)
+    }
+    document.body.append(container)
+    const editables = container.querySelectorAll<HTMLElement>(
+      '[data-block-text-editor="true"]'
+    )
+    const selection = window.getSelection()!
+    const range = document.createRange()
+    range.setStart(editables[0].firstChild!, 4)
+    range.setEnd(editables[2].firstChild!, 7)
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    expect(
+      crossBlockSelectionMarkdown(
+        container,
+        [
+          { block: heading, depth: 0 },
+          { block: bullet, depth: 1 },
+          { block: numbered, depth: 1 },
+        ],
+        selection
+      )
+    ).toBe("# map\n  - Nested item\n  1. Ordered")
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
+  it("does not replace native copy inside one block", () => {
+    const block = newBlock("heading2", { text: "Native" }, "heading")
+    const container = document.createElement("div")
+    const row = document.createElement("div")
+    row.dataset.blockId = block.id
+    const editable = document.createElement("div")
+    editable.dataset.blockTextEditor = "true"
+    editable.textContent = "Native"
+    row.append(editable)
+    container.append(row)
+    document.body.append(container)
+    const range = document.createRange()
+    range.setStart(editable.firstChild!, 1)
+    range.setEnd(editable.firstChild!, 4)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    expect(
+      crossBlockSelectionMarkdown(container, [{ block, depth: 0 }], selection)
+    ).toBeNull()
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
   it("serializes subtrees without persisted identity and recreates fresh inserts", () => {
     let tree = createPageTree("Clipboard", "root")
     tree = applyOperation(tree, {

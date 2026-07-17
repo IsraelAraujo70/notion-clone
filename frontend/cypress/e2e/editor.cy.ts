@@ -125,6 +125,100 @@ describe("block editor", () => {
       .should("have.text", "preço - item de lista")
   })
 
+  it("selects text by dragging across separate blocks", () => {
+    firstBlock().click().type("alpha{enter}beta{enter}gamma")
+    saved()
+
+    cy.get('[data-block-text-editor="true"]').then(($editables) => {
+      const first = $editables[0]
+      const third = $editables[2]
+      const start = first.getBoundingClientRect()
+      const end = third.getBoundingClientRect()
+      const startX = start.left + Math.min(12, start.width / 2)
+      const startY = start.top + start.height / 2
+      const endX = end.left + Math.min(20, end.width / 2)
+      const endY = end.top + end.height / 2
+
+      first.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 21,
+          pointerType: "mouse",
+          button: 0,
+          buttons: 1,
+          clientX: startX,
+          clientY: startY,
+        })
+      )
+      first.ownerDocument.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 21,
+          pointerType: "mouse",
+          buttons: 1,
+          clientX: endX,
+          clientY: endY,
+        })
+      )
+      first.ownerDocument.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          pointerId: 21,
+          pointerType: "mouse",
+          button: 0,
+          clientX: endX,
+          clientY: endY,
+        })
+      )
+    })
+
+    cy.window().should((win) => {
+      const selection = win.getSelection()!
+      expect(selection.isCollapsed).to.eq(false)
+      expect(selection.anchorNode?.isConnected).to.eq(true)
+      expect(selection.focusNode?.isConnected).to.eq(true)
+      const anchorBlock = (
+        selection.anchorNode?.parentElement ?? null
+      )?.closest("[data-block-id]")
+      const focusBlock = (selection.focusNode?.parentElement ?? null)?.closest(
+        "[data-block-id]"
+      )
+      expect(anchorBlock?.getAttribute("data-block-id")).not.to.eq(
+        focusBlock?.getAttribute("data-block-id")
+      )
+      expect(selection.getRangeAt(0).toString()).to.contain("beta")
+    })
+    cy.window().then((win) => {
+      const clipboardData = new win.DataTransfer()
+      const event = new win.ClipboardEvent("copy", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData,
+      })
+      win.document
+        .querySelector('[data-block-text-editor="true"]')!
+        .dispatchEvent(event)
+      expect(event.defaultPrevented).to.eq(true)
+      expect(clipboardData.getData("text/plain")).to.eq("pha\nbeta\nga")
+      expect(clipboardData.getData("application/x-reason-blocks+json")).to.eq(
+        ""
+      )
+    })
+    cy.get('[data-cy="block-selection-marquee"]').should("not.exist")
+    cy.get('[data-block-text-editor="true"]').should(
+      "have.attr",
+      "contenteditable",
+      "false"
+    )
+    cy.get('[data-cy="block-editor"]').click(0, 0)
+    cy.get('[data-block-text-editor="true"]').should(
+      "have.attr",
+      "contenteditable",
+      "true"
+    )
+  })
+
   it("persists title and blocks across a reload", () => {
     cy.get('[data-cy="page-title"]').click().type("Notas de lançamento")
     firstBlock().click().type("Toda edição é uma operação.")
