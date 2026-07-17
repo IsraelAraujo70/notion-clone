@@ -132,6 +132,8 @@ export type TrashEntry = {
   type: BlockType
   title: string
   trashed_at: string
+  page_id: string | null
+  page_title: string | null
 }
 
 export type SearchResult = {

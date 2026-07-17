@@ -393,6 +393,8 @@ describe("api client", () => {
         type: "paragraph",
         title: "rascunho",
         trashed_at: "2026-07-08T12:00:00Z",
+        page_id: "page-root",
+        page_title: "Project notes",
       },
     ]
     vi.mocked(fetch)
