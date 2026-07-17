@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, type CSSProperties } from "react"
-import { useRouter } from "next/navigation"
+import { useState, type CSSProperties, type ReactNode } from "react"
+import { useParams, useRouter } from "next/navigation"
 import { FileTextIcon, PlusIcon } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
@@ -86,7 +86,7 @@ function EmptyWorkspace() {
   )
 }
 
-function DashboardContent() {
+function DashboardContent({ children }: { children: ReactNode }) {
   const { currentPageId, pages, loading } = usePages()
 
   return (
@@ -100,6 +100,7 @@ function DashboardContent() {
       >
         <AppSidebar />
         <SidebarInset className="bg-background">
+          {children}
           {currentPageId ? (
             <EditorPage pageId={currentPageId} />
           ) : !loading && pages.length === 0 ? (
@@ -116,13 +117,16 @@ function DashboardContent() {
   )
 }
 
-export function DashboardShell({ pageId }: { pageId?: string }) {
+export function DashboardShell({ children }: { children: ReactNode }) {
+  const params = useParams<{ pageId?: string | string[] }>()
+  const pageId = typeof params.pageId === "string" ? params.pageId : undefined
+
   return (
     <RequireAuth>
       <PageLayoutProvider>
         <WorkspaceProvider>
           <PageProvider pageId={pageId}>
-            <DashboardContent />
+            <DashboardContent>{children}</DashboardContent>
           </PageProvider>
         </WorkspaceProvider>
       </PageLayoutProvider>
