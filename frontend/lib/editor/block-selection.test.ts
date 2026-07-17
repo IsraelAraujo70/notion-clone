@@ -5,6 +5,7 @@ import {
   newBlock,
 } from "@reason/core/engine/tree"
 import {
+  hasNativeTextSelection,
   intersectsSelectionRect,
   normalizeSelectedRoots,
   planMultiBlockMove,
@@ -33,6 +34,34 @@ function treeWithBlocks() {
 }
 
 describe("block selection", () => {
+  it("recognizes native text selection across sibling blocks", () => {
+    const container = document.createElement("div")
+    const first = document.createElement("div")
+    const second = document.createElement("div")
+    const third = document.createElement("div")
+    first.textContent = "primeiro"
+    second.textContent = "segundo"
+    third.textContent = "terceiro"
+    container.append(first, second, third)
+    document.body.append(container)
+
+    const range = document.createRange()
+    range.setStart(first.firstChild!, 2)
+    range.setEnd(second.firstChild!, 3)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    expect(hasNativeTextSelection(container)).toBe(true)
+    expect(hasNativeTextSelection(container, first)).toBe(true)
+    expect(hasNativeTextSelection(container, second)).toBe(true)
+    expect(hasNativeTextSelection(container, third)).toBe(false)
+    expect(hasNativeTextSelection(first)).toBe(false)
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
   it("normalizes selected descendants to their selected roots", () => {
     const tree = treeWithBlocks()
     expect(

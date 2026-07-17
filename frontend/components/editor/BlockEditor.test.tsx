@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import type { Operation } from "@reason/core/contracts"
@@ -12,6 +12,21 @@ import {
   type BlockTree,
 } from "@reason/core/engine/tree"
 import { BLOCK_CLIPBOARD_MIME } from "@/lib/editor/block-clipboard"
+
+const restoreDocumentProperties: Array<() => void> = []
+
+function replaceDocumentProperty(name: string, value: unknown) {
+  const descriptor = Object.getOwnPropertyDescriptor(document, name)
+  Object.defineProperty(document, name, { configurable: true, value })
+  restoreDocumentProperties.push(() => {
+    if (descriptor) Object.defineProperty(document, name, descriptor)
+    else Reflect.deleteProperty(document, name)
+  })
+}
+
+afterEach(() => {
+  for (const restore of restoreDocumentProperties.splice(0).reverse()) restore()
+})
 
 function createTree(): BlockTree {
   const page = createPageTree("Test", "page-root")
@@ -571,6 +586,140 @@ function treeWithMissingRootParent() {
 }
 
 describe("BlockEditor block selection", () => {
+  it("selects native text across blocks and restores editing on the next click", async () => {
+    const dispatchBatch = vi.fn()
+    const onSelectedBlockIdsChange = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithThreeBlocks(), new Set())}
+        dispatchBatch={dispatchBatch}
+        onSelectedBlockIdsChange={onSelectedBlockIdsChange}
+      />
+    )
+    const editor = container.firstElementChild as HTMLElement
+    const first = container.querySelector<HTMLElement>(
+      '[data-block-id="select-a"] [data-block-text-editor="true"]'
+    )!
+    const second = container.querySelector<HTMLElement>(
+      '[data-block-id="select-b"] [data-block-text-editor="true"]'
+    )!
+    const third = container.querySelector<HTMLElement>(
+      '[data-block-id="select-c"] [data-block-text-editor="true"]'
+    )!
+    replaceDocumentProperty(
+      "caretPositionFromPoint",
+      vi.fn((x: number) => ({
+        offsetNode: x < 50 ? first.firstChild! : second.firstChild!,
+        offset: x < 50 ? 2 : 3,
+      }))
+    )
+
+    fireEvent.pointerDown(first, {
+      pointerId: 7,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    fireEvent.pointerMove(document, {
+      pointerId: 7,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 100,
+      clientY: 50,
+    })
+    fireEvent.pointerUp(document, {
+      pointerId: 7,
+      pointerType: "mouse",
+      button: 0,
+    })
+
+    const selection = window.getSelection()!
+    expect(selection.isCollapsed).toBe(false)
+    expect(selection.anchorNode).toBe(first.firstChild)
+    expect(selection.focusNode).toBe(second.firstChild)
+    expect(first).toHaveAttribute("contenteditable", "false")
+    expect(second).toHaveAttribute("contenteditable", "false")
+    expect(dispatchBatch).not.toHaveBeenCalled()
+    expect(onSelectedBlockIdsChange).not.toHaveBeenLastCalledWith(
+      expect.arrayContaining(["select-a", "select-b"])
+    )
+    expect(
+      editor.querySelector('[data-cy="block-selection-marquee"]')
+    ).toBeNull()
+
+    const clipboardValues = new Map<string, string>()
+    fireEvent.copy(first, {
+      clipboardData: {
+        files: [],
+        setData: (type: string, value: string) =>
+          clipboardValues.set(type, value),
+        getData: (type: string) => clipboardValues.get(type) ?? "",
+      },
+    })
+    expect(clipboardValues.get("text/plain")).toBe("lect-a\nsel")
+    expect(clipboardValues.has(BLOCK_CLIPBOARD_MIME)).toBe(false)
+
+    selection.removeAllRanges()
+    fireEvent.pointerDown(second, {
+      pointerId: 11,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+      clientX: 100,
+      clientY: 50,
+    })
+    fireEvent.pointerMove(document, {
+      pointerId: 11,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    expect(selection.anchorNode).toBe(second.firstChild)
+    expect(selection.anchorOffset).toBe(3)
+    expect(selection.focusNode).toBe(first.firstChild)
+    expect(selection.focusOffset).toBe(2)
+    fireEvent.pointerUp(document, {
+      pointerId: 11,
+      pointerType: "mouse",
+      button: 0,
+    })
+
+    fireEvent.pointerDown(first, {
+      pointerId: 8,
+      pointerType: "mouse",
+      button: 2,
+      buttons: 2,
+    })
+    fireEvent.contextMenu(first, { button: 2 })
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(document.querySelector('[data-cy="block-context-menu"]')).toBeNull()
+
+    fireEvent.pointerDown(third, {
+      pointerId: 9,
+      pointerType: "mouse",
+      button: 2,
+      buttons: 2,
+    })
+    fireEvent.contextMenu(third, { button: 2 })
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-cy="block-context-menu"]')
+      ).toBeInTheDocument()
+    )
+
+    fireEvent.pointerDown(editor, {
+      pointerId: 10,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+    })
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(second).toHaveAttribute("contenteditable", "true")
+  })
+
   it("draws a geometric marquee and selects intersecting rows", async () => {
     const onSelectedBlockIdsChange = vi.fn()
     const { container } = render(
