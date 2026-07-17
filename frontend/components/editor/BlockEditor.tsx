@@ -54,6 +54,8 @@ import {
 } from "@/lib/editor/block-selection"
 import {
   createClipboardInsertOperations,
+  clearFallbackBlockClipboard,
+  crossBlockSelectionMarkdown,
   currentFallbackBlockClipboard,
   fallbackBlockClipboard,
   readClipboardEvent,
@@ -67,6 +69,7 @@ import {
   type BlockMenuAction,
 } from "./block-options-menu"
 import { useI18n } from "@/lib/i18n/i18n-provider"
+import { useCrossBlockTextSelection } from "./useCrossBlockTextSelection"
 
 type DropPosition = "above" | "below"
 
@@ -278,6 +281,7 @@ export function BlockEditor({
   const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
   const mermaidEditorRefs = useRef(new Map<string, MermaidBlockEditorHandle>())
   const containerRef = useRef<HTMLDivElement>(null)
+  useCrossBlockTextSelection(containerRef, Boolean(readOnly))
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [slash, setSlash] = useState<SlashState | null>(null)
@@ -1166,7 +1170,7 @@ export function BlockEditor({
     (blockId: string, element: HTMLElement) => {
       const useNativeMenu =
         nativeTextContextBlockRef.current === blockId ||
-        hasNativeTextSelection(element)
+        hasNativeTextSelection(containerRef.current, element)
       if (useNativeMenu) {
         nativeTextContextBlockRef.current = blockId
         pendingContextMenuBlockRef.current = null
@@ -1525,6 +1529,20 @@ export function BlockEditor({
         target !== document.body &&
         target !== container &&
         !container?.contains(target)
+      const crossBlockMarkdown =
+        event.type === "copy"
+          ? crossBlockSelectionMarkdown(container, rows, selection)
+          : null
+      if (
+        !outsideEditor &&
+        event.clipboardData &&
+        crossBlockMarkdown !== null
+      ) {
+        event.preventDefault()
+        clearFallbackBlockClipboard()
+        event.clipboardData.setData("text/plain", crossBlockMarkdown)
+        return
+      }
       if (
         selectionRef.current.size === 0 ||
         !event.clipboardData ||
@@ -1558,6 +1576,7 @@ export function BlockEditor({
     clearSelection,
     deleteBlocks,
     readOnly,
+    rows,
     selectedRoots,
     setSelectionBoth,
     tree,
@@ -2078,7 +2097,10 @@ export function BlockEditor({
                       onContextMenuCapture={(event) => {
                         const useNativeMenu =
                           nativeTextContextBlockRef.current === block.id ||
-                          hasNativeTextSelection(event.currentTarget)
+                          hasNativeTextSelection(
+                            containerRef.current,
+                            event.currentTarget
+                          )
                         nativeTextContextBlockRef.current = null
                         if (useNativeMenu) {
                           pendingContextMenuBlockRef.current = null
@@ -2086,6 +2108,7 @@ export function BlockEditor({
                         }
                       }}
                       suppressContentEditableWarning
+                      data-block-text-editor="true"
                       spellCheck
                       className={`min-h-7 break-words outline-none ${
                         text.length > 0 ? "inline-block max-w-full" : "w-full"

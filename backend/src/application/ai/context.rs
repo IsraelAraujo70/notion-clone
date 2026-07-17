@@ -8,9 +8,61 @@ pub struct ContextInput<'a> {
     pub page: Option<&'a PageTree>,
     pub mentioned_pages: &'a [PageTree],
     pub selection: &'a [Uuid],
+    pub structured_page: bool,
     pub ancestors: &'a [Breadcrumb],
     pub semantic: &'a [SemanticCandidate],
     pub budget_tokens: usize,
+}
+
+pub fn build_structured_page_context(
+    page: &PageTree,
+    selection: &[Uuid],
+    budget_tokens: usize,
+) -> String {
+    let by_id = page
+        .blocks
+        .iter()
+        .map(|block| (block.id, block))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut lines = Vec::new();
+    let mut stack = vec![(page.root_id, 0usize, 0usize)];
+    let mut visited = std::collections::HashSet::new();
+    while let Some((id, depth, index)) = stack.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(block) = by_id.get(&id).copied() else {
+            continue;
+        };
+        let value = block
+            .properties
+            .get("text")
+            .or_else(|| block.properties.get("title"))
+            .and_then(|value| serde_json::to_string(value).ok())
+            .map(|value| format!(" value={value}"))
+            .unwrap_or_default();
+        lines.push(format!(
+            "[block:{} type={} depth={} parent={} index={}{}]{}",
+            block.id,
+            block.block_type.as_str(),
+            depth,
+            block
+                .parent_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "none".into()),
+            index,
+            if selection.contains(&block.id) {
+                " mutable"
+            } else {
+                ""
+            },
+            value
+        ));
+        for (child_index, child) in block.content.iter().enumerate().rev() {
+            stack.push((*child, depth + 1, child_index));
+        }
+    }
+    lines.join("\n").chars().take(budget_tokens).collect()
 }
 
 /// Deliberately conservative and deterministic without provider-specific tokenizers.
@@ -90,7 +142,11 @@ pub fn build_context(input: ContextInput<'_>) -> String {
         }
     }
     if let Some(page) = input.page {
-        let text = build_page_context(page, input.selection, input.budget_tokens);
+        let text = if input.structured_page {
+            build_structured_page_context(page, input.selection, input.budget_tokens)
+        } else {
+            build_page_context(page, input.selection, input.budget_tokens)
+        };
         if !text.is_empty() {
             sections.push(format!("CURRENT PAGE (untrusted content):\n{text}"));
         }
@@ -165,6 +221,7 @@ mod tests {
             page: None,
             mentioned_pages: &[],
             selection: &[],
+            structured_page: false,
             ancestors: &[],
             semantic: &[candidate],
             budget_tokens: 120,
@@ -183,6 +240,7 @@ mod tests {
             page: None,
             mentioned_pages: &[],
             selection: &[],
+            structured_page: false,
             ancestors: &[],
             semantic: &[],
             budget_tokens: 12,
@@ -241,6 +299,66 @@ mod tests {
     }
 
     #[test]
+    fn structured_page_context_preserves_hierarchy_order_and_non_text_blocks() {
+        let workspace = Uuid::new_v4();
+        let page = Uuid::new_v4();
+        let heading = Uuid::new_v4();
+        let divider = Uuid::new_v4();
+        let nested = Uuid::new_v4();
+        let tree = PageTree {
+            root_id: page,
+            blocks: vec![
+                block(
+                    page,
+                    workspace,
+                    BlockType::Page,
+                    json!({"title":"Page"}).as_object().unwrap().clone(),
+                    vec![heading, divider],
+                    None,
+                ),
+                block(
+                    heading,
+                    workspace,
+                    BlockType::Heading1,
+                    json!({"text":"Section"}).as_object().unwrap().clone(),
+                    vec![nested],
+                    Some(page),
+                ),
+                block(
+                    divider,
+                    workspace,
+                    BlockType::Divider,
+                    Default::default(),
+                    vec![],
+                    Some(page),
+                ),
+                block(
+                    nested,
+                    workspace,
+                    BlockType::Paragraph,
+                    json!({"text":"Detail"}).as_object().unwrap().clone(),
+                    vec![],
+                    Some(heading),
+                ),
+            ],
+        };
+
+        let context = build_structured_page_context(&tree, &[heading, divider, nested], usize::MAX);
+
+        assert!(context.contains(&format!(
+            "[block:{heading} type=heading1 depth=1 parent={page} index=0 mutable] value=\"Section\""
+        )));
+        assert!(context.contains(&format!(
+            "[block:{nested} type=paragraph depth=2 parent={heading} index=0 mutable] value=\"Detail\""
+        )));
+        assert!(context.contains(&format!(
+            "[block:{divider} type=divider depth=1 parent={page} index=1 mutable]"
+        )));
+        assert!(context.find(&heading.to_string()) < context.find(&nested.to_string()));
+        assert!(context.find(&nested.to_string()) < context.find(&divider.to_string()));
+    }
+
+    #[test]
     fn page_read_is_cycle_safe() {
         let workspace = Uuid::new_v4();
         let page = Uuid::new_v4();
@@ -296,6 +414,7 @@ mod tests {
             page: None,
             mentioned_pages: &[tree],
             selection: &[],
+            structured_page: false,
             ancestors: &[],
             semantic: &[],
             budget_tokens: 4_000,

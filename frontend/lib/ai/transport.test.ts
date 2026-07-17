@@ -143,6 +143,55 @@ describe("aiTransport", () => {
     ])
   })
 
+  it("sends page formatting with page scope and no client selection", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'event: completion\ndata: {"type":"completion","run_id":"run-page","group_id":"group-page","last_seq":7}\n\n'
+          )
+        )
+        controller.close()
+      },
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      )
+    )
+
+    await aiTransport.streamMessage(
+      "token",
+      "workspace-1",
+      "conversation-1",
+      {
+        prompt: "Format everything",
+        action: {
+          type: "transform_page",
+          page_id: "page-1",
+          instruction: "Format everything",
+        },
+      },
+      vi.fn()
+    )
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE_URL}/workspaces/workspace-1/ai/actions/transform_page`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          conversationId: "conversation-1",
+          pageId: "page-1",
+          selection: [],
+          prompt: "Format everything",
+        }),
+      })
+    )
+  })
+
   it("sends current page and selection context for workspace questions", async () => {
     vi.stubGlobal(
       "fetch",

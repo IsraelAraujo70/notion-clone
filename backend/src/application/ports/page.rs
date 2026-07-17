@@ -180,8 +180,12 @@ pub trait PageRepository: Send + Sync {
         actor_id: Uuid,
         operations: &[Operation],
         _group: Option<&OperationGroup>,
+        expected_workspace_seq: Option<i64>,
         now: DateTime<Utc>,
     ) -> Result<Vec<AppliedOperation>, RepositoryError> {
+        if expected_workspace_seq.is_some() {
+            return Err(RepositoryError::Unexpected);
+        }
         let mut applied = Vec::with_capacity(operations.len());
         for operation in operations {
             let ack = self

@@ -11,6 +11,24 @@ import { fetch } from "expo/fetch"
 
 import { API_BASE_URL, ApiError } from "./api"
 
+function actionContext(action: SendAiMessageInput["action"]) {
+  switch (action.type) {
+    case "continue_writing":
+      return { pageId: undefined, selection: [action.anchor_block_id] }
+    case "summarize_page":
+    case "transform_page":
+      return { pageId: action.page_id, selection: [] }
+    case "transform_selection":
+      return { pageId: undefined, selection: action.block_ids }
+    case "workspace_agent":
+      return { pageId: action.page_id, selection: action.selection }
+    default: {
+      const exhaustive: never = action
+      return exhaustive
+    }
+  }
+}
+
 async function aiRequest<T>(
   path: string,
   token: string,
@@ -111,6 +129,7 @@ export const aiTransport = {
     signal?: AbortSignal
   ) {
     const actionName = input.action.type
+    const context = actionContext(input.action)
     const response = await fetch(
       `${API_BASE_URL}/workspaces/${workspaceId}/ai/actions/${actionName}`,
       {
@@ -122,15 +141,8 @@ export const aiTransport = {
         },
         body: JSON.stringify({
           conversationId,
-          pageId:
-            input.action.type === "summarize_page" ||
-            input.action.type === "workspace_agent"
-              ? input.action.page_id
-              : undefined,
-          selection:
-            input.action.type === "workspace_agent"
-              ? input.action.selection
-              : [],
+          pageId: context.pageId,
+          selection: context.selection,
           mentionedPageIds:
             input.action.type === "workspace_agent"
               ? input.action.mentioned_page_ids

@@ -1302,18 +1302,27 @@ impl PageRepository for PostgresPageRepository {
         actor_id: Uuid,
         operations: &[Operation],
         group: Option<&OperationGroup>,
+        expected_workspace_seq: Option<i64>,
         now: DateTime<Utc>,
     ) -> Result<Vec<crate::application::ports::page::AppliedOperation>, RepositoryError> {
         if operations.is_empty() {
             return Ok(Vec::new());
         }
         let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
-        sqlx::query("SELECT id FROM workspaces WHERE id=$1 FOR UPDATE")
-            .bind(workspace_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_sqlx_error)?
-            .ok_or(RepositoryError::NotFound)?;
+        let current_seq = sqlx::query_as::<_, (i64,)>(
+            "SELECT operation_seq FROM workspaces WHERE id=$1 FOR UPDATE",
+        )
+        .bind(workspace_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or(RepositoryError::NotFound)?
+        .0;
+        if expected_workspace_seq.is_some_and(|expected| expected != current_seq) {
+            return Err(RepositoryError::Domain(DomainError::Validation(
+                "Page changed while the AI was formatting it",
+            )));
+        }
 
         if let Some(group) = group {
             sqlx::query("INSERT INTO operation_groups(id,workspace_id,actor_id,source,provenance,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,id) DO NOTHING")
