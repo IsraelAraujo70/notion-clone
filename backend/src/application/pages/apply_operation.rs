@@ -54,6 +54,18 @@ impl ApplyOperationUseCase {
         operations: Vec<Operation>,
         group: Option<OperationGroup>,
     ) -> Result<Vec<OperationAck>, AppError> {
+        self.execute_batch_at_seq(user_id, workspace_id, operations, group, None)
+            .await
+    }
+
+    pub async fn execute_batch_at_seq(
+        &self,
+        user_id: Uuid,
+        workspace_id: Uuid,
+        operations: Vec<Operation>,
+        group: Option<OperationGroup>,
+        expected_workspace_seq: Option<i64>,
+    ) -> Result<Vec<OperationAck>, AppError> {
         if operations.is_empty() {
             return Ok(Vec::new());
         }
@@ -76,6 +88,7 @@ impl ApplyOperationUseCase {
                 user_id,
                 &operations,
                 group.as_ref(),
+                expected_workspace_seq,
                 self.clock.now(),
             )
             .await

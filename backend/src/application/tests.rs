@@ -1117,6 +1117,7 @@ type ListedOperationRange = (i64, Option<i64>, Option<i64>);
 struct FakePageRepository {
     applied: Mutex<Vec<Operation>>,
     listed_ranges: Mutex<Vec<ListedOperationRange>>,
+    trash_calls: Mutex<Vec<Uuid>>,
     search_calls: Mutex<Vec<(Uuid, String, i64)>>,
     public_link: Mutex<Option<PublicLink>>,
     public_page: Mutex<Option<PageTree>>,
@@ -1151,7 +1152,8 @@ impl PageRepository for FakePageRepository {
         })
     }
 
-    async fn list_trash(&self, _workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
+    async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
+        self.trash_calls.lock().unwrap().push(workspace_id);
         Ok(Vec::new())
     }
 
@@ -1430,6 +1432,10 @@ async fn every_member_reads_pages_and_trash() {
         );
         assert!(trash.execute(user_id, f.workspace_id).await.is_ok());
     }
+    assert_eq!(
+        f.pages.trash_calls.lock().unwrap().as_slice(),
+        &[f.workspace_id, f.workspace_id, f.workspace_id]
+    );
 }
 
 #[tokio::test]
@@ -1471,6 +1477,16 @@ async fn non_member_cannot_read_or_write() {
             .unwrap_err(),
         AppError::Forbidden
     );
+
+    let trash = ListTrashUseCase::new(page_repository.clone(), f.workspaces.clone());
+    assert_eq!(
+        trash
+            .execute(f.stranger_id, f.workspace_id)
+            .await
+            .unwrap_err(),
+        AppError::Forbidden
+    );
+    assert!(f.pages.trash_calls.lock().unwrap().is_empty());
 
     let apply = ApplyOperationUseCase::new(
         page_repository,

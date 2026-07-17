@@ -67,12 +67,12 @@ Transferência:
 | GET | `/search?q=&limit=` | Busca textual nos workspaces acessíveis. |
 | GET/POST/DELETE | `/workspaces/{workspace_id}/pages/{page_id}/public-link` | Consulta, cria ou revoga link público. |
 | GET | `/public/pages/{token}` | Lê uma página pública sem suas subpáginas. |
-| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas. |
+| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas sem outro ancestral no lixo, com tipo e contexto da página mais próxima. |
 | DELETE | `/workspaces/{workspace_id}/trash/{block_id}` | Exclui uma raiz permanentemente. |
 | POST | `/workspaces/{workspace_id}/uploads/presign` | Gera URL de upload de imagem. |
 | GET | `/media/{key}` | Redireciona para uma URL temporária do objeto. |
 
-Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão permanente retorna `202` e agenda a limpeza dos arquivos.
+Cada item da lixeira contém `id`, `type`, `title`, `trashed_at`, `page_id` e `page_title`. Os dois campos de página são `null` quando não há uma página visível na ancestralidade. Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão permanente retorna `202` e agenda a limpeza dos arquivos.
 
 ## IA
 
@@ -83,7 +83,7 @@ Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão perm
 | GET | `/workspaces/{workspace_id}/ai/runs/{run_id}` | Consulta uma execução do usuário. |
 | POST | `/workspaces/{workspace_id}/ai/actions/{action}` | Executa uma ação e retorna SSE. |
 
-`action` aceita `continue_writing`, `summarize_page`, `transform_selection` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo.
+`action` aceita `continue_writing`, `summarize_page`, `transform_selection`, `transform_page` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo. `transform_page` recebe `pageId` e o servidor deriva a subárvore mutável completa; `transform_selection` continua restrito aos IDs de `selection`.
 
 O stream SSE envia `run`, `text`, `tool`, `usage`, `completion` ou `run_failed`, além de keep-alive.
 

@@ -45,4 +45,28 @@ describe("AiActionControls", () => {
       "Improve clarity and formatting"
     )
   })
+
+  it("represents page formatting explicitly instead of sending root children", async () => {
+    const onAction = vi.fn()
+    render(
+      <AiActionControls
+        canWrite
+        pageId="page-1"
+        pageBlockIds={["direct-child"]}
+        selectedBlockIds={["selected-child"]}
+        onAction={onAction}
+      />
+    )
+
+    await userEvent.click(screen.getByRole("button", { name: /Format page/ }))
+
+    expect(onAction).toHaveBeenCalledWith(
+      {
+        type: "transform_page",
+        page_id: "page-1",
+        instruction: "Improve the page structure and formatting",
+      },
+      "Improve the page structure and formatting"
+    )
+  })
 })
