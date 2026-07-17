@@ -67,6 +67,7 @@ import {
   type BlockMenuAction,
 } from "./block-options-menu"
 import { useI18n } from "@/lib/i18n/i18n-provider"
+import { toast } from "sonner"
 
 type DropPosition = "above" | "below"
 
@@ -1215,13 +1216,15 @@ export function BlockEditor({
           )
           setClipboardReady(true)
         } catch {
+          if (action === "cut")
+            toast.error(t("Could not cut the blocks. They were not deleted."))
           return
         }
       }
       if (action !== "copy") deleteBlocks(ids)
       if (action !== "copy") clearSelection()
     },
-    [clearSelection, deleteBlocks, selectedRoots, tree]
+    [clearSelection, deleteBlocks, selectedRoots, t, tree]
   )
 
   const duplicateSelectedBlocks = useCallback(() => {
@@ -1527,22 +1530,31 @@ export function BlockEditor({
         !container?.contains(target)
       if (
         selectionRef.current.size === 0 ||
-        !event.clipboardData ||
         nativeSelectionExists ||
         outsideEditor
       )
         return
+      if (!event.clipboardData) return false
+      try {
+        writeClipboardEvent(
+          event.clipboardData,
+          serializeBlocks(tree, selectedRoots())
+        )
+      } catch {
+        return false
+      }
       event.preventDefault()
-      writeClipboardEvent(
-        event.clipboardData,
-        serializeBlocks(tree, selectedRoots())
-      )
       setClipboardReady(true)
+      return true
     }
     const onCut = (event: globalThis.ClipboardEvent) => {
       if (readOnly) return
-      onCopy(event)
-      if (!event.defaultPrevented) return
+      const copied = onCopy(event)
+      if (copied === undefined) return
+      if (!copied) {
+        toast.error(t("Could not cut the blocks. They were not deleted."))
+        return
+      }
       deleteBlocks(selectedRoots())
       clearSelection()
     }
@@ -1560,6 +1572,7 @@ export function BlockEditor({
     readOnly,
     selectedRoots,
     setSelectionBoth,
+    t,
     tree,
     visibleIds,
   ])

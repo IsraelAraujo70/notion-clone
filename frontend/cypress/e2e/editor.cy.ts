@@ -94,6 +94,26 @@ describe("block editor", () => {
     ).should("have.text", "item de lista")
   })
 
+  it("keeps a block when menu cut cannot access the clipboard", () => {
+    firstBlock().click().type("Não pode sumir")
+    saved()
+
+    cy.window().then((win) => {
+      const denied = () => Promise.reject(new Error("clipboard denied"))
+      Object.defineProperty(win.navigator, "clipboard", {
+        configurable: true,
+        value: { write: denied, writeText: denied },
+      })
+    })
+    firstBlock().then(($editable) => openBlockContextMenu($editable[0]))
+    cy.get('[data-cy="block-menu-cut"]').click()
+
+    cy.contains("Could not cut the blocks. They were not deleted.").should(
+      "be.visible"
+    )
+    firstBlock().should("have.text", "Não pode sumir")
+  })
+
   it("keeps symbol-heavy typing stable", () => {
     firstBlock().click().type("C# Título grande")
     firstBlock().should("have.text", "C# Título grande")

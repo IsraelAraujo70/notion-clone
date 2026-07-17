@@ -6,9 +6,13 @@ import {
 } from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
+  clipboardPlainText,
   createClipboardInsertOperations,
+  fallbackBlockClipboard,
   readClipboardEvent,
   serializeBlocks,
+  writeClipboardEvent,
+  writeNavigatorClipboard,
 } from "./block-clipboard"
 
 describe("block clipboard", () => {
@@ -105,5 +109,75 @@ describe("block clipboard", () => {
         )
       )
     ).toBeNull()
+  })
+
+  it("exports text/plain as Markdown", () => {
+    expect(
+      clipboardPlainText({
+        version: 1,
+        blocks: [
+          { type: "heading2", properties: { text: "Plan" }, children: [] },
+          {
+            type: "to_do",
+            properties: { text: "Ship", checked: true },
+            children: [],
+          },
+          {
+            type: "code",
+            properties: { text: "const ready = true", language: "typescript" },
+            children: [],
+          },
+        ],
+      })
+    ).toBe("## Plan\n- [x] Ship\n```typescript\nconst ready = true\n```")
+  })
+
+  it("uses plain text when an event clipboard rejects the structured MIME", () => {
+    const values = new Map<string, string>()
+    writeClipboardEvent(
+      {
+        setData: (type: string, value: string) => {
+          if (type === BLOCK_CLIPBOARD_MIME) throw new Error("unsupported")
+          values.set(type, value)
+        },
+      } as DataTransfer,
+      {
+        version: 1,
+        blocks: [
+          { type: "paragraph", properties: { text: "safe" }, children: [] },
+        ],
+      }
+    )
+
+    expect(values.get("text/plain")).toBe("safe")
+  })
+
+  it("does not authorize an in-memory fallback when the Clipboard API rejects", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    })
+
+    try {
+      await expect(
+        writeNavigatorClipboard({
+          version: 1,
+          blocks: [
+            {
+              type: "paragraph",
+              properties: { text: "not copied" },
+              children: [],
+            },
+          ],
+        })
+      ).rejects.toThrow("denied")
+      expect(fallbackBlockClipboard()?.blocks[0]?.properties.text).not.toBe(
+        "not copied"
+      )
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor)
+      else Reflect.deleteProperty(navigator, "clipboard")
+    }
   })
 })

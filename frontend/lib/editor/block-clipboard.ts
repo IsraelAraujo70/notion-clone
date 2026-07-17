@@ -70,12 +70,50 @@ export function serializeBlocks(
 }
 
 function clipboardBlockText(block: ClipboardBlock): string {
-  const own =
+  const text =
     typeof block.properties.text === "string"
       ? block.properties.text
       : typeof block.properties.title === "string"
         ? block.properties.title
         : ""
+  const own = (() => {
+    switch (block.type) {
+      case "heading1":
+        return `# ${text}`
+      case "heading2":
+        return `## ${text}`
+      case "heading3":
+        return `### ${text}`
+      case "bulleted_list_item":
+        return `- ${text}`
+      case "numbered_list_item":
+        return `1. ${text}`
+      case "to_do":
+        return `- [${block.properties.checked === true ? "x" : " "}] ${text}`
+      case "quote":
+        return text
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n")
+      case "code":
+        return `\`\`\`${typeof block.properties.language === "string" ? block.properties.language : ""}\n${text}\n\`\`\``
+      case "mermaid":
+        return `\`\`\`mermaid\n${text}\n\`\`\``
+      case "divider":
+        return "---"
+      case "image": {
+        const url =
+          typeof block.properties.url === "string" ? block.properties.url : ""
+        const caption =
+          typeof block.properties.caption === "string"
+            ? block.properties.caption
+            : ""
+        return url ? `![${caption}](${url})` : caption
+      }
+      default:
+        return text
+    }
+  })()
   return [own, ...block.children.map(clipboardBlockText)]
     .filter(Boolean)
     .join("\n")
@@ -90,17 +128,29 @@ export function writeClipboardEvent(
   payload: BlockClipboardPayload
 ) {
   const text = clipboardPlainText(payload)
-  clipboard.setData(BLOCK_CLIPBOARD_MIME, JSON.stringify(payload))
-  clipboard.setData("text/plain", text)
+  let wrote = false
+  try {
+    clipboard.setData(BLOCK_CLIPBOARD_MIME, JSON.stringify(payload))
+    wrote = true
+  } catch {
+    // Some browsers reject custom formats but still accept plain text.
+  }
+  try {
+    clipboard.setData("text/plain", text)
+    wrote = true
+  } catch {
+    // A successful structured write still makes the cut recoverable in Reason.
+  }
+  if (!wrote) throw new Error("Clipboard event write failed")
   fallbackClipboard = { payload, text }
 }
 
 export async function writeNavigatorClipboard(payload: BlockClipboardPayload) {
   const text = clipboardPlainText(payload)
-  fallbackClipboard = { payload, text }
-  if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+  const clipboard = navigator.clipboard
+  if (typeof ClipboardItem !== "undefined" && clipboard?.write) {
     try {
-      await navigator.clipboard.write([
+      await clipboard.write([
         new ClipboardItem({
           "text/plain": new Blob([text], { type: "text/plain" }),
           [BLOCK_CLIPBOARD_MIME]: new Blob([JSON.stringify(payload)], {
@@ -108,12 +158,15 @@ export async function writeNavigatorClipboard(payload: BlockClipboardPayload) {
           }),
         }),
       ])
+      fallbackClipboard = { payload, text }
       return
     } catch {
       // Chromium may reject custom MIME types outside a secure context.
     }
   }
-  await navigator.clipboard.writeText(text)
+  if (!clipboard?.writeText) throw new Error("Clipboard API unavailable")
+  await clipboard.writeText(text)
+  fallbackClipboard = { payload, text }
 }
 
 function parsePayload(value: string): BlockClipboardPayload | null {
