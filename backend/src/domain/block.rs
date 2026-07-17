@@ -27,6 +27,7 @@ pub enum BlockType {
     Callout,
     Divider,
     Image,
+    Mermaid,
 }
 
 impl BlockType {
@@ -46,6 +47,7 @@ impl BlockType {
             Self::Callout => "callout",
             Self::Divider => "divider",
             Self::Image => "image",
+            Self::Mermaid => "mermaid",
         }
     }
 }
@@ -66,6 +68,7 @@ pub fn parse_block_type(value: &str) -> Result<BlockType, DomainError> {
         "callout" => Ok(BlockType::Callout),
         "divider" => Ok(BlockType::Divider),
         "image" => Ok(BlockType::Image),
+        "mermaid" => Ok(BlockType::Mermaid),
         _ => Err(DomainError::Validation("Unknown block type")),
     }
 }
@@ -1099,6 +1102,27 @@ mod tests {
         });
         let block: Block = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(block.block_type, BlockType::ToDo);
+        assert_eq!(serde_json::to_value(&block).unwrap(), json);
+    }
+
+    #[test]
+    fn mermaid_block_type_and_source_match_the_typescript_contract() {
+        let json = serde_json::json!({
+            "id": "0f9d1a4e-0000-4000-8000-000000000005",
+            "workspaceId": "0f9d1a4e-0000-4000-8000-000000000006",
+            "type": "mermaid",
+            "properties": {"text": "graph TD; A-->B"},
+            "content": [],
+            "parentId": null,
+            "trashedAt": null,
+            "trashedIndex": null
+        });
+
+        let block: Block = serde_json::from_value(json.clone()).unwrap();
+
+        assert_eq!(parse_block_type("mermaid").unwrap(), BlockType::Mermaid);
+        assert_eq!(block.block_type.as_str(), "mermaid");
+        assert_eq!(block.properties["text"], "graph TD; A-->B");
         assert_eq!(serde_json::to_value(&block).unwrap(), json);
     }
 }

@@ -57,6 +57,12 @@ export const SLASH_ITEMS = [
   { type: "toggle", icon: "▸", label: "Toggle", keywords: "toggle collapse" },
   { type: "quote", icon: "”", label: "Quote", keywords: "quote citation" },
   { type: "code", icon: "</>", label: "Code", keywords: "code source" },
+  {
+    type: "mermaid",
+    icon: "◇",
+    label: "Mermaid",
+    keywords: "mermaid diagram flowchart graph",
+  },
   { type: "callout", icon: "💡", label: "Callout", keywords: "callout notice" },
   {
     type: "divider",

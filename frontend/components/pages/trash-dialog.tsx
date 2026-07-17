@@ -39,6 +39,7 @@ const BLOCK_TYPE_MESSAGES: Record<TrashEntry["type"], Message> = {
   toggle: "Toggle",
   quote: "Quote",
   code: "Code",
+  mermaid: "Mermaid",
   callout: "Callout",
   divider: "Divider",
   image: "Image",

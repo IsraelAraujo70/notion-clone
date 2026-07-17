@@ -166,6 +166,7 @@ describe("BlockEditor slash menu", () => {
 
     expect(screen.getByRole("button", { name: /Text$/ })).toBeVisible()
     expect(screen.getByRole("button", { name: /Image$/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Mermaid$/ })).toBeVisible()
 
     fireEvent.keyDown(editable, { key: "Escape" })
     expect(screen.queryByRole("button", { name: /Text$/ })).toBeNull()
@@ -236,6 +237,35 @@ describe("BlockEditor slash menu", () => {
       { breakCoalescing: true }
     )
     expect(editable).toHaveFocus()
+  })
+
+  it("creates Mermaid through the canonical update operation", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/mermaid")
+    fireEvent.mouseDown(screen.getByRole("button", { name: /Mermaid$/ }))
+
+    expect(dispatchBatch).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "empty-block",
+          blockType: "mermaid",
+          properties: expect.objectContaining({ text: "" }),
+        }),
+      ],
+      { breakCoalescing: true }
+    )
   })
 
   it("closes the menu when focus leaves the block", () => {

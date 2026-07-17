@@ -1125,7 +1125,7 @@ fn apply_operations_schema(action: &str) -> Value {
 fn content_block_type_schema() -> Value {
     json!({"type":"string","enum":[
         "paragraph","heading1","heading2","heading3","bulleted_list_item",
-        "numbered_list_item","to_do","toggle","quote","code","callout","divider"
+        "numbered_list_item","to_do","toggle","quote","code","callout","divider","mermaid"
     ]})
 }
 
@@ -2115,6 +2115,36 @@ mod tests {
             summarize["properties"]["operations"]["items"]["oneOf"][0]["additionalProperties"],
             false
         );
+    }
+
+    #[test]
+    fn ai_schema_and_compiler_accept_mermaid_blocks() {
+        let schema = content_block_type_schema();
+        assert!(
+            schema["enum"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("mermaid"))
+        );
+
+        let operations = compile_operations(
+            &json!({"operations":[{
+                "type":"insert_block",
+                "parentId":Uuid::new_v4(),
+                "index":0,
+                "block":{"type":"mermaid","properties":{"text":"graph TD; A-->B"}}
+            }]}),
+            Uuid::new_v4(),
+        )
+        .unwrap();
+
+        match &operations[0] {
+            Operation::InsertBlock { block, .. } => {
+                assert_eq!(block.block_type, BlockType::Mermaid);
+                assert_eq!(block.properties["text"], "graph TD; A-->B");
+            }
+            _ => panic!("expected insert operation"),
+        }
     }
 
     #[test]

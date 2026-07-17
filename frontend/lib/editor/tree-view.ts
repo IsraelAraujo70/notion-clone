@@ -19,6 +19,7 @@ export const TEXT_BLOCK_TYPES: ReadonlySet<BlockType> = new Set([
   "toggle",
   "quote",
   "code",
+  "mermaid",
   "callout",
 ])
 

@@ -62,7 +62,7 @@ interface Props {
 export function BlockContextOptionsContent(props: Props) {
   const { t } = useI18n()
   const turnIntoItems = useSlashItems().filter(
-    (item) => !["image", "divider"].includes(item.type)
+    (item) => !["image", "divider", "mermaid"].includes(item.type)
   )
   const selectionLabel = t(
     props.count === 1 ? "{count} block selected" : "{count} blocks selected",
@@ -179,7 +179,7 @@ export function BlockContextOptionsContent(props: Props) {
 export function BlockDropdownOptionsContent(props: Props) {
   const { t } = useI18n()
   const turnIntoItems = useSlashItems().filter(
-    (item) => !["image", "divider"].includes(item.type)
+    (item) => !["image", "divider", "mermaid"].includes(item.type)
   )
   const selectionLabel = t(
     props.count === 1 ? "{count} block selected" : "{count} blocks selected",

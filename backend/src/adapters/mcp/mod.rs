@@ -318,7 +318,7 @@ fn text_result(value: &impl serde::Serialize) -> Result<Value, Value> {
         .map_err(|_| tool_error("Reason could not serialize the tool result"))?;
     Ok(json!({
         "content": [{"type": "text", "text": value.to_string()}],
-        "structuredContent": value,
+        "structuredContent": {"result": value},
         "isError": false
     }))
 }
@@ -543,7 +543,7 @@ fn block_type_schema() -> Value {
         "enum": [
             "page", "paragraph", "heading1", "heading2", "heading3",
             "bulleted_list_item", "numbered_list_item", "to_do", "toggle",
-            "quote", "code", "callout", "divider", "image"
+            "quote", "code", "callout", "divider", "image", "mermaid"
         ]
     })
 }
@@ -591,5 +591,21 @@ mod tests {
         assert!(schema.contains("insert_block"));
         assert!(schema.contains("update_block"));
         assert!(!schema.contains("transfer_subtree"));
+    }
+
+    #[test]
+    fn operation_tool_schema_accepts_mermaid_blocks() {
+        let types = block_type_schema()["enum"].as_array().unwrap().clone();
+
+        assert!(types.contains(&json!("mermaid")));
+    }
+
+    #[test]
+    fn text_result_wraps_structured_content_in_an_object() {
+        let result = text_result(&vec!["one", "two"]).unwrap();
+
+        assert_eq!(result["content"][0]["text"], r#"["one","two"]"#);
+        assert_eq!(result["structuredContent"]["result"], json!(["one", "two"]));
+        assert!(result["structuredContent"].is_object());
     }
 }

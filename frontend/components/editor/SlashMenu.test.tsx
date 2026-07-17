@@ -33,4 +33,10 @@ describe("filteredSlashItems", () => {
       expect(filteredSlashItems(query)).toEqual(SLASH_ITEMS)
     }
   )
+
+  it("finds Mermaid by diagram aliases", () => {
+    expect(filteredSlashItems("flowchart").map((item) => item.type)).toEqual([
+      "mermaid",
+    ])
+  })
 })

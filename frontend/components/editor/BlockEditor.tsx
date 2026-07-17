@@ -33,6 +33,10 @@ import {
 import { createId } from "@reason/core/id"
 import type { PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
+import {
+  MermaidBlockEditor,
+  type MermaidBlockEditorHandle,
+} from "./MermaidBlockEditor"
 import { filteredSlashItems, SlashMenu, useSlashItems } from "./SlashMenu"
 import { BlockPresenceAvatar } from "./presence-avatars"
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -272,6 +276,7 @@ export function BlockEditor({
   const workspaceId = getBlock(tree, tree.rootId).workspaceId
   const editableRefs = useRef(new Map<string, HTMLElement>())
   const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
+  const mermaidEditorRefs = useRef(new Map<string, MermaidBlockEditorHandle>())
   const containerRef = useRef<HTMLDivElement>(null)
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
@@ -362,6 +367,14 @@ export function BlockEditor({
     []
   )
 
+  const setMermaidEditorRef = useCallback(
+    (blockId: string, editor: MermaidBlockEditorHandle | null) => {
+      if (editor) mermaidEditorRefs.current.set(blockId, editor)
+      else mermaidEditorRefs.current.delete(blockId)
+    },
+    []
+  )
+
   const requestFocus = useCallback((request: FocusRequest) => {
     focusRequestRef.current = request
   }, [])
@@ -385,8 +398,11 @@ export function BlockEditor({
     if (!request) return
     const block = tree.blocks.get(request.blockId)
     if (!block || !isTextBlock(block)) return
-    if (block.type === "code") {
-      const editor = codeEditorRefs.current.get(request.blockId)
+    if (block.type === "code" || block.type === "mermaid") {
+      const editor =
+        block.type === "code"
+          ? codeEditorRefs.current.get(request.blockId)
+          : mermaidEditorRefs.current.get(request.blockId)
       if (!editor) return
       editor.focus(request.offset)
       focusRequestRef.current = null
@@ -1876,6 +1892,44 @@ export function BlockEditor({
                       {block.properties.caption}
                     </p>
                   ) : null}
+                </div>
+              ) : block.type === "mermaid" ? (
+                <div onContextMenuCapture={(event) => event.stopPropagation()}>
+                  <MermaidBlockEditor
+                    ref={(editor) => setMermaidEditorRef(block.id, editor)}
+                    blockId={block.id}
+                    value={text}
+                    readOnly={readOnly}
+                    onChange={(nextText) =>
+                      dispatchBatch(
+                        [
+                          {
+                            type: "update_block",
+                            opId: opId(),
+                            blockId: block.id,
+                            properties: { text: nextText },
+                          },
+                        ],
+                        { coalesceKey: `text:${block.id}` }
+                      )
+                    }
+                    onFocus={() => {
+                      setFocusedBlockId(block.id)
+                      onSelectedBlockChange(block.id)
+                      clearSelection()
+                    }}
+                    onBlur={() => {
+                      setFocusedBlockId((current) =>
+                        current === block.id ? null : current
+                      )
+                      dispatchBatch([], { breakCoalescing: true })
+                    }}
+                    onExit={() => exitCodeBlock(block)}
+                    onMergeBackward={() => mergeBackward(block)}
+                    onMoveFocus={(direction) => moveFocus(block.id, direction)}
+                    onUndo={undo}
+                    onRedo={redo}
+                  />
                 </div>
               ) : block.type === "code" ? (
                 <div onContextMenuCapture={(event) => event.stopPropagation()}>

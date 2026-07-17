@@ -22,6 +22,7 @@ const BLOCK_TYPES = new Set<BlockType>([
   "toggle",
   "quote",
   "code",
+  "mermaid",
   "callout",
   "divider",
   "image",
