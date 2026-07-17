@@ -543,7 +543,7 @@ fn block_type_schema() -> Value {
         "enum": [
             "page", "paragraph", "heading1", "heading2", "heading3",
             "bulleted_list_item", "numbered_list_item", "to_do", "toggle",
-            "quote", "code", "callout", "divider", "image"
+            "quote", "code", "callout", "divider", "image", "mermaid"
         ]
     })
 }
@@ -591,6 +591,13 @@ mod tests {
         assert!(schema.contains("insert_block"));
         assert!(schema.contains("update_block"));
         assert!(!schema.contains("transfer_subtree"));
+    }
+
+    #[test]
+    fn operation_tool_schema_accepts_mermaid_blocks() {
+        let types = block_type_schema()["enum"].as_array().unwrap().clone();
+
+        assert!(types.contains(&json!("mermaid")));
     }
 
     #[test]

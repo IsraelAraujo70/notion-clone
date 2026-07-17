@@ -89,13 +89,18 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlockDraft[] {
         code.push(lines[index])
         index += 1
       }
-      blocks.push({
-        blockType: "code",
-        properties: {
-          text: code.join("\n"),
-          language: codeLanguage(fence[1] || "plaintext"),
-        },
-      })
+      const language = fence[1].toLowerCase()
+      blocks.push(
+        language === "mermaid"
+          ? { blockType: "mermaid", properties: { text: code.join("\n") } }
+          : {
+              blockType: "code",
+              properties: {
+                text: code.join("\n"),
+                language: codeLanguage(language || "plaintext"),
+              },
+            }
+      )
       continue
     }
     if (!line.trim()) {

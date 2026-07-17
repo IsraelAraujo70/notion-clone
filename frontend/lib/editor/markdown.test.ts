@@ -101,6 +101,17 @@ const answer = 43
     ])
   })
 
+  it("imports Mermaid fences as diagram blocks", () => {
+    expect(
+      parseMarkdownBlocks("```mermaid\nflowchart LR\n  A --> B\n```")
+    ).toEqual([
+      {
+        blockType: "mermaid",
+        properties: { text: "flowchart LR\n  A --> B" },
+      },
+    ])
+  })
+
   it("detects multiline text and single-line block syntax", () => {
     expect(isStructuredMarkdownPaste("plain text")).toBe(false)
     expect(isStructuredMarkdownPaste("plain\ntext")).toBe(true)

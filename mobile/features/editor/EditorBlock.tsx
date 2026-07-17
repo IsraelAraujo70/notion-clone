@@ -11,6 +11,7 @@ import {
 } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
+import { MermaidBlock } from "@/features/editor/MermaidBlock"
 import { fonts, useAppTheme } from "@/lib/theme"
 
 export function EditorBlock({
@@ -108,6 +109,24 @@ export function EditorBlock({
             {text || "Sem titulo"}
           </Text>
         </Pressable>
+      </GestureDetector>
+    )
+  }
+
+  if (block.type === "mermaid") {
+    return (
+      <GestureDetector gesture={longPress}>
+        <View style={{ marginLeft: left }}>
+          <MermaidBlock
+            editable={editable}
+            focusRequested={focusRequested}
+            onChangeText={onChangeText}
+            onFocus={onFocus}
+            onLongPress={onLongPress}
+            selected={selected}
+            text={text}
+          />
+        </View>
       </GestureDetector>
     )
   }

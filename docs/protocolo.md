@@ -13,7 +13,7 @@ Tudo que o usuário escreve é um bloco. Página também é bloco e pode conter 
 - Índices são limitados ao intervalo válido. Restauração usa `trashedIndex`, ajustado caso a lista tenha mudado.
 - Uma página filha aparece como link no conteúdo da página atual. Sua própria subárvore é carregada apenas ao abri-la.
 
-Tipos atuais: `page`, `paragraph`, `heading1`, `heading2`, `heading3`, itens de lista, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider` e `image`. As propriedades são JSON e variam por tipo.
+Tipos atuais: `page`, `paragraph`, `heading1`, `heading2`, `heading3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`, `image` e `mermaid`. As propriedades são JSON e variam por tipo. Blocos `mermaid` armazenam a fonte do diagrama em `properties.text`.
 
 ## Operações do cliente
 

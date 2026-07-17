@@ -24,6 +24,7 @@ export const MOBILE_BLOCK_TYPES: Array<{
   { type: "toggle", label: "Toggle", icon: "chevron-right" },
   { type: "quote", label: "Citacao", icon: "format-quote-close" },
   { type: "code", label: "Codigo", icon: "code-tags" },
+  { type: "mermaid", label: "Mermaid", icon: "graph-outline" },
   { type: "callout", label: "Destaque", icon: "lightbulb-outline" },
 ]
 
