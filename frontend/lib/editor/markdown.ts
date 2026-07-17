@@ -56,7 +56,7 @@ function codeLanguage(value: string) {
 export function isStructuredMarkdownPaste(text: string) {
   return (
     /[\r\n\u0085\u2028\u2029]/.test(text) ||
-    /^[ \t]*(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|```|---\s*$)/.test(
+    /^[ \t]*(?:\\(?:\\|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|```|---\s*$)/.test(
       text
     )
   )
@@ -80,16 +80,27 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlockDraft[] {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
-    const fence = /^[ \t]*```([A-Za-z0-9_+#-]*)\s*$/.exec(line)
+    const escaped =
+      /^([ \t]*)\\(\\|#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)(.*)$/.exec(
+        line
+      )
+    if (escaped) {
+      paragraph.push(`${escaped[1]}${escaped[2]}${escaped[3]}`)
+      continue
+    }
+    const fence = /^[ \t]*(`{3,})([A-Za-z0-9_+#-]*)\s*$/.exec(line)
     if (fence) {
       flushParagraph()
       const code: string[] = []
       index += 1
-      while (index < lines.length && !/^[ \t]*```\s*$/.test(lines[index])) {
+      const closingFence = new RegExp(
+        "^[ \\t]*`{" + fence[1].length + ",}[ \\t]*$"
+      )
+      while (index < lines.length && !closingFence.test(lines[index])) {
         code.push(lines[index])
         index += 1
       }
-      const language = fence[1].toLowerCase()
+      const language = fence[2].toLowerCase()
       blocks.push(
         language === "mermaid"
           ? { blockType: "mermaid", properties: { text: code.join("\n") } }

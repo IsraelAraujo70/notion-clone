@@ -180,7 +180,7 @@ describe("block editor", () => {
         .querySelector('[data-block-text-editor="true"]')!
         .dispatchEvent(event)
       expect(event.defaultPrevented).to.eq(true)
-      expect(clipboardData.getData("text/plain")).to.eq("pha\nbeta\nga")
+      expect(clipboardData.getData("text/plain")).to.eq("pha\n\nbeta\n\nga")
       expect(clipboardData.getData("application/x-reason-blocks+json")).to.eq(
         ""
       )
@@ -189,14 +189,9 @@ describe("block editor", () => {
     cy.get('[data-block-text-editor="true"]').should(
       "have.attr",
       "contenteditable",
-      "false"
-    )
-    cy.get('[data-cy="block-editor"]').click(0, 0)
-    cy.get('[data-block-text-editor="true"]').should(
-      "have.attr",
-      "contenteditable",
       "true"
     )
+    cy.get('[data-block-text-editor="true"]').eq(0).focus().should("be.focused")
   })
 
   it("persists title and blocks across a reload", () => {
