@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useState } from "react"
+import { StrictMode, useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
 
@@ -14,6 +14,7 @@ import {
 } from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
+  CROSS_BLOCK_MARKDOWN_MIME,
   writeClipboardEvent,
 } from "@/lib/editor/block-clipboard"
 
@@ -619,7 +620,7 @@ function treeWithMissingRootParent() {
 }
 
 describe("BlockEditor block selection", () => {
-  it("selects native text across blocks and restores editing on the next click", async () => {
+  it("selects across blocks and restores keyboard editing after pointerup", async () => {
     const dispatchBatch = vi.fn()
     const onSelectedBlockIdsChange = vi.fn()
     const props = {
@@ -627,7 +628,11 @@ describe("BlockEditor block selection", () => {
       dispatchBatch,
       onSelectedBlockIdsChange,
     }
-    const { container, rerender } = render(<BlockEditor {...props} />)
+    const { container, rerender } = render(
+      <StrictMode>
+        <BlockEditor {...props} />
+      </StrictMode>
+    )
     const editor = container.firstElementChild as HTMLElement
     const first = container.querySelector<HTMLElement>(
       '[data-block-id="select-a"] [data-block-text-editor="true"]'
@@ -671,8 +676,8 @@ describe("BlockEditor block selection", () => {
     expect(selection.isCollapsed).toBe(false)
     expect(selection.anchorNode).toBe(first.firstChild)
     expect(selection.focusNode).toBe(second.firstChild)
-    expect(first).toHaveAttribute("contenteditable", "false")
-    expect(second).toHaveAttribute("contenteditable", "false")
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(second).toHaveAttribute("contenteditable", "true")
     expect(dispatchBatch).not.toHaveBeenCalled()
     expect(onSelectedBlockIdsChange).not.toHaveBeenLastCalledWith(
       expect.arrayContaining(["select-a", "select-b"])
@@ -690,8 +695,22 @@ describe("BlockEditor block selection", () => {
         getData: (type: string) => clipboardValues.get(type) ?? "",
       },
     })
-    expect(clipboardValues.get("text/plain")).toBe("lect-a\nsel")
+    expect(clipboardValues.get("text/plain")).toBe("lect-a\n\nsel")
+    expect(clipboardValues.get(CROSS_BLOCK_MARKDOWN_MIME)).toBe(
+      "lect-a\n\nsel"
+    )
     expect(clipboardValues.has(BLOCK_CLIPBOARD_MIME)).toBe(false)
+
+    rerender(
+      <StrictMode>
+        <BlockEditor {...props} />
+      </StrictMode>
+    )
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(selection.anchorNode).toBe(first.firstChild)
+    expect(selection.focusNode).toBe(second.firstChild)
+    first.focus()
+    expect(document.activeElement).toBe(first)
 
     selection.removeAllRanges()
     fireEvent.pointerDown(second, {
@@ -718,6 +737,10 @@ describe("BlockEditor block selection", () => {
       pointerType: "mouse",
       button: 0,
     })
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(second).toHaveAttribute("contenteditable", "true")
+    expect(selection.anchorNode).toBe(second.firstChild)
+    expect(selection.focusNode).toBe(first.firstChild)
 
     fireEvent.pointerDown(first, {
       pointerId: 8,
@@ -788,12 +811,43 @@ describe("BlockEditor block selection", () => {
       clientX: 100,
       clientY: 50,
     })
-    rerender(<BlockEditor {...props} readOnly />)
-    fireEvent.pointerDown(editor, {
+    rerender(
+      <StrictMode>
+        <BlockEditor {...props} />
+      </StrictMode>
+    )
+    fireEvent.pointerUp(document, {
+      pointerId: 13,
+      pointerType: "mouse",
+      button: 0,
+    })
+    expect(first).toHaveAttribute("contenteditable", "true")
+    expect(selection.isCollapsed).toBe(false)
+
+    fireEvent.pointerDown(first, {
       pointerId: 14,
       pointerType: "mouse",
       button: 0,
       buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    fireEvent.pointerMove(document, {
+      pointerId: 14,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 100,
+      clientY: 50,
+    })
+    rerender(
+      <StrictMode>
+        <BlockEditor {...props} readOnly />
+      </StrictMode>
+    )
+    fireEvent.pointerUp(document, {
+      pointerId: 14,
+      pointerType: "mouse",
+      button: 0,
     })
     expect(first).toHaveAttribute("contenteditable", "false")
     expect(second).toHaveAttribute("contenteditable", "false")
@@ -1363,6 +1417,50 @@ describe("BlockEditor Markdown paste", () => {
       parentId: "page-root",
       index: 2,
       block: { type: "to_do", properties: { text: "Done", checked: true } },
+    })
+  })
+
+  it("pastes escaped marker paragraphs as separate paragraph blocks", () => {
+    const page = createPageTree("Test", "page-root")
+    const target = newBlock("paragraph", { text: "" }, "paste-target")
+    const tree = applyOperation(page, {
+      type: "insert_block",
+      opId: "insert-target",
+      block: target,
+      parentId: page.rootId,
+      index: 0,
+    }).tree
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(tree, new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector(
+      '[data-block-id="paste-target"] [contenteditable]'
+    )!
+
+    fireEvent.paste(editable, {
+      clipboardData: {
+        files: [],
+        getData: () => "\\# literal heading\n\n\\- literal item",
+      },
+    })
+
+    const [operations] = dispatchBatch.mock.calls[0]
+    expect(operations).toHaveLength(2)
+    expect(operations[0]).toMatchObject({
+      type: "update_block",
+      blockId: "paste-target",
+      blockType: "paragraph",
+      properties: { text: "# literal heading" },
+    })
+    expect(operations[1]).toMatchObject({
+      type: "insert_block",
+      parentId: "page-root",
+      index: 1,
+      block: { type: "paragraph", properties: { text: "- literal item" } },
     })
   })
 

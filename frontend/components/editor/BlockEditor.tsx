@@ -53,6 +53,7 @@ import {
   type SelectionRect,
 } from "@/lib/editor/block-selection"
 import {
+  CROSS_BLOCK_MARKDOWN_MIME,
   createClipboardInsertOperations,
   clearFallbackBlockClipboard,
   crossBlockSelectionMarkdown,
@@ -577,11 +578,15 @@ export function BlockEditor({
         }
         return
       }
-      const markdown = event.clipboardData.getData("text/plain")
+      const internalMarkdown = event.clipboardData.getData(
+        CROSS_BLOCK_MARKDOWN_MIME
+      )
+      const markdown =
+        internalMarkdown || event.clipboardData.getData("text/plain")
       if (
         !markdown ||
         markdown.length > MAX_MARKDOWN_PASTE_CHARS ||
-        !isStructuredMarkdownPaste(markdown)
+        (!internalMarkdown && !isStructuredMarkdownPaste(markdown))
       )
         return
       const text = blockText(block)
@@ -592,7 +597,7 @@ export function BlockEditor({
       ) {
         return
       }
-      const drafts = parseMarkdownBlocks(markdown)
+      const drafts = parseMarkdownBlocks(markdown, Boolean(internalMarkdown))
       if (drafts.length === 0 || drafts.length > MAX_MARKDOWN_PASTE_BLOCKS)
         return
       if (drafts.at(-1)?.blockType === "divider") {
@@ -1582,6 +1587,14 @@ export function BlockEditor({
       ) {
         event.preventDefault()
         clearFallbackBlockClipboard()
+        try {
+          event.clipboardData.setData(
+            CROSS_BLOCK_MARKDOWN_MIME,
+            crossBlockMarkdown
+          )
+        } catch {
+          // text/plain remains valid Markdown for external applications.
+        }
         event.clipboardData.setData("text/plain", crossBlockMarkdown)
         return
       }

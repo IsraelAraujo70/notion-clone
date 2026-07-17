@@ -7,6 +7,7 @@ import { newBlock, type BlockTree } from "@reason/core/engine/tree"
 import { blockText, type VisibleBlock } from "@/lib/editor/tree-view"
 
 export const BLOCK_CLIPBOARD_MIME = "application/x-reason-blocks+json"
+export const CROSS_BLOCK_MARKDOWN_MIME = "application/x-reason-markdown"
 const MAX_CLIPBOARD_BLOCKS = 200
 const MAX_CLIPBOARD_DEPTH = 20
 const MAX_CLIPBOARD_BYTES = 1_000_000
@@ -56,6 +57,30 @@ function prefixedMarkdown(text: string, first: string, continuation: string) {
   return `${first}${text.replaceAll("\n", `\n${continuation}`)}`
 }
 
+const PARAGRAPH_MARKER =
+  /^(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|(?:[-*+]\s+)?\[[ xX]\]\s|>\s?|`{3,}|---\s*$)/
+
+function escapedParagraph(text: string) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const [, indent = "", value = ""] = /^([ \t]*)(.*)$/.exec(line) ?? []
+      return value.startsWith("\\") || PARAGRAPH_MARKER.test(value)
+        ? `${indent}\\${value}`
+        : line
+    })
+    .join("\n")
+}
+
+function fencedMarkdown(text: string, language: string) {
+  const longestRun = Math.max(
+    2,
+    ...[...text.matchAll(/`+/g)].map((match) => match[0].length)
+  )
+  const fence = "`".repeat(longestRun + 1)
+  return `${fence}${language}\n${text}\n${fence}`
+}
+
 function selectionBlockMarkdown(
   row: Pick<VisibleBlock, "block" | "depth">,
   text: string
@@ -82,9 +107,56 @@ function selectionBlockMarkdown(
     case "quote":
     case "callout":
       return prefixedMarkdown(text, `${indent}> `, `${indent}> `)
+    case "code":
+      return fencedMarkdown(
+        text,
+        typeof row.block.properties.language === "string"
+          ? row.block.properties.language
+          : "plaintext"
+      )
+    case "mermaid":
+      return fencedMarkdown(text, "mermaid")
+    case "divider":
+      return `${indent}---`
+    case "image": {
+      const caption =
+        typeof row.block.properties.caption === "string"
+          ? row.block.properties.caption
+          : "Image"
+      const escapedCaption = caption
+        .replaceAll("\\", "\\\\")
+        .replaceAll("]", "\\]")
+      const url =
+        typeof row.block.properties.url === "string"
+          ? row.block.properties.url.replaceAll(">", "%3E")
+          : ""
+      return `${indent}![${escapedCaption}](<${url}>)`
+    }
+    case "page": {
+      const title =
+        typeof row.block.properties.title === "string"
+          ? row.block.properties.title
+          : "Untitled"
+      return `${indent}${escapedParagraph(title)}`
+    }
+    case "paragraph":
+      return `${indent}${escapedParagraph(text)}`
     default:
       return `${indent}${text}`
   }
+}
+
+function selectedText(
+  editable: HTMLElement,
+  range: Range,
+  isFirst: boolean,
+  isLast: boolean
+) {
+  const intersection = editable.ownerDocument.createRange()
+  intersection.selectNodeContents(editable)
+  if (isFirst) intersection.setStart(range.startContainer, range.startOffset)
+  if (isLast) intersection.setEnd(range.endContainer, range.endOffset)
+  return intersection.toString()
 }
 
 export function crossBlockSelectionMarkdown(
@@ -106,28 +178,29 @@ export function crossBlockSelectionMarkdown(
   if (!firstEditable || !lastEditable || firstEditable === lastEditable)
     return null
 
-  const rowsById = new Map(rows.map((row) => [row.block.id, row]))
-  const markdown: string[] = []
-  for (const editable of container.querySelectorAll<HTMLElement>(
-    TEXT_EDITOR_SELECTOR
-  )) {
-    if (!range.intersectsNode(editable)) continue
-    const blockId =
-      editable.closest<HTMLElement>("[data-block-id]")?.dataset.blockId
-    const row = blockId ? rowsById.get(blockId) : undefined
-    if (!row) continue
+  const firstId =
+    firstEditable.closest<HTMLElement>("[data-block-id]")?.dataset.blockId
+  const lastId =
+    lastEditable.closest<HTMLElement>("[data-block-id]")?.dataset.blockId
+  const firstIndex = rows.findIndex((row) => row.block.id === firstId)
+  const lastIndex = rows.findIndex((row) => row.block.id === lastId)
+  if (firstIndex === -1 || lastIndex === -1 || firstIndex >= lastIndex)
+    return null
 
-    const intersection = editable.ownerDocument.createRange()
-    intersection.selectNodeContents(editable)
-    if (editable.contains(range.startContainer)) {
-      intersection.setStart(range.startContainer, range.startOffset)
-    }
-    if (editable.contains(range.endContainer)) {
-      intersection.setEnd(range.endContainer, range.endOffset)
-    }
-    markdown.push(selectionBlockMarkdown(row, intersection.toString()))
+  const markdown: string[] = []
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const row = rows[index]
+    const isFirst = index === firstIndex
+    const isLast = index === lastIndex
+    const text = isFirst
+      ? selectedText(firstEditable, range, true, false)
+      : isLast
+        ? selectedText(lastEditable, range, false, true)
+        : blockText(row.block)
+    if ((isFirst || isLast) && text.length === 0) continue
+    markdown.push(selectionBlockMarkdown(row, text))
   }
-  return markdown.length > 1 ? markdown.join("\n") : null
+  return markdown.length > 0 ? markdown.join("\n\n") : null
 }
 
 let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null =

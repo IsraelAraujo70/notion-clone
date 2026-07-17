@@ -18,6 +18,7 @@ import {
   writeClipboardEvent,
   writeNavigatorClipboard,
 } from "./block-clipboard"
+import { parseMarkdownBlocks } from "./markdown"
 
 describe("block clipboard", () => {
   it("clears a previous structured fallback before textual copy", () => {
@@ -80,17 +81,189 @@ describe("block clipboard", () => {
     selection.removeAllRanges()
     selection.addRange(range)
 
-    expect(
-      crossBlockSelectionMarkdown(
-        container,
-        [
-          { block: heading, depth: 0 },
-          { block: bullet, depth: 1 },
-          { block: numbered, depth: 1 },
-        ],
-        selection
-      )
-    ).toBe("# map\n  - Nested item\n  1. Ordered")
+    const markdown = crossBlockSelectionMarkdown(
+      container,
+      [
+        { block: heading, depth: 0 },
+        { block: bullet, depth: 1 },
+        { block: numbered, depth: 1 },
+      ],
+      selection
+    )
+    expect(markdown).toBe("# map\n\n  - Nested item\n\n  1. Ordered")
+    expect(parseMarkdownBlocks(markdown!)).toEqual([
+      { blockType: "heading1", properties: { text: "map" } },
+      { blockType: "bulleted_list_item", properties: { text: "Nested item" } },
+      { blockType: "numbered_list_item", properties: { text: "Ordered" } },
+    ])
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
+  it("includes code, Mermaid, divider and image rows between endpoints", () => {
+    const first = newBlock("paragraph", { text: "alpha" }, "first")
+    const code = newBlock(
+      "code",
+      { text: 'const fence = "```"', language: "typescript" },
+      "code"
+    )
+    const mermaid = newBlock(
+      "mermaid",
+      { text: "flowchart LR\n  A --> B" },
+      "mermaid"
+    )
+    const divider = newBlock("divider", {}, "divider")
+    const image = newBlock(
+      "image",
+      { caption: "Diagram", url: "https://example.com/diagram.png" },
+      "image"
+    )
+    const last = newBlock("paragraph", { text: "omega" }, "last")
+    const blocks = [first, code, mermaid, divider, image, last]
+    const container = document.createElement("div")
+    for (const block of blocks) {
+      const row = document.createElement("div")
+      row.dataset.blockId = block.id
+      if (block === first || block === last) {
+        const editable = document.createElement("div")
+        editable.dataset.blockTextEditor = "true"
+        editable.textContent = String(block.properties.text)
+        row.append(editable)
+      }
+      container.append(row)
+    }
+    document.body.append(container)
+    const firstText = container.firstElementChild!.firstChild!.firstChild!
+    const lastText = container.lastElementChild!.firstChild!.firstChild!
+    const range = document.createRange()
+    range.setStart(firstText, 2)
+    range.setEnd(lastText, 2)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    const markdown = crossBlockSelectionMarkdown(
+      container,
+      blocks.map((block) => ({ block, depth: 0 })),
+      selection
+    )
+    expect(markdown).toBe(
+      'pha\n\n````typescript\nconst fence = "```"\n````\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n---\n\n![Diagram](<https://example.com/diagram.png>)\n\nom'
+    )
+    expect(parseMarkdownBlocks(markdown!)).toEqual([
+      { blockType: "paragraph", properties: { text: "pha" } },
+      {
+        blockType: "code",
+        properties: {
+          text: 'const fence = "```"',
+          language: "typescript",
+        },
+      },
+      {
+        blockType: "mermaid",
+        properties: { text: "flowchart LR\n  A --> B" },
+      },
+      { blockType: "divider", properties: {} },
+      {
+        blockType: "paragraph",
+        properties: {
+          text: "![Diagram](<https://example.com/diagram.png>)",
+        },
+      },
+      { blockType: "paragraph", properties: { text: "om" } },
+    ])
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
+  it("round-trips separate paragraphs that begin with Markdown markers", () => {
+    const first = newBlock("paragraph", { text: "# literal heading" }, "first")
+    const second = newBlock("paragraph", { text: "- literal item" }, "second")
+    const container = document.createElement("div")
+    for (const block of [first, second]) {
+      const row = document.createElement("div")
+      row.dataset.blockId = block.id
+      const editable = document.createElement("div")
+      editable.dataset.blockTextEditor = "true"
+      editable.textContent = String(block.properties.text)
+      row.append(editable)
+      container.append(row)
+    }
+    document.body.append(container)
+    const editables = container.querySelectorAll<HTMLElement>(
+      '[data-block-text-editor="true"]'
+    )
+    const range = document.createRange()
+    range.setStart(editables[0].firstChild!, 0)
+    range.setEnd(editables[1].firstChild!, editables[1].textContent!.length)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    const markdown = crossBlockSelectionMarkdown(
+      container,
+      [
+        { block: first, depth: 0 },
+        { block: second, depth: 0 },
+      ],
+      selection
+    )
+    expect(markdown).toBe("\\# literal heading\n\n\\- literal item")
+    expect(parseMarkdownBlocks(markdown!)).toEqual([
+      { blockType: "paragraph", properties: { text: "# literal heading" } },
+      { blockType: "paragraph", properties: { text: "- literal item" } },
+    ])
+
+    selection.removeAllRanges()
+    container.remove()
+  })
+
+  it("skips empty endpoint markers in forward and backward selections", () => {
+    const heading = newBlock("heading1", { text: "Title" }, "heading")
+    const middle = newBlock("paragraph", { text: "middle" }, "middle")
+    const numbered = newBlock(
+      "numbered_list_item",
+      { text: "Last" },
+      "numbered"
+    )
+    const blocks = [heading, middle, numbered]
+    const container = document.createElement("div")
+    for (const block of blocks) {
+      const row = document.createElement("div")
+      row.dataset.blockId = block.id
+      const editable = document.createElement("div")
+      editable.dataset.blockTextEditor = "true"
+      editable.textContent = String(block.properties.text)
+      row.append(editable)
+      container.append(row)
+    }
+    document.body.append(container)
+    const editables = container.querySelectorAll<HTMLElement>(
+      '[data-block-text-editor="true"]'
+    )
+    const selection = window.getSelection()!
+    const rows = blocks.map((block) => ({ block, depth: 0 }))
+    const forward = document.createRange()
+    forward.setStart(editables[0].firstChild!, 5)
+    forward.setEnd(editables[2].firstChild!, 2)
+    selection.removeAllRanges()
+    selection.addRange(forward)
+    expect(crossBlockSelectionMarkdown(container, rows, selection)).toBe(
+      "middle\n\n1. La"
+    )
+
+    selection.setBaseAndExtent(
+      editables[2].firstChild!,
+      0,
+      editables[0].firstChild!,
+      2
+    )
+    expect(selection.anchorNode).toBe(editables[2].firstChild)
+    expect(crossBlockSelectionMarkdown(container, rows, selection)).toBe(
+      "# tle\n\nmiddle"
+    )
 
     selection.removeAllRanges()
     container.remove()
