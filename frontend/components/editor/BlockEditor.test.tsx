@@ -589,13 +589,12 @@ describe("BlockEditor block selection", () => {
   it("selects native text across blocks and restores editing on the next click", async () => {
     const dispatchBatch = vi.fn()
     const onSelectedBlockIdsChange = vi.fn()
-    const { container } = render(
-      <BlockEditor
-        {...editorProps(treeWithThreeBlocks(), new Set())}
-        dispatchBatch={dispatchBatch}
-        onSelectedBlockIdsChange={onSelectedBlockIdsChange}
-      />
-    )
+    const props = {
+      ...editorProps(treeWithThreeBlocks(), new Set()),
+      dispatchBatch,
+      onSelectedBlockIdsChange,
+    }
+    const { container, rerender } = render(<BlockEditor {...props} />)
     const editor = container.firstElementChild as HTMLElement
     const first = container.querySelector<HTMLElement>(
       '[data-block-id="select-a"] [data-block-text-editor="true"]'
@@ -718,6 +717,53 @@ describe("BlockEditor block selection", () => {
     })
     expect(first).toHaveAttribute("contenteditable", "true")
     expect(second).toHaveAttribute("contenteditable", "true")
+
+    fireEvent.pointerDown(first, {
+      pointerId: 12,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    fireEvent.pointerMove(document, {
+      pointerId: 12,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 100,
+      clientY: 50,
+    })
+    expect(first).toHaveAttribute("contenteditable", "false")
+    fireEvent.pointerCancel(document, {
+      pointerId: 12,
+      pointerType: "mouse",
+    })
+    expect(first).toHaveAttribute("contenteditable", "true")
+
+    fireEvent.pointerDown(first, {
+      pointerId: 13,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    fireEvent.pointerMove(document, {
+      pointerId: 13,
+      pointerType: "mouse",
+      buttons: 1,
+      clientX: 100,
+      clientY: 50,
+    })
+    rerender(<BlockEditor {...props} readOnly />)
+    fireEvent.pointerDown(editor, {
+      pointerId: 14,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+    })
+    expect(first).toHaveAttribute("contenteditable", "false")
+    expect(second).toHaveAttribute("contenteditable", "false")
   })
 
   it("draws a geometric marquee and selects intersecting rows", async () => {

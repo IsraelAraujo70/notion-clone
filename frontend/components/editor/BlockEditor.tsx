@@ -54,6 +54,7 @@ import {
 } from "@/lib/editor/block-selection"
 import {
   createClipboardInsertOperations,
+  clearFallbackBlockClipboard,
   crossBlockSelectionMarkdown,
   currentFallbackBlockClipboard,
   fallbackBlockClipboard,
@@ -280,7 +281,7 @@ export function BlockEditor({
   const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
   const mermaidEditorRefs = useRef(new Map<string, MermaidBlockEditorHandle>())
   const containerRef = useRef<HTMLDivElement>(null)
-  useCrossBlockTextSelection(containerRef)
+  useCrossBlockTextSelection(containerRef, Boolean(readOnly))
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [slash, setSlash] = useState<SlashState | null>(null)
@@ -1538,6 +1539,7 @@ export function BlockEditor({
         crossBlockMarkdown !== null
       ) {
         event.preventDefault()
+        clearFallbackBlockClipboard()
         event.clipboardData.setData("text/plain", crossBlockMarkdown)
         return
       }

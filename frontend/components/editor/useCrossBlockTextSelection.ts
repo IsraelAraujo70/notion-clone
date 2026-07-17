@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react"
+import { useEffect, useEffectEvent, type RefObject } from "react"
 
 interface CaretPoint {
   node: Node
@@ -102,9 +102,34 @@ function setSelection(anchor: CaretPoint, focus: CaretPoint) {
   selection.addRange(range)
 }
 
-export function useCrossBlockTextSelection(
-  containerRef: RefObject<HTMLElement | null>
+function crossesUnsupportedBlock(
+  container: HTMLElement,
+  anchor: HTMLElement,
+  focus: HTMLElement
 ) {
+  const rows = [...container.querySelectorAll<HTMLElement>("[data-block-id]")]
+  const anchorRow = anchor.closest<HTMLElement>("[data-block-id]")
+  const focusRow = focus.closest<HTMLElement>("[data-block-id]")
+  const anchorIndex = anchorRow ? rows.indexOf(anchorRow) : -1
+  const focusIndex = focusRow ? rows.indexOf(focusRow) : -1
+  if (anchorIndex === -1 || focusIndex === -1) return true
+  return rows
+    .slice(
+      Math.min(anchorIndex, focusIndex),
+      Math.max(anchorIndex, focusIndex) + 1
+    )
+    .some((row) => {
+      const editable = row.querySelector<HTMLElement>(TEXT_BLOCK_SELECTOR)
+      return editable?.closest("[data-block-id]") !== row
+    })
+}
+
+export function useCrossBlockTextSelection(
+  containerRef: RefObject<HTMLElement | null>,
+  readOnly: boolean
+) {
+  const isReadOnly = useEffectEvent(() => readOnly)
+
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -122,7 +147,9 @@ export function useCrossBlockTextSelection(
       }
       for (const [element, contentEditable] of suspendedEditables) {
         if (!element.isConnected) continue
-        if (contentEditable === null) element.removeAttribute("contenteditable")
+        if (isReadOnly()) element.setAttribute("contenteditable", "false")
+        else if (contentEditable === null)
+          element.removeAttribute("contenteditable")
         else element.setAttribute("contenteditable", contentEditable)
       }
       suspendedEditables = []
@@ -154,6 +181,7 @@ export function useCrossBlockTextSelection(
     const finishPointer = (event: PointerEvent) => {
       if (gesture?.pointerId !== event.pointerId) return
       finish()
+      if (event.type === "pointercancel") restoreEditing()
     }
 
     const onPointerDown = (event: PointerEvent) => {
@@ -200,8 +228,21 @@ export function useCrossBlockTextSelection(
         event.clientX,
         event.clientY
       )
-      if (!focus) return
+      if (!focus) {
+        if (gesture.active) event.preventDefault()
+        return
+      }
       if (!gesture.active && focus.editable === gesture.anchor.editable) return
+      if (
+        crossesUnsupportedBlock(
+          container,
+          gesture.anchor.editable,
+          focus.editable
+        )
+      ) {
+        if (gesture.active) event.preventDefault()
+        return
+      }
 
       if (!gesture.active) suspendEditing()
       gesture.active = true
@@ -220,17 +261,47 @@ export function useCrossBlockTextSelection(
         }) ?? null
     }
 
+    const onDocumentPointerDown = (event: PointerEvent) => {
+      if (
+        event.button === 0 &&
+        event.target instanceof Node &&
+        !container.contains(event.target)
+      ) {
+        restoreEditing()
+      }
+    }
+
+    const onSelectionChange = () => {
+      if (gesture || selectionFrame !== null) return
+      const selection = ownerWindow?.getSelection()
+      if (!selection || selection.isCollapsed) restoreEditing()
+    }
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (suspendedEditables.length === 0) return
+      if (["Alt", "Control", "Meta", "Shift"].includes(event.key)) return
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c")
+        return
+      restoreEditing()
+    }
+
     container.addEventListener("pointerdown", onPointerDown)
+    ownerDocument.addEventListener("pointerdown", onDocumentPointerDown)
     ownerDocument.addEventListener("pointermove", onPointerMove)
     ownerDocument.addEventListener("pointerup", finishPointer)
     ownerDocument.addEventListener("pointercancel", finishPointer)
+    ownerDocument.addEventListener("selectionchange", onSelectionChange)
+    ownerDocument.addEventListener("keydown", onKeyDown)
     ownerWindow?.addEventListener("blur", restoreEditing)
     return () => {
       restoreEditing()
       container.removeEventListener("pointerdown", onPointerDown)
+      ownerDocument.removeEventListener("pointerdown", onDocumentPointerDown)
       ownerDocument.removeEventListener("pointermove", onPointerMove)
       ownerDocument.removeEventListener("pointerup", finishPointer)
       ownerDocument.removeEventListener("pointercancel", finishPointer)
+      ownerDocument.removeEventListener("selectionchange", onSelectionChange)
+      ownerDocument.removeEventListener("keydown", onKeyDown)
       ownerWindow?.removeEventListener("blur", restoreEditing)
     }
   }, [containerRef])

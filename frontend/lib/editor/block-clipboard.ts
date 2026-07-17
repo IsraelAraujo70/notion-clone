@@ -131,6 +131,10 @@ export function crossBlockSelectionMarkdown(
 let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null =
   null
 
+export function clearFallbackBlockClipboard() {
+  fallbackClipboard = null
+}
+
 function serializeBlock(
   tree: BlockTree,
   blockId: string

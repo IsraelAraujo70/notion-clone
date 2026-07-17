@@ -6,13 +6,43 @@ import {
 } from "@reason/core/engine/tree"
 import {
   BLOCK_CLIPBOARD_MIME,
+  clearFallbackBlockClipboard,
   createClipboardInsertOperations,
   crossBlockSelectionMarkdown,
+  fallbackBlockClipboard,
   readClipboardEvent,
   serializeBlocks,
+  writeClipboardEvent,
 } from "./block-clipboard"
 
 describe("block clipboard", () => {
+  it("clears a previous structured fallback before textual copy", () => {
+    const payload = {
+      version: 1 as const,
+      blocks: [
+        {
+          type: "paragraph" as const,
+          properties: { text: "alpha" },
+          children: [],
+        },
+      ],
+    }
+    const values = new Map<string, string>()
+    writeClipboardEvent(
+      {
+        files: [],
+        setData: (type: string, value: string) => values.set(type, value),
+        getData: (type: string) => values.get(type) ?? "",
+      } as unknown as DataTransfer,
+      payload
+    )
+    expect(fallbackBlockClipboard()).not.toBeNull()
+
+    clearFallbackBlockClipboard()
+
+    expect(fallbackBlockClipboard()).toBeNull()
+  })
+
   it("serializes partial nested and ordered text selections as Markdown", () => {
     const heading = newBlock("heading1", { text: "Roadmap" }, "heading")
     const bullet = newBlock(
