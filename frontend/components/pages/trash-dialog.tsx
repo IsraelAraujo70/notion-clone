@@ -89,10 +89,10 @@ function TrashEntryRow({
         </div>
         <div className="min-w-0 space-y-1">
           <p className="truncate font-medium">{title}</p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Badge variant="outline">{typeLabel}</Badge>
             {!isPage && entry.page_id ? (
-              <span className="truncate">
+              <span className="max-w-full min-w-0 truncate">
                 {t("In {page}", {
                   page: entry.page_title || t("Untitled"),
                 })}

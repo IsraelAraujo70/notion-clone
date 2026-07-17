@@ -100,6 +100,25 @@ describe("TrashDialog", () => {
     expect(region).toHaveClass("min-h-0", "overflow-y-auto")
   })
 
+  it("constrains long page context labels on mobile", async () => {
+    const longPageTitle = "Project context ".repeat(20)
+    mocks.trash = [
+      {
+        id: "paragraph-trash",
+        type: "paragraph",
+        title: "Draft",
+        trashed_at: "2026-07-09T12:00:00Z",
+        page_id: "project-page",
+        page_title: longPageTitle,
+      },
+    ]
+    render(<TrashDialog open onOpenChange={vi.fn()} />)
+
+    const context = await screen.findByText(/^In Project context/)
+    expect(context).toHaveClass("min-w-0", "max-w-full", "truncate")
+    expect(context.parentElement).toHaveClass("min-w-0", "flex-wrap")
+  })
+
   it("restores an individual non-page block", async () => {
     mocks.trash = [
       {

@@ -67,7 +67,7 @@ Transferência:
 | GET | `/search?q=&limit=` | Busca textual nos workspaces acessíveis. |
 | GET/POST/DELETE | `/workspaces/{workspace_id}/pages/{page_id}/public-link` | Consulta, cria ou revoga link público. |
 | GET | `/public/pages/{token}` | Lê uma página pública sem suas subpáginas. |
-| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas com tipo e contexto da página mais próxima. |
+| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas sem outro ancestral no lixo, com tipo e contexto da página mais próxima. |
 | DELETE | `/workspaces/{workspace_id}/trash/{block_id}` | Exclui uma raiz permanentemente. |
 | POST | `/workspaces/{workspace_id}/uploads/presign` | Gera URL de upload de imagem. |
 | GET | `/media/{key}` | Redireciona para uma URL temporária do objeto. |

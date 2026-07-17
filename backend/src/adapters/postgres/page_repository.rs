@@ -27,6 +27,74 @@ const BLOCK_COLUMNS: &str = "id, workspace_id, type, properties, content, parent
 const DEFAULT_OPS_LIMIT: i64 = 500;
 const MAX_OPS_LIMIT: i64 = 1000;
 
+const EFFECTIVE_TRASH_ROOTS_CTE: &str = "WITH RECURSIVE trash_ancestry AS (
+     SELECT b.id AS block_id, p.id AS ancestor_id, p.parent_id, p.trashed_at,
+            ARRAY[b.id, p.id] AS path
+     FROM blocks b
+     JOIN blocks p ON p.id = b.parent_id AND p.workspace_id = $1
+     WHERE b.workspace_id = $1 AND b.trashed_at IS NOT NULL
+     UNION ALL
+     SELECT a.block_id, p.id, p.parent_id, p.trashed_at, a.path || p.id
+     FROM trash_ancestry a
+     JOIN blocks p ON p.id = a.parent_id AND p.workspace_id = $1
+     WHERE NOT p.id = ANY(a.path)
+ ), effective_trash_roots AS (
+     SELECT b.id, b.type, b.properties, b.parent_id, b.trashed_at
+     FROM blocks b
+     WHERE b.workspace_id = $1
+       AND b.trashed_at IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM trash_ancestry a
+           WHERE a.block_id = b.id AND a.trashed_at IS NOT NULL
+       )
+ )";
+
+fn list_trash_sql() -> String {
+    format!(
+        "{EFFECTIVE_TRASH_ROOTS_CTE}, page_ancestry AS (
+             SELECT r.id AS root_id, r.id, r.type, r.properties, r.parent_id,
+                    0 AS depth, ARRAY[r.id] AS path
+             FROM effective_trash_roots r
+             UNION ALL
+             SELECT a.root_id, p.id, p.type, p.properties, p.parent_id,
+                    a.depth + 1, a.path || p.id
+             FROM page_ancestry a
+             JOIN blocks p ON p.id = a.parent_id AND p.workspace_id = $1
+             WHERE NOT p.id = ANY(a.path)
+         )
+         SELECT r.id,
+                r.type,
+                COALESCE(NULLIF(r.properties->>'title', ''), NULLIF(r.properties->>'text', ''), '') AS title,
+                r.trashed_at,
+                page.id AS page_id,
+                NULLIF(page.properties->>'title', '') AS page_title
+         FROM effective_trash_roots r
+         LEFT JOIN LATERAL (
+             SELECT a.id, a.properties
+             FROM page_ancestry a
+             WHERE a.root_id = r.id AND a.type = 'page'
+               AND NOT EXISTS (
+                   SELECT 1 FROM workspace_page_roots wpr
+                   WHERE wpr.workspace_id = $1 AND wpr.root_page_id = a.id
+               )
+             ORDER BY a.depth
+             LIMIT 1
+         ) page ON TRUE
+         ORDER BY r.trashed_at DESC, r.id"
+    )
+}
+
+fn permanent_delete_eligibility_sql() -> String {
+    format!(
+        "{EFFECTIVE_TRASH_ROOTS_CTE}
+         SELECT b.id
+         FROM blocks b
+         JOIN effective_trash_roots r ON r.id = b.id
+         WHERE b.workspace_id = $1 AND b.id = $2
+         FOR UPDATE OF b"
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct PostgresPageRepository {
     pool: PgPool,
@@ -707,49 +775,12 @@ impl PageRepository for PostgresPageRepository {
 
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
         // Só as raízes das subárvores no lixo: descendentes voltam junto no restore.
-        let rows = sqlx::query_as::<_, TrashRow>(
-            "WITH RECURSIVE trash_roots AS (
-                 SELECT b.id, b.type, b.properties, b.parent_id, b.trashed_at
-                 FROM blocks b
-                 LEFT JOIN blocks p ON p.id = b.parent_id AND p.workspace_id = $1
-                 WHERE b.workspace_id = $1
-                   AND b.trashed_at IS NOT NULL
-                   AND (p.id IS NULL OR p.trashed_at IS NULL)
-             ), ancestors AS (
-                 SELECT r.id AS root_id, r.id, r.type, r.properties, r.parent_id,
-                        0 AS depth, ARRAY[r.id] AS path
-                 FROM trash_roots r
-                 UNION ALL
-                 SELECT a.root_id, p.id, p.type, p.properties, p.parent_id,
-                        a.depth + 1, a.path || p.id
-                 FROM ancestors a
-                 JOIN blocks p ON p.id = a.parent_id AND p.workspace_id = $1
-                 WHERE NOT p.id = ANY(a.path)
-             )
-             SELECT r.id,
-                    r.type,
-                    COALESCE(NULLIF(r.properties->>'title', ''), NULLIF(r.properties->>'text', ''), '') AS title,
-                    r.trashed_at,
-                    page.id AS page_id,
-                    NULLIF(page.properties->>'title', '') AS page_title
-             FROM trash_roots r
-             LEFT JOIN LATERAL (
-                 SELECT a.id, a.properties
-                 FROM ancestors a
-                 WHERE a.root_id = r.id AND a.type = 'page'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM workspace_page_roots wpr
-                       WHERE wpr.workspace_id = $1 AND wpr.root_page_id = a.id
-                   )
-                 ORDER BY a.depth
-                 LIMIT 1
-             ) page ON TRUE
-             ORDER BY r.trashed_at DESC, r.id",
-        )
-        .bind(workspace_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx_error)?;
+        let query = list_trash_sql();
+        let rows = sqlx::query_as::<_, TrashRow>(&query)
+            .bind(workspace_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
 
         rows.into_iter()
             .map(|row| {
@@ -1741,29 +1772,25 @@ impl PageRepository for PostgresPageRepository {
         now: DateTime<Utc>,
     ) -> Result<PermanentDeleteResult, RepositoryError> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
-        let eligible = sqlx::query_as::<_, (Uuid,)>(
-            "SELECT b.id FROM blocks b
-             LEFT JOIN blocks p ON p.id = b.parent_id
-             WHERE b.id = $2 AND b.workspace_id = $1 AND b.trashed_at IS NOT NULL
-               AND (p.id IS NULL OR p.trashed_at IS NULL)
-             FOR UPDATE OF b",
-        )
-        .bind(workspace_id)
-        .bind(block_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_sqlx_error)?;
+        let eligibility_query = permanent_delete_eligibility_sql();
+        let eligible = sqlx::query_as::<_, (Uuid,)>(&eligibility_query)
+            .bind(workspace_id)
+            .bind(block_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
         if eligible.is_none() {
             return Err(DomainError::Validation("Block must be a trash root").into());
         }
 
         let counts = sqlx::query_as::<_, (i64, i64)>(
             "WITH RECURSIVE subtree AS (
-                 SELECT id, type, properties FROM blocks WHERE id = $2 AND workspace_id = $1
+                 SELECT id, type, properties, ARRAY[id] AS path
+                 FROM blocks WHERE id = $2 AND workspace_id = $1
                  UNION ALL
-                 SELECT b.id, b.type, b.properties
+                 SELECT b.id, b.type, b.properties, s.path || b.id
                  FROM subtree s JOIN blocks b ON b.parent_id = s.id
-                 WHERE b.workspace_id = $1
+                 WHERE b.workspace_id = $1 AND NOT b.id = ANY(s.path)
              ), queued AS (
                  INSERT INTO object_deletion_jobs (object_key, available_at, created_at)
                  SELECT DISTINCT properties->>'key', $3, $3 FROM subtree
@@ -1793,5 +1820,35 @@ impl PageRepository for PostgresPageRepository {
             deleted_blocks: counts.0 as u64,
             media_cleanup_queued: counts.1 as u64,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trash_roots_exclude_every_trashed_ancestor_and_are_cycle_safe() {
+        assert!(EFFECTIVE_TRASH_ROOTS_CTE.contains("FROM trash_ancestry a"));
+        assert!(EFFECTIVE_TRASH_ROOTS_CTE.contains("a.trashed_at IS NOT NULL"));
+        assert!(EFFECTIVE_TRASH_ROOTS_CTE.contains("NOT p.id = ANY(a.path)"));
+
+        let list = list_trash_sql();
+        let purge = permanent_delete_eligibility_sql();
+        assert!(list.starts_with(EFFECTIVE_TRASH_ROOTS_CTE));
+        assert!(purge.starts_with(EFFECTIVE_TRASH_ROOTS_CTE));
+        assert!(purge.contains("JOIN effective_trash_roots r ON r.id = b.id"));
+    }
+
+    #[test]
+    fn trash_root_queries_scope_every_block_traversal_to_the_workspace() {
+        assert!(EFFECTIVE_TRASH_ROOTS_CTE.contains("b.workspace_id = $1"));
+        assert!(EFFECTIVE_TRASH_ROOTS_CTE.contains("p.workspace_id = $1"));
+        for query in [list_trash_sql(), permanent_delete_eligibility_sql()] {
+            for parent_join in query.lines().filter(|line| line.contains("JOIN blocks p")) {
+                assert!(parent_join.contains("p.workspace_id = $1"));
+            }
+        }
+        assert!(permanent_delete_eligibility_sql().contains("b.workspace_id = $1"));
     }
 }
