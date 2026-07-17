@@ -30,8 +30,21 @@ describe("settings and workspace", () => {
     })
     cy.get('[data-cy="user-settings"]').click()
     cy.get('[data-cy="settings-dialog"]').should("be.visible")
+    cy.get('[data-cy="page-content"]').should(
+      "have.attr",
+      "data-layout",
+      "centered"
+    )
 
     cy.contains("button", "Appearance").click()
+    cy.get('[data-cy="page-full-width"]')
+      .should("have.attr", "aria-checked", "false")
+      .click()
+    cy.get('[data-cy="page-content"]').should(
+      "have.attr",
+      "data-layout",
+      "full-width"
+    )
     cy.get('[data-cy="theme-github"]').click()
     cy.document().its("documentElement.dataset.theme").should("eq", "github")
     cy.document().its("documentElement.dataset.themeMode").should("eq", "light")
@@ -52,9 +65,42 @@ describe("settings and workspace", () => {
     cy.document().its("documentElement.dataset.themeMode").should("eq", "light")
     cy.get("html").should("not.have.class", "dark")
 
+    cy.get("body").type("{esc}")
+    cy.reload()
+    cy.get('[data-cy="page-content"]').should(
+      "have.attr",
+      "data-layout",
+      "full-width"
+    )
+
+    cy.get('[data-cy="user-menu-trigger"]').click()
+    cy.get('[data-cy="user-settings"]').click()
+    cy.contains("button", "Appearance").click()
+    cy.get('[data-cy="page-full-width"]').click()
+    cy.get('[data-cy="page-content"]').should(
+      "have.attr",
+      "data-layout",
+      "centered"
+    )
+
     cy.contains("button", "Workspace").click()
     cy.get('[data-cy="workspace-invite-form"]').should("be.visible")
     cy.get('[data-cy="workspace-invite-email"]').should("be.visible")
     cy.get('[data-cy="workspace-invite-submit"]').should("be.visible")
+
+    cy.contains("button", "Appearance").click()
+    cy.get('[data-cy="page-full-width"]').click()
+    cy.get("body").type("{esc}")
+    cy.viewport(375, 812)
+    cy.get('[data-cy="page-content"]').should(
+      "have.attr",
+      "data-layout",
+      "full-width"
+    )
+    cy.document().then((document) => {
+      expect(document.documentElement.scrollWidth).to.be.at.most(
+        document.documentElement.clientWidth
+      )
+    })
   })
 })

@@ -7,6 +7,7 @@ import { FileTextIcon, PlusIcon } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandMenuProvider } from "@/components/command/organisms/command-menu-provider"
 import { EditorPage } from "@/components/editor/editor-page"
+import { PageLayoutProvider } from "@/components/editor/page-layout-provider"
 import {
   PageProvider,
   pagePath,
@@ -118,11 +119,13 @@ function DashboardContent() {
 export function DashboardShell({ pageId }: { pageId?: string }) {
   return (
     <RequireAuth>
-      <WorkspaceProvider>
-        <PageProvider pageId={pageId}>
-          <DashboardContent />
-        </PageProvider>
-      </WorkspaceProvider>
+      <PageLayoutProvider>
+        <WorkspaceProvider>
+          <PageProvider pageId={pageId}>
+            <DashboardContent />
+          </PageProvider>
+        </WorkspaceProvider>
+      </PageLayoutProvider>
     </RequireAuth>
   )
 }

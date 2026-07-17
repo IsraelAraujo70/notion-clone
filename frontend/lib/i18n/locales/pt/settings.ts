@@ -44,6 +44,7 @@ export const settingsPt = {
   "Existing tokens": "Tokens existentes",
   "For security, this value will not be shown again.":
     "Por segurança, este valor não será exibido novamente.",
+  "Full width": "Largura total",
   GitHub: "GitHub",
   Gruvbox: "Gruvbox",
   "I have saved the token": "Já guardei o token",
@@ -101,6 +102,8 @@ export const settingsPt = {
     "Use uma senha mais forte antes de salvar.",
   "Uses the workspace's semantic search.":
     "Usa a busca semântica do workspace.",
+  "Use all available width for page content.":
+    "Use toda a largura disponível para o conteúdo da página.",
   "View images": "Ver imagens",
   "Workspace deleted.": "Workspace apagado.",
   "Workspace unavailable": "Workspace indisponível",

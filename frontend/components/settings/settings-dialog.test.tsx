@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { SettingsDialog } from "@/components/settings/settings-dialog"
+import {
+  PAGE_FULL_WIDTH_STORAGE_KEY,
+  PageLayoutProvider,
+} from "@/components/editor/page-layout-provider"
 
 const mocks = vi.hoisted(() => ({
   activeWorkspace: {
@@ -151,8 +155,17 @@ const createdIntegration = {
   },
 }
 
+function renderSettings() {
+  return render(
+    <PageLayoutProvider>
+      <SettingsDialog open onOpenChange={vi.fn()} />
+    </PageLayoutProvider>
+  )
+}
+
 describe("SettingsDialog", () => {
   beforeEach(() => {
+    localStorage.clear()
     mocks.activeRole = "owner"
     mocks.activeWorkspace.role = "owner"
     mocks.workspaces[0].role = "owner"
@@ -176,7 +189,7 @@ describe("SettingsDialog", () => {
   })
 
   it("renders account, workspace, integrations and appearance tabs", () => {
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     expect(screen.getByRole("tab", { name: "Account" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Workspace" })).toBeInTheDocument()
@@ -187,7 +200,7 @@ describe("SettingsDialog", () => {
   })
 
   it("creates, copies and revokes MCP tokens", async () => {
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole("tab", { name: "Integrations" }))
     expect(await screen.findByText("Claude Desktop")).toBeInTheDocument()
@@ -227,7 +240,7 @@ describe("SettingsDialog", () => {
   })
 
   it("changes password and theme", async () => {
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     await userEvent.type(
       screen.getByLabelText("Current password"),
@@ -266,8 +279,21 @@ describe("SettingsDialog", () => {
     expect(mocks.setMode).toHaveBeenCalledWith("light")
   })
 
+  it("changes and persists the page width preference", async () => {
+    renderSettings()
+
+    await userEvent.click(screen.getByRole("tab", { name: "Appearance" }))
+    const fullWidth = screen.getByRole("checkbox", { name: "Full width" })
+    expect(fullWidth).not.toBeChecked()
+
+    await userEvent.click(fullWidth)
+
+    expect(fullWidth).toBeChecked()
+    expect(localStorage.getItem(PAGE_FULL_WIDTH_STORAGE_KEY)).toBe("true")
+  })
+
   it("lets an owner invite, update roles and remove members", async () => {
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
     await screen.findByText("Selected workspace")
@@ -313,7 +339,7 @@ describe("SettingsDialog", () => {
   })
 
   it("requires the workspace name before hard deleting it", async () => {
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
     await screen.findByText("Danger zone")
@@ -339,7 +365,7 @@ describe("SettingsDialog", () => {
     mocks.activeRole = "viewer"
     mocks.activeWorkspace.role = "viewer"
     mocks.workspaces[0].role = "viewer"
-    render(<SettingsDialog open onOpenChange={vi.fn()} />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole("tab", { name: "Workspace" }))
     expect(
