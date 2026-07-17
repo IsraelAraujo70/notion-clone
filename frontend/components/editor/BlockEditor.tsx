@@ -56,6 +56,7 @@ import {
   createClipboardInsertOperations,
   currentFallbackBlockClipboard,
   fallbackBlockClipboard,
+  isRecoverableBlockClipboard,
   readClipboardEvent,
   serializeBlocks,
   writeClipboardEvent,
@@ -279,6 +280,7 @@ export function BlockEditor({
   const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
   const mermaidEditorRefs = useRef(new Map<string, MermaidBlockEditorHandle>())
   const containerRef = useRef<HTMLDivElement>(null)
+  const treeRef = useRef(tree)
   const focusRequestRef = useRef<FocusRequest | null>(null)
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [slash, setSlash] = useState<SlashState | null>(null)
@@ -300,6 +302,7 @@ export function BlockEditor({
   )
   const selectionRef = useRef<ReadonlySet<string>>(new Set())
   const menuTargetIdsRef = useRef<string[]>([])
+  const menuCutPendingRef = useRef(false)
   const [menuTargetCount, setMenuTargetCount] = useState(0)
   const menuSelectionRef = useRef<ReadonlySet<string>>(new Set())
   const pendingContextMenuBlockRef = useRef<string | null>(null)
@@ -324,6 +327,10 @@ export function BlockEditor({
   )
   const visibleIds = useMemo(() => rows.map((row) => row.block.id), [rows])
   const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds])
+
+  useLayoutEffect(() => {
+    treeRef.current = tree
+  }, [tree])
 
   useEffect(() => {
     let active = true
@@ -538,8 +545,6 @@ export function BlockEditor({
       const startIndex = parent.content.indexOf(block.id)
       const structured = readClipboardEvent(event.clipboardData)
       if (structured?.blocks.length) {
-        event.preventDefault()
-        event.stopPropagation()
         const operations = createClipboardInsertOperations(
           structured,
           parent.id,
@@ -547,6 +552,9 @@ export function BlockEditor({
           workspaceId,
           createId
         )
+        if (operations.length === 0) return
+        event.preventDefault()
+        event.stopPropagation()
         const lastRoot = operations
           .filter(
             (operation) =>
@@ -1209,20 +1217,48 @@ export function BlockEditor({
 
   const runBlockMenu = useCallback(
     async (action: "copy" | "cut" | "delete", ids: string[]) => {
-      if (action !== "delete") {
-        try {
-          await writeNavigatorClipboard(
-            serializeBlocks(tree, selectedRoots(ids))
-          )
-          setClipboardReady(true)
-        } catch {
-          if (action === "cut")
-            toast.error(t("Could not cut the blocks. They were not deleted."))
+      if (action === "delete") {
+        deleteBlocks(ids)
+        clearSelection()
+        return
+      }
+
+      const roots = selectedRoots(ids)
+      const payload = serializeBlocks(tree, roots)
+      if (action === "cut") {
+        if (menuCutPendingRef.current) return
+        if (!isRecoverableBlockClipboard(payload)) {
+          toast.error(t("Could not cut the blocks. They were not deleted."))
           return
         }
+        menuCutPendingRef.current = true
       }
-      if (action !== "copy") deleteBlocks(ids)
-      if (action !== "copy") clearSelection()
+
+      try {
+        const result = await writeNavigatorClipboard(payload)
+        setClipboardReady(true)
+        if (action === "copy") return
+        if (result !== "structured") {
+          toast.error(t("Could not cut the blocks. They were not deleted."))
+          return
+        }
+        const currentPayload = serializeBlocks(treeRef.current, roots)
+        if (JSON.stringify(currentPayload) !== JSON.stringify(payload)) {
+          toast.error(
+            t(
+              "The blocks changed before they could be cut. They were not deleted."
+            )
+          )
+          return
+        }
+        deleteBlocks(roots)
+        clearSelection()
+      } catch {
+        if (action === "cut")
+          toast.error(t("Could not cut the blocks. They were not deleted."))
+      } finally {
+        if (action === "cut") menuCutPendingRef.current = false
+      }
     },
     [clearSelection, deleteBlocks, selectedRoots, t, tree]
   )
@@ -1517,7 +1553,10 @@ export function BlockEditor({
         clearSelection()
       }
     }
-    const onCopy = (event: globalThis.ClipboardEvent) => {
+    const onCopy = (
+      event: globalThis.ClipboardEvent,
+      requireRecoverable = false
+    ) => {
       const target = event.target
       const container = containerRef.current
       const selection = window.getSelection()
@@ -1535,23 +1574,24 @@ export function BlockEditor({
       )
         return
       if (!event.clipboardData) return false
+      const payload = serializeBlocks(tree, selectedRoots())
+      if (requireRecoverable && !isRecoverableBlockClipboard(payload))
+        return false
+      let result: ReturnType<typeof writeClipboardEvent>
       try {
-        writeClipboardEvent(
-          event.clipboardData,
-          serializeBlocks(tree, selectedRoots())
-        )
+        result = writeClipboardEvent(event.clipboardData, payload)
       } catch {
         return false
       }
       event.preventDefault()
       setClipboardReady(true)
-      return true
+      return result
     }
     const onCut = (event: globalThis.ClipboardEvent) => {
       if (readOnly) return
-      const copied = onCopy(event)
+      const copied = onCopy(event, true)
       if (copied === undefined) return
-      if (!copied) {
+      if (!copied || copied !== "structured") {
         toast.error(t("Could not cut the blocks. They were not deleted."))
         return
       }

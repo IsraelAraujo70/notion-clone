@@ -12,6 +12,8 @@ export const editorPt = {
   Copy: "Copiar",
   "Could not cut the blocks. They were not deleted.":
     "Não foi possível recortar os blocos. Eles não foram excluídos.",
+  "The blocks changed before they could be cut. They were not deleted.":
+    "Os blocos mudaram antes de serem recortados. Eles não foram excluídos.",
   "Could not open this page.": "Não foi possível abrir esta página.",
   "Could not save": "Não foi possível salvar",
   Cut: "Recortar",

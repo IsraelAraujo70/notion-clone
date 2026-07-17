@@ -39,6 +39,8 @@ export interface BlockClipboardPayload {
   blocks: ClipboardBlock[]
 }
 
+export type ClipboardWriteResult = "structured" | "text"
+
 let fallbackClipboard: { payload: BlockClipboardPayload; text: string } | null =
   null
 
@@ -126,26 +128,34 @@ export function clipboardPlainText(payload: BlockClipboardPayload) {
 export function writeClipboardEvent(
   clipboard: DataTransfer,
   payload: BlockClipboardPayload
-) {
+): ClipboardWriteResult {
   const text = clipboardPlainText(payload)
-  let wrote = false
+  let structured = false
+  let plainText = false
   try {
     clipboard.setData(BLOCK_CLIPBOARD_MIME, JSON.stringify(payload))
-    wrote = true
+    structured = true
   } catch {
     // Some browsers reject custom formats but still accept plain text.
   }
   try {
     clipboard.setData("text/plain", text)
-    wrote = true
+    plainText = true
   } catch {
     // A successful structured write still makes the cut recoverable in Reason.
   }
-  if (!wrote) throw new Error("Clipboard event write failed")
+  if (!structured && !plainText) throw new Error("Clipboard event write failed")
   fallbackClipboard = { payload, text }
+  return structured ? "structured" : "text"
 }
 
-export async function writeNavigatorClipboard(payload: BlockClipboardPayload) {
+/**
+ * `text` keeps Copy useful, but must not authorize Cut: Markdown does not
+ * preserve every block type or subtree and the in-memory fallback is transient.
+ */
+export async function writeNavigatorClipboard(
+  payload: BlockClipboardPayload
+): Promise<ClipboardWriteResult> {
   const text = clipboardPlainText(payload)
   const clipboard = navigator.clipboard
   if (typeof ClipboardItem !== "undefined" && clipboard?.write) {
@@ -159,7 +169,7 @@ export async function writeNavigatorClipboard(payload: BlockClipboardPayload) {
         }),
       ])
       fallbackClipboard = { payload, text }
-      return
+      return "structured"
     } catch {
       // Chromium may reject custom MIME types outside a secure context.
     }
@@ -167,6 +177,7 @@ export async function writeNavigatorClipboard(payload: BlockClipboardPayload) {
   if (!clipboard?.writeText) throw new Error("Clipboard API unavailable")
   await clipboard.writeText(text)
   fallbackClipboard = { payload, text }
+  return "text"
 }
 
 function parsePayload(value: string): BlockClipboardPayload | null {
@@ -209,6 +220,10 @@ function parsePayload(value: string): BlockClipboardPayload | null {
   } catch {
     return null
   }
+}
+
+export function isRecoverableBlockClipboard(payload: BlockClipboardPayload) {
+  return parsePayload(JSON.stringify(payload)) !== null
 }
 
 export function readClipboardEvent(clipboard: DataTransfer) {
