@@ -78,6 +78,8 @@ pub struct TrashEntry {
     pub block_type: BlockType,
     pub title: String,
     pub trashed_at: DateTime<Utc>,
+    pub page_id: Option<Uuid>,
+    pub page_title: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -178,8 +180,12 @@ pub trait PageRepository: Send + Sync {
         actor_id: Uuid,
         operations: &[Operation],
         _group: Option<&OperationGroup>,
+        expected_workspace_seq: Option<i64>,
         now: DateTime<Utc>,
     ) -> Result<Vec<AppliedOperation>, RepositoryError> {
+        if expected_workspace_seq.is_some() {
+            return Err(RepositoryError::Unexpected);
+        }
         let mut applied = Vec::with_capacity(operations.len());
         for operation in operations {
             let ack = self
@@ -302,5 +308,23 @@ mod tests {
         assert_eq!(value["group"]["group_ordinal"], 2);
         assert_eq!(value["operation"]["type"], "delete_block");
         assert!(value["operation"].get("group_id").is_none());
+    }
+
+    #[test]
+    fn trash_entry_serializes_its_nearest_page_context() {
+        let page_id = Uuid::new_v4();
+        let entry = TrashEntry {
+            id: Uuid::new_v4(),
+            block_type: BlockType::Paragraph,
+            title: "Draft".into(),
+            trashed_at: "2026-07-10T12:00:00Z".parse().unwrap(),
+            page_id: Some(page_id),
+            page_title: Some("Project notes".into()),
+        };
+
+        let value = serde_json::to_value(entry).unwrap();
+        assert_eq!(value["type"], "paragraph");
+        assert_eq!(value["page_id"], json!(page_id));
+        assert_eq!(value["page_title"], "Project notes");
     }
 }

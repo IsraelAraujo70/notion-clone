@@ -60,7 +60,11 @@ pub async fn action(
     Json(input): Json<AiActionInput>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, HttpError> {
     match action.as_str() {
-        "continue_writing" | "summarize_page" | "transform_selection" | "workspace_agent" => {}
+        "continue_writing"
+        | "summarize_page"
+        | "transform_selection"
+        | "transform_page"
+        | "workspace_agent" => {}
         _ => {
             return Err(HttpError(crate::application::AppError::from(
                 crate::domain::error::DomainError::Validation("Unknown AI action"),

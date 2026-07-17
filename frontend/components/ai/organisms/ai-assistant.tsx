@@ -183,7 +183,9 @@ export function AiAssistant(props: Props) {
             ? translateEffect("Continue writing in the same style")
             : requestedAction.type === "transform_selection"
               ? requestedAction.instruction
-              : requestedAction.prompt
+              : requestedAction.type === "transform_page"
+                ? requestedAction.instruction
+                : requestedAction.prompt
       )
       setOpen(true)
       handleRequestedAction()
