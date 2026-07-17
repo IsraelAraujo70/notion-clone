@@ -118,6 +118,8 @@ struct TrashRow {
     block_type: String,
     title: String,
     trashed_at: DateTime<Utc>,
+    page_id: Option<Uuid>,
+    page_title: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -706,16 +708,43 @@ impl PageRepository for PostgresPageRepository {
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
         // Só as raízes das subárvores no lixo: descendentes voltam junto no restore.
         let rows = sqlx::query_as::<_, TrashRow>(
-            "SELECT b.id,
-                    b.type,
-                    COALESCE(NULLIF(b.properties->>'title', ''), NULLIF(b.properties->>'text', ''), '') AS title,
-                    b.trashed_at
-             FROM blocks b
-             LEFT JOIN blocks p ON p.id = b.parent_id
-             WHERE b.workspace_id = $1
-               AND b.trashed_at IS NOT NULL
-               AND (p.id IS NULL OR p.trashed_at IS NULL)
-             ORDER BY b.trashed_at DESC, b.id",
+            "WITH RECURSIVE trash_roots AS (
+                 SELECT b.id, b.type, b.properties, b.parent_id, b.trashed_at
+                 FROM blocks b
+                 LEFT JOIN blocks p ON p.id = b.parent_id AND p.workspace_id = $1
+                 WHERE b.workspace_id = $1
+                   AND b.trashed_at IS NOT NULL
+                   AND (p.id IS NULL OR p.trashed_at IS NULL)
+             ), ancestors AS (
+                 SELECT r.id AS root_id, r.id, r.type, r.properties, r.parent_id,
+                        0 AS depth, ARRAY[r.id] AS path
+                 FROM trash_roots r
+                 UNION ALL
+                 SELECT a.root_id, p.id, p.type, p.properties, p.parent_id,
+                        a.depth + 1, a.path || p.id
+                 FROM ancestors a
+                 JOIN blocks p ON p.id = a.parent_id AND p.workspace_id = $1
+                 WHERE NOT p.id = ANY(a.path)
+             )
+             SELECT r.id,
+                    r.type,
+                    COALESCE(NULLIF(r.properties->>'title', ''), NULLIF(r.properties->>'text', ''), '') AS title,
+                    r.trashed_at,
+                    page.id AS page_id,
+                    NULLIF(page.properties->>'title', '') AS page_title
+             FROM trash_roots r
+             LEFT JOIN LATERAL (
+                 SELECT a.id, a.properties
+                 FROM ancestors a
+                 WHERE a.root_id = r.id AND a.type = 'page'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM workspace_page_roots wpr
+                       WHERE wpr.workspace_id = $1 AND wpr.root_page_id = a.id
+                   )
+                 ORDER BY a.depth
+                 LIMIT 1
+             ) page ON TRUE
+             ORDER BY r.trashed_at DESC, r.id",
         )
         .bind(workspace_id)
         .fetch_all(&self.pool)
@@ -729,6 +758,8 @@ impl PageRepository for PostgresPageRepository {
                     block_type: parse_block_type(&row.block_type)?,
                     title: row.title,
                     trashed_at: row.trashed_at,
+                    page_id: row.page_id,
+                    page_title: row.page_title,
                 })
             })
             .collect()

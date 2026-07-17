@@ -67,5 +67,8 @@ export const pagesPt = {
   '"{title}" and its entire subtree will be removed. Associated images will also be deleted. This action cannot be undone.':
     "“{title}” e toda a subárvore serão removidas. Imagens associadas também serão apagadas. Esta ação não pode ser desfeita.",
   "Bulleted list item": "Item de lista com marcadores",
+  Blocks: "Blocos",
   Code: "Código",
+  "In {page}": "Em {page}",
+  "Trash contents": "Conteúdo da lixeira",
 } as const

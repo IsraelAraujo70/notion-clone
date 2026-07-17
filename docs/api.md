@@ -67,12 +67,12 @@ Transferência:
 | GET | `/search?q=&limit=` | Busca textual nos workspaces acessíveis. |
 | GET/POST/DELETE | `/workspaces/{workspace_id}/pages/{page_id}/public-link` | Consulta, cria ou revoga link público. |
 | GET | `/public/pages/{token}` | Lê uma página pública sem suas subpáginas. |
-| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas. |
+| GET | `/workspaces/{workspace_id}/trash` | Lista raízes apagadas com tipo e contexto da página mais próxima. |
 | DELETE | `/workspaces/{workspace_id}/trash/{block_id}` | Exclui uma raiz permanentemente. |
 | POST | `/workspaces/{workspace_id}/uploads/presign` | Gera URL de upload de imagem. |
 | GET | `/media/{key}` | Redireciona para uma URL temporária do objeto. |
 
-Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão permanente retorna `202` e agenda a limpeza dos arquivos.
+Cada item da lixeira contém `id`, `type`, `title`, `trashed_at`, `page_id` e `page_title`. Os dois campos de página são `null` quando não há uma página visível na ancestralidade. Busca aceita `q` entre 2 e 200 caracteres e `limit` de até 50. A exclusão permanente retorna `202` e agenda a limpeza dos arquivos.
 
 ## IA
 
