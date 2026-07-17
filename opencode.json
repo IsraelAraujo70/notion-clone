@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "reason": {
+      "type": "remote",
+      "url": "https://api.reason.israeldeveloper.com.br/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:REASON_MCP_TOKEN}"
+      }
+    }
+  }
+}

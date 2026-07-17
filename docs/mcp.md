@@ -54,6 +54,17 @@ Use a URL pública da API, não a URL do frontend:
 
 No ambiente local, a URL padrão é `http://localhost:18080/mcp`.
 
+### OpenCode
+
+O repositório inclui `opencode.json` com o servidor remoto habilitado. Exporte o token no ambiente antes de iniciar o OpenCode:
+
+```bash
+export REASON_MCP_TOKEN=rsn_mcp_SEU_TOKEN
+opencode
+```
+
+O arquivo versionado referencia `{env:REASON_MCP_TOKEN}` e nunca contém o segredo. O OpenCode carrega a configuração apenas ao iniciar; reinicie-o após alterar o token ou o arquivo.
+
 ## Ferramentas
 
 | Ferramenta | Escopo | Uso |
