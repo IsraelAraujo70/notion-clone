@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { SparklesIcon } from "lucide-react"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
+import { usePageLayout } from "@/components/editor/page-layout-provider"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
 import { pagePath, usePages } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
@@ -60,6 +61,7 @@ import { AiAssistant } from "@/components/ai/organisms/ai-assistant"
 import type { AiAction } from "@reason/core/ai/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import type { Message } from "@/lib/i18n/messages"
+import { cn } from "@/lib/utils"
 
 function opId() {
   return createId()
@@ -116,6 +118,7 @@ function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
 
 export function EditorPage({ pageId }: { pageId: string }) {
   const { t } = useI18n()
+  const { fullWidth } = usePageLayout()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { token, user } = useAuth()
@@ -647,7 +650,14 @@ export function EditorPage({ pageId }: { pageId: string }) {
         </div>
       ) : null}
 
-      <section className="mx-auto flex w-full max-w-[708px] flex-col px-4 py-10 leading-7 sm:px-6 sm:py-14 md:py-20">
+      <section
+        data-cy="page-content"
+        data-layout={fullWidth ? "full-width" : "centered"}
+        className={cn(
+          "flex w-full flex-col px-4 py-10 leading-7 sm:px-6 sm:py-14 md:py-20",
+          fullWidth ? "max-w-none" : "mx-auto max-w-[708px]"
+        )}
+      >
         {!tree ? (
           <div className="space-y-4" data-cy="page-loading">
             <Skeleton className="h-12 w-2/3" />

@@ -1,6 +1,7 @@
 "use client"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { ProfileForm } from "@/components/settings/profile-form"
 import { ThemeSelector } from "@/components/settings/theme-selector"
 import { WorkspaceMembersPanel } from "@/components/settings/workspace-members-panel"
 import { LanguageSelector } from "@/components/atoms/language-selector"
+import { usePageLayout } from "@/components/editor/page-layout-provider"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 
@@ -36,6 +38,7 @@ export function SettingsDialog({
 }) {
   const { user } = useAuth()
   const { t } = useI18n()
+  const { fullWidth, setFullWidth } = usePageLayout()
   const displayName = user?.display_name || t("User")
   const email = user?.email || t("Active session")
 
@@ -94,6 +97,22 @@ export function SettingsDialog({
               </p>
             </div>
             <ThemeSelector />
+            <div className="flex items-start gap-3 border-t pt-5">
+              <Checkbox
+                id="page-full-width"
+                data-cy="page-full-width"
+                checked={fullWidth}
+                onCheckedChange={(checked) => setFullWidth(checked === true)}
+              />
+              <div className="grid gap-1">
+                <label htmlFor="page-full-width" className="font-medium">
+                  {t("Full width")}
+                </label>
+                <p className="text-sm text-muted-foreground">
+                  {t("Use all available width for page content.")}
+                </p>
+              </div>
+            </div>
             <div className="flex flex-col gap-3 border-t pt-5">
               <div>
                 <h3 className="font-medium">{t("Language")}</h3>
