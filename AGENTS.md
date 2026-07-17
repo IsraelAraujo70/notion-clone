@@ -128,6 +128,11 @@ layers.
 
 ## Change Discipline
 
+- Start every new feature from an up-to-date `main` in a dedicated branch and
+  deliver it through a pull request targeting `main`; never develop a feature
+  directly on `main`.
+- In every feature pull request body, explain what changed and why the change
+  was made.
 - Make the smallest change that satisfies the requirement.
 - Follow existing names and module boundaries before introducing abstractions or
   dependencies.
