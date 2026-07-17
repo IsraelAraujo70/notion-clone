@@ -36,6 +36,11 @@ export type AiAction =
       instruction: string
     }
   | {
+      type: "transform_page"
+      page_id: string
+      instruction: string
+    }
+  | {
       type: "workspace_agent"
       prompt: string
       page_id: string

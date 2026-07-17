@@ -181,6 +181,7 @@ export const aiTransport = {
           conversationId,
           pageId:
             input.action.type === "summarize_page" ||
+            input.action.type === "transform_page" ||
             input.action.type === "workspace_agent"
               ? input.action.page_id
               : undefined,
