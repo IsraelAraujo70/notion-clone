@@ -1,37 +1,8 @@
 import type { ReactNode } from "react"
 import { StyleSheet, Text, View } from "react-native"
 
+import { InlineMarkdownText } from "@/components/InlineMarkdownText"
 import { fonts, useAppTheme } from "@/lib/theme"
-
-function inlineText(content: string, color: string, codeBackground: string) {
-  return content
-    .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
-    .filter(Boolean)
-    .map((part, index) => {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return (
-          <Text key={index} style={styles.strong}>
-            {part.slice(2, -2)}
-          </Text>
-        )
-      }
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return (
-          <Text
-            key={index}
-            style={[styles.inlineCode, { backgroundColor: codeBackground }]}
-          >
-            {part.slice(1, -1)}
-          </Text>
-        )
-      }
-      return (
-        <Text key={index} style={{ color }}>
-          {part}
-        </Text>
-      )
-    })
-}
 
 export function MessageContent({ content }: { content: string }) {
   const { tokens } = useAppTheme()
@@ -77,18 +48,18 @@ export function MessageContent({ content }: { content: string }) {
     const heading = /^(#{1,3})\s+(.+)$/.exec(line)
     if (heading) {
       nodes.push(
-        <Text
+        <InlineMarkdownText
           selectable
           key={`heading-${index}`}
+          source={heading[2]}
+          color={tokens.foreground}
+          codeBackground={tokens.muted}
           style={[
             styles.heading,
             heading[1].length === 1 && styles.heading1,
             heading[1].length === 2 && styles.heading2,
-            { color: tokens.foreground },
           ]}
-        >
-          {inlineText(heading[2], tokens.foreground, tokens.muted)}
-        </Text>
+        />
       )
       return
     }
@@ -103,9 +74,13 @@ export function MessageContent({ content }: { content: string }) {
           <Text style={[styles.marker, { color: tokens.mutedForeground }]}>
             {marker}
           </Text>
-          <Text selectable style={[styles.body, { color: tokens.foreground }]}>
-            {inlineText(value, tokens.foreground, tokens.muted)}
-          </Text>
+          <InlineMarkdownText
+            selectable
+            source={value}
+            color={tokens.foreground}
+            codeBackground={tokens.muted}
+            style={styles.body}
+          />
         </View>
       )
       return
@@ -118,25 +93,27 @@ export function MessageContent({ content }: { content: string }) {
           key={`quote-${index}`}
           style={[styles.quote, { borderLeftColor: tokens.ring }]}
         >
-          <Text
+          <InlineMarkdownText
             selectable
+            source={quote[1]}
+            color={tokens.mutedForeground}
+            codeBackground={tokens.muted}
             style={[styles.body, { color: tokens.mutedForeground }]}
-          >
-            {inlineText(quote[1], tokens.mutedForeground, tokens.muted)}
-          </Text>
+          />
         </View>
       )
       return
     }
 
     nodes.push(
-      <Text
+      <InlineMarkdownText
         selectable
         key={`line-${index}`}
-        style={[styles.body, { color: tokens.foreground }]}
-      >
-        {inlineText(line, tokens.foreground, tokens.muted)}
-      </Text>
+        source={line}
+        color={tokens.foreground}
+        codeBackground={tokens.muted}
+        style={styles.body}
+      />
     )
   })
   flushCode(content.length)
@@ -147,8 +124,6 @@ export function MessageContent({ content }: { content: string }) {
 const styles = StyleSheet.create({
   content: { gap: 5 },
   body: { flex: 1, fontFamily: fonts.sans, fontSize: 16, lineHeight: 24 },
-  strong: { fontFamily: fonts.sansSemibold },
-  inlineCode: { fontFamily: fonts.mono, fontSize: 14 },
   heading: {
     fontFamily: fonts.heading,
     fontSize: 18,

@@ -7,6 +7,7 @@
     "./ai/contracts": "./src/ai/contracts.ts",
     "./ai/sse": "./src/ai/sse.ts",
     "./contracts": "./src/contracts.ts",
+    "./inline-markdown": "./src/inline-markdown.ts",
     "./id": "./src/id.ts",
     "./engine/tree": "./src/engine/tree.ts",
     "./engine/undo": "./src/engine/undo.ts",

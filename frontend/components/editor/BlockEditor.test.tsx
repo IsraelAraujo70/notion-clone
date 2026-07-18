@@ -595,6 +595,62 @@ describe("BlockEditor Markdown shortcuts", () => {
     await user.type(editable, "Heading 3 ", { skipClick: true })
     expect(editable).toHaveTextContent("Heading 3 after")
   })
+
+  it("shows formatted Markdown when blurred and raw source when focused", async () => {
+    const tree = applyOperation(createPageTree("Markdown", "inline-root"), {
+      type: "insert_block",
+      opId: "insert-inline-target",
+      block: newBlock(
+        "paragraph",
+        { text: "normal **forte** `código` ~riscado~" },
+        "inline-target"
+      ),
+      parentId: "inline-root",
+      index: 0,
+    }).tree
+    const { container } = render(
+      <BlockEditor {...editorProps(tree, new Set())} />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="inline-target"] [contenteditable]'
+    )!
+
+    expect(
+      container.querySelector('[data-cy="inline-markdown-preview"]')
+    ).toBeVisible()
+    expect(screen.getByText("forte").tagName).toBe("STRONG")
+    expect(editable).toHaveTextContent("normal **forte** `código` ~riscado~")
+    expect(editable).toHaveClass("text-transparent")
+
+    await userEvent.click(editable)
+    expect(
+      container.querySelector('[data-cy="inline-markdown-preview"]')
+    ).toBeNull()
+    expect(editable).not.toHaveClass("text-transparent")
+
+    fireEvent.blur(editable)
+    expect(
+      container.querySelector('[data-cy="inline-markdown-preview"]')
+    ).toBeVisible()
+  })
+
+  it("renders formatted selectable content in read-only mode", () => {
+    const tree = applyOperation(createPageTree("Markdown", "readonly-root"), {
+      type: "insert_block",
+      opId: "insert-readonly-target",
+      block: newBlock("paragraph", { text: "**forte**" }, "readonly-target"),
+      parentId: "readonly-root",
+      index: 0,
+    }).tree
+    const { container } = render(
+      <BlockEditor {...editorProps(tree, new Set())} readOnly />
+    )
+
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull()
+    expect(
+      container.querySelector('[data-cy="inline-markdown-readonly"] strong')
+    ).toHaveTextContent("forte")
+  })
 })
 
 function treeWithThreeBlocks() {

@@ -7,7 +7,7 @@ Reason é um workspace colaborativo para escrever e organizar documentos em bloc
 ## O que já funciona
 
 - Cadastro, sessões, perfil, workspaces, convites e papéis de acesso.
-- Editor de blocos com atalhos, slash menu, reordenação, indentação, undo/redo e páginas aninhadas.
+- Editor de blocos com Markdown inline, atalhos, slash menu, reordenação, indentação, undo/redo e páginas aninhadas.
 - Persistência, lixeira, restauração, links públicos revogáveis e transferência de páginas entre workspaces.
 - Alterações otimistas, colaboração por WebSocket e recuperação por cursor após desconexão.
 - Busca textual isolada por workspace.

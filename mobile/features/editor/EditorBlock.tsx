@@ -1,6 +1,10 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons"
 import type { Block } from "@reason/core/contracts"
-import { useEffect, useRef } from "react"
+import {
+  hasInlineMarkdown,
+  parseInlineMarkdown,
+} from "@reason/core/inline-markdown"
+import { useEffect, useRef, useState } from "react"
 import {
   Image,
   Pressable,
@@ -12,6 +16,7 @@ import {
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
 import { MermaidBlock } from "@/features/editor/MermaidBlock"
+import { InlineMarkdownText } from "@/components/InlineMarkdownText"
 import { fonts, useAppTheme } from "@/lib/theme"
 
 export function EditorBlock({
@@ -39,7 +44,10 @@ export function EditorBlock({
 }) {
   const { tokens } = useAppTheme()
   const inputRef = useRef<TextInput>(null)
+  const [focused, setFocused] = useState(false)
   const text = String(block.properties.text ?? block.properties.title ?? "")
+  const formatted =
+    block.type !== "code" && hasInlineMarkdown(parseInlineMarkdown(text))
   const left = Math.min(depth, 4) * 18
   const longPress = Gesture.LongPress()
     .minDuration(350)
@@ -48,6 +56,7 @@ export function EditorBlock({
 
   useEffect(() => {
     if (!focusRequested) return
+    setFocused(true)
     const frame = requestAnimationFrame(() => inputRef.current?.focus())
     return () => cancelAnimationFrame(frame)
   }, [focusRequested])
@@ -140,6 +149,12 @@ export function EditorBlock({
           ? ">"
           : null
 
+  const startEditing = () => {
+    if (!editable) return
+    setFocused(true)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
   return (
     <GestureDetector gesture={longPress}>
       <Pressable
@@ -194,27 +209,48 @@ export function EditorBlock({
             {prefix}
           </Text>
         ) : null}
-        <TextInput
-          ref={inputRef}
-          editable={editable}
-          multiline
-          scrollEnabled={false}
-          submitBehavior={block.type === "code" ? "newline" : "submit"}
-          value={text}
-          onChangeText={onChangeText}
-          onFocus={onFocus}
-          onSubmitEditing={block.type === "code" ? undefined : onSubmit}
-          placeholder="Digite algo..."
-          placeholderTextColor={tokens.mutedForeground}
-          style={[
-            styles.text,
-            { color: tokens.foreground },
-            block.type === "heading1" && styles.heading1,
-            block.type === "heading2" && styles.heading2,
-            block.type === "heading3" && styles.heading3,
-            block.type === "code" && styles.codeText,
-          ]}
-        />
+        {formatted && !focused ? (
+          <Pressable onPress={startEditing} style={styles.formattedInput}>
+            <InlineMarkdownText
+              selectable={!editable}
+              source={text}
+              color={tokens.foreground}
+              codeBackground={tokens.muted}
+              style={[
+                styles.text,
+                block.type === "heading1" && styles.heading1,
+                block.type === "heading2" && styles.heading2,
+                block.type === "heading3" && styles.heading3,
+              ]}
+            />
+          </Pressable>
+        ) : (
+          <TextInput
+            ref={inputRef}
+            editable={editable}
+            multiline
+            scrollEnabled={false}
+            submitBehavior={block.type === "code" ? "newline" : "submit"}
+            value={text}
+            onChangeText={onChangeText}
+            onFocus={() => {
+              setFocused(true)
+              onFocus()
+            }}
+            onBlur={() => setFocused(false)}
+            onSubmitEditing={block.type === "code" ? undefined : onSubmit}
+            placeholder="Digite algo..."
+            placeholderTextColor={tokens.mutedForeground}
+            style={[
+              styles.text,
+              { color: tokens.foreground },
+              block.type === "heading1" && styles.heading1,
+              block.type === "heading2" && styles.heading2,
+              block.type === "heading3" && styles.heading3,
+              block.type === "code" && styles.codeText,
+            ]}
+          />
+        )}
       </Pressable>
     </GestureDetector>
   )
@@ -242,6 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
+  formattedInput: { flex: 1, minHeight: 28 },
   prefix: { width: 24, fontFamily: fonts.sans, fontSize: 16, lineHeight: 24 },
   heading1: {
     fontFamily: fonts.headingBold,

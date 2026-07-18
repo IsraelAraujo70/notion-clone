@@ -94,6 +94,35 @@ describe("block editor", () => {
     ).should("have.text", "item de lista")
   })
 
+  it("renders inline markdown after blur and restores the source on focus", () => {
+    const source = "normal **forte** `código` ~riscado~"
+    firstBlock().click().type(source)
+    firstBlock().should("have.text", source)
+
+    cy.get('[data-cy="page-title"]').click()
+    cy.get('[data-cy="inline-markdown-preview"] strong').should(
+      "have.text",
+      "forte"
+    )
+    cy.get('[data-cy="inline-markdown-preview"] code').should(
+      "have.text",
+      "código"
+    )
+    cy.get('[data-cy="inline-markdown-preview"] del').should(
+      "have.text",
+      "riscado"
+    )
+
+    firstBlock().click().should("have.text", source).type(" final")
+    saved()
+    cy.get('[data-cy="page-title"]').click()
+    cy.reload()
+
+    cy.get('[data-cy="inline-markdown-preview"]')
+      .should("contain.text", "normal forte código riscado final")
+      .and("not.contain.text", "**")
+  })
+
   it("keeps a block when menu cut cannot access the clipboard", () => {
     firstBlock().click().type("Não pode sumir")
     saved()

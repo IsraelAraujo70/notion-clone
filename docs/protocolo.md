@@ -15,6 +15,8 @@ Tudo que o usuário escreve é um bloco. Página também é bloco e pode conter 
 
 Tipos atuais: `page`, `paragraph`, `heading1`, `heading2`, `heading3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`, `image` e `mermaid`. As propriedades são JSON e variam por tipo. Blocos `mermaid` armazenam a fonte do diagrama em `properties.text`.
 
+Blocos textuais, exceto `code` e `mermaid`, podem armazenar Markdown inline em `properties.text`. Os clientes preservam a fonte e renderizam somente o subconjunto `**negrito**`, `*itálico*`, `~riscado~`/`~~riscado~~` e `` `código` ``. Uma barra invertida escapa marcadores; delimitadores incompletos permanecem literais. HTML, links e imagens não são interpretados.
+
 ## Operações do cliente
 
 Toda operação possui um `opId` UUID gerado pelo cliente.
