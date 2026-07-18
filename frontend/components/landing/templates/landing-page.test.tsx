@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { act, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { LandingPage } from "./landing-page"
 
@@ -13,6 +13,7 @@ vi.mock("@/components/atoms/theme-toggle-button", () => ({
 
 vi.mock("@/components/atoms/brand", () => ({
   Brand: () => <div>reason</div>,
+  ReasonMark: () => <svg aria-hidden="true" />,
 }))
 
 describe("LandingPage", () => {
@@ -27,7 +28,8 @@ describe("LandingPage", () => {
     expect(
       screen.getByText(/A workspace shaped by blocks/i)
     ).toBeInTheDocument()
-    expect(screen.getByText(/A block-native writing surface/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/Launch notes/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Team wiki/i)).toBeInTheDocument()
 
     expect(screen.queryByText(/desafio/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/challenge/i)).not.toBeInTheDocument()
@@ -57,5 +59,27 @@ describe("LandingPage", () => {
       "href",
       "https://github.com/IsraelAraujo70/notion-clone/releases/download/android-beta/reason-beta.apk"
     )
+  })
+
+  describe("rotating headline word", () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it("starts on 'become' and cycles to the next word", () => {
+      render(<LandingPage />)
+
+      expect(screen.getByText("become")).toBeInTheDocument()
+
+      act(() => {
+        vi.advanceTimersByTime(2400)
+      })
+
+      expect(screen.getByText("fill")).toBeInTheDocument()
+    })
   })
 })

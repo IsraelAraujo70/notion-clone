@@ -4,29 +4,23 @@ import Link from "next/link"
 import {
   ArrowRightIcon,
   BlocksIcon,
-  BracesIcon,
   CheckIcon,
-  ChevronDownIcon,
   CommandIcon,
   DownloadIcon,
-  FileTextIcon,
   GitBranchIcon,
-  GripVerticalIcon,
-  Heading1Icon,
   KeyRoundIcon,
-  ListChecksIcon,
   LockKeyholeIcon,
-  MousePointer2Icon,
-  QuoteIcon,
   SearchIcon,
   SparklesIcon,
-  SquarePenIcon,
   UsersRoundIcon,
 } from "lucide-react"
 
 import { Brand } from "@/components/atoms/brand"
 import { LanguageSelector } from "@/components/atoms/language-selector"
 import { ThemeToggleButton } from "@/components/atoms/theme-toggle-button"
+import { MiniFaces } from "@/components/landing/molecules/mini-faces"
+import { RotatingWord } from "@/components/landing/molecules/rotating-word"
+import { EditorPreview } from "@/components/landing/organisms/editor-preview"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useI18n } from "@/lib/i18n/i18n-provider"
@@ -53,29 +47,6 @@ const productPillars = [
   },
 ] as const
 
-const editorBlocks = [
-  {
-    icon: Heading1Icon,
-    label: "Heading",
-    content: "Launch notes",
-  },
-  {
-    icon: ListChecksIcon,
-    label: "Task",
-    content: "Turn every edit into an operation",
-  },
-  {
-    icon: QuoteIcon,
-    label: "Quote",
-    content: "A page is a block with children.",
-  },
-  {
-    icon: BracesIcon,
-    label: "Code",
-    content: "apply(operation)",
-  },
-] as const
-
 const architectureItems = [
   {
     icon: GitBranchIcon,
@@ -98,144 +69,6 @@ const architectureItems = [
     text: "AI writes through blocks",
   },
 ] as const
-
-const miniFaces = [
-  "bg-[#e8f1ff] text-[#1459a8]",
-  "bg-[#fff3bf] text-[#6b4e00]",
-  "bg-[#ffe1d6] text-[#9b321b]",
-  "bg-[#e4f7dc] text-[#276221]",
-  "bg-[#f2e6ff] text-[#6b35a8]",
-]
-
-function MiniFaces() {
-  return (
-    <div
-      aria-hidden="true"
-      className="flex justify-center -space-x-2 text-sm font-semibold"
-    >
-      {miniFaces.map((className, index) => (
-        <span
-          key={className}
-          className={`grid size-12 rotate-[-4deg] place-items-center rounded-full border-2 border-background ${className}`}
-        >
-          {index === 0 ? "r" : index + 1}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function EditorPreview() {
-  const { t } = useI18n()
-
-  return (
-    <div className="relative mx-auto w-full max-w-5xl">
-      <div className="absolute -top-8 left-3 hidden rotate-[-12deg] items-center gap-2 rounded-full border bg-[#fff3bf] px-3 py-2 text-sm font-medium text-[#443100] shadow-sm sm:flex">
-        <MousePointer2Icon className="size-4" aria-hidden="true" />
-        {t("drag blocks")}
-      </div>
-      <div className="absolute -top-7 right-4 hidden rotate-[8deg] items-center gap-2 rounded-full border bg-[#e8f1ff] px-3 py-2 text-sm font-medium text-[#124d91] shadow-sm sm:flex">
-        <CommandIcon className="size-4" aria-hidden="true" />
-        {t("Slash commands")}
-      </div>
-
-      <div className="overflow-hidden rounded-lg border bg-card shadow-[0_24px_80px_rgba(15,15,15,0.10)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex h-10 items-center justify-between border-b bg-muted/70 px-4">
-          <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-            <span className="size-2.5 rounded-full bg-[#ffbd2e]" />
-            <span className="size-2.5 rounded-full bg-[#28c840]" />
-          </div>
-          <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-            <FileTextIcon className="size-3.5" aria-hidden="true" />
-            {t("Workspace page")}
-          </div>
-          <div className="text-xs font-medium text-muted-foreground">
-            {t("Blocks")}
-          </div>
-        </div>
-
-        <div className="grid min-h-[420px] bg-card md:grid-cols-[180px_1fr]">
-          <aside className="hidden border-r bg-muted/45 p-4 md:block">
-            <div className="mb-5 text-xs font-medium text-muted-foreground">
-              {t("Workspace")}
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2 rounded-md bg-background px-2 py-1.5 font-medium shadow-sm">
-                <FileTextIcon className="size-4" aria-hidden="true" />
-                {t("Home")}
-              </div>
-              <div className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground">
-                <SquarePenIcon className="size-4" aria-hidden="true" />
-                {t("Drafts")}
-              </div>
-              <div className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground">
-                <CommandIcon className="size-4" aria-hidden="true" />
-                {t("Commands")}
-              </div>
-            </div>
-          </aside>
-
-          <div className="p-5 sm:p-8">
-            <div className="mb-8 flex items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-                  <FileTextIcon aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">
-                    {t("reason workspace")}
-                  </p>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {t("A block-native writing surface.")}
-                  </p>
-                </div>
-              </div>
-              <Button variant="outline" size="sm" className="hidden sm:flex">
-                {t("Commands")}
-                <ChevronDownIcon data-icon="inline-end" />
-              </Button>
-            </div>
-
-            <div className="mx-auto max-w-2xl">
-              <h2 className="mb-3 font-heading text-4xl font-semibold">
-                {t("Untitled")}
-              </h2>
-              <p className="mb-7 leading-7 text-muted-foreground">
-                {t("Write, reorder, and reshape ideas one block at a time.")}
-              </p>
-
-              <div className="space-y-3">
-                {editorBlocks.map((block) => (
-                  <div
-                    key={block.label}
-                    className="group flex min-h-12 items-center gap-3 rounded-md border border-transparent px-2 py-2 hover:border-border hover:bg-muted/50"
-                  >
-                    <GripVerticalIcon
-                      className="size-4 text-muted-foreground opacity-60"
-                      aria-hidden="true"
-                    />
-                    <span className="grid size-8 shrink-0 place-items-center rounded-md border bg-background text-xs font-medium">
-                      <block.icon className="size-4" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground">
-                        {t(block.label)}
-                      </p>
-                      <p className="font-medium break-words">
-                        {t(block.content)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export function LandingPage() {
   const { t } = useI18n()
@@ -284,12 +117,13 @@ export function LandingPage() {
         <p className="mt-7 rounded-full border bg-card px-3 py-1 text-sm font-medium text-muted-foreground">
           {t("A workspace shaped by blocks")}
         </p>
-        <h1 className="mt-7 max-w-5xl text-5xl font-semibold text-balance sm:text-6xl">
-          {t("Where every idea can")}{" "}
-          <span className="inline-flex rounded-full bg-[#cdf4d6] px-4 py-1 text-[#0f7b2d] dark:bg-[#204b2b] dark:text-[#a6efb6]">
-            {t("become")}
-          </span>{" "}
-          {t("a page.")}
+        <h1 className="mt-7 min-h-[calc(2em+0.5rem)] max-w-5xl text-5xl font-semibold text-balance sm:text-6xl">
+          <span className="sr-only">
+            {t("Where every idea can become a page.")}
+          </span>
+          <span aria-hidden="true">
+            {t("Where every idea can")} <RotatingWord /> {t("a page.")}
+          </span>
         </h1>
         <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
           {t(
