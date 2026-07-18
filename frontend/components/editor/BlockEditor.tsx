@@ -31,6 +31,10 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@reason/core/id"
+import {
+  hasInlineMarkdown,
+  parseInlineMarkdown,
+} from "@reason/core/inline-markdown"
 import type { PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
 import {
@@ -38,6 +42,7 @@ import {
   type MermaidBlockEditorHandle,
 } from "./MermaidBlockEditor"
 import { filteredSlashItems, SlashMenu, useSlashItems } from "./SlashMenu"
+import { InlineMarkdown } from "./inline-markdown"
 import { BlockPresenceAvatar } from "./presence-avatars"
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu"
 import {
@@ -248,6 +253,23 @@ function blockClasses(type: BlockType) {
       return "min-h-7 text-secondary-foreground"
     case "divider":
       return "py-3"
+    default:
+      return "text-base leading-7"
+  }
+}
+
+function inlinePreviewClasses(type: BlockType) {
+  switch (type) {
+    case "heading1":
+      return "text-3xl font-bold leading-tight"
+    case "heading2":
+      return "text-2xl font-semibold leading-tight"
+    case "heading3":
+      return "text-xl font-semibold leading-snug"
+    case "quote":
+      return "pl-3 italic text-muted-foreground"
+    case "callout":
+      return "min-h-7 text-secondary-foreground"
     default:
       return "text-base leading-7"
   }
@@ -1803,6 +1825,12 @@ export function BlockEditor({
       getBlock(tree, childId)
     )
     const checked = block.properties.checked === true
+    const inlineSegments =
+      isTextBlock(block) && block.type !== "code" && block.type !== "mermaid"
+        ? parseInlineMarkdown(text)
+        : []
+    const showInlinePreview =
+      !readOnly && !isFocused && hasInlineMarkdown(inlineSegments)
     const pageDropPreview = externalPageDrag ? (
       <div
         role="status"
@@ -2268,71 +2296,112 @@ export function BlockEditor({
                         {t("Write something, or press '/' for commands")}
                       </span>
                     ) : null}
-                    <div
-                      ref={(element) => setRef(block.id, element)}
-                      contentEditable={!readOnly}
-                      onPointerDownCapture={(event) => {
-                        if (event.button === 0) {
-                          if (preserveMenuSelectionRef.current) {
+                    {readOnly ? (
+                      <div
+                        data-cy="inline-markdown-readonly"
+                        data-block-text-editor="true"
+                        className={`min-h-7 break-words ${blockClasses(block.type)} ${
+                          checked ? "text-muted-foreground line-through" : ""
+                        }`}
+                      >
+                        <InlineMarkdown segments={inlineSegments} />
+                      </div>
+                    ) : (
+                      <>
+                        {showInlinePreview ? (
+                          <div
+                            aria-hidden="true"
+                            className={`pointer-events-none min-h-7 break-words ${inlinePreviewClasses(
+                              block.type
+                            )} ${
+                              checked
+                                ? "text-muted-foreground line-through"
+                                : ""
+                            }`}
+                          >
+                            <InlineMarkdown
+                              segments={inlineSegments}
+                              dataCy="inline-markdown-preview"
+                            />
+                          </div>
+                        ) : null}
+                        <div
+                          ref={(element) => setRef(block.id, element)}
+                          contentEditable
+                          onPointerDownCapture={(event) => {
+                            if (event.button === 0) {
+                              if (preserveMenuSelectionRef.current) {
+                                preserveMenuSelectionRef.current = false
+                                clearSelection()
+                              }
+                              return
+                            }
+                            if (event.button !== 2) return
+                            prepareTextBlockMenu(block.id, event.currentTarget)
+                          }}
+                          onMouseDownCapture={(event) => {
+                            if (event.button === 2) {
+                              prepareTextBlockMenu(
+                                block.id,
+                                event.currentTarget
+                              )
+                            }
+                          }}
+                          onContextMenuCapture={(event) => {
+                            const useNativeMenu =
+                              nativeTextContextBlockRef.current === block.id ||
+                              hasNativeTextSelection(
+                                containerRef.current,
+                                event.currentTarget
+                              )
+                            nativeTextContextBlockRef.current = null
+                            if (useNativeMenu) {
+                              pendingContextMenuBlockRef.current = null
+                              event.stopPropagation()
+                            }
+                          }}
+                          suppressContentEditableWarning
+                          data-block-text-editor="true"
+                          spellCheck
+                          className={`min-h-7 break-words outline-none ${
+                            text.length > 0
+                              ? "inline-block max-w-full"
+                              : "w-full"
+                          } ${blockClasses(block.type)} ${
+                            checked ? "text-muted-foreground line-through" : ""
+                          } ${
+                            showInlinePreview
+                              ? "absolute inset-0 z-10 text-transparent caret-transparent"
+                              : ""
+                          }`}
+                          onFocus={() => {
+                            if (restoringMenuFocusRef.current) return
+                            setFocusedBlockId(block.id)
+                            onSelectedBlockChange(block.id)
+                            if (!preserveMenuSelectionRef.current)
+                              clearSelection()
+                          }}
+                          onBlur={() => {
+                            setFocusedBlockId((current) =>
+                              current === block.id ? null : current
+                            )
+                            setSlash((current) =>
+                              current?.blockId === block.id ? null : current
+                            )
+                            dispatchBatch([], { breakCoalescing: true })
+                          }}
+                          onInput={(event: FormEvent<HTMLElement>) => {
                             preserveMenuSelectionRef.current = false
                             clearSelection()
+                            handleInput(block, event.currentTarget)
+                          }}
+                          onPaste={(event) =>
+                            handleTextPaste(block, event.currentTarget, event)
                           }
-                          return
-                        }
-                        if (event.button !== 2) return
-                        prepareTextBlockMenu(block.id, event.currentTarget)
-                      }}
-                      onMouseDownCapture={(event) => {
-                        if (event.button === 2) {
-                          prepareTextBlockMenu(block.id, event.currentTarget)
-                        }
-                      }}
-                      onContextMenuCapture={(event) => {
-                        const useNativeMenu =
-                          nativeTextContextBlockRef.current === block.id ||
-                          hasNativeTextSelection(
-                            containerRef.current,
-                            event.currentTarget
-                          )
-                        nativeTextContextBlockRef.current = null
-                        if (useNativeMenu) {
-                          pendingContextMenuBlockRef.current = null
-                          event.stopPropagation()
-                        }
-                      }}
-                      suppressContentEditableWarning
-                      data-block-text-editor="true"
-                      spellCheck
-                      className={`min-h-7 break-words outline-none ${
-                        text.length > 0 ? "inline-block max-w-full" : "w-full"
-                      } ${blockClasses(block.type)} ${
-                        checked ? "text-muted-foreground line-through" : ""
-                      }`}
-                      onFocus={() => {
-                        if (restoringMenuFocusRef.current) return
-                        setFocusedBlockId(block.id)
-                        onSelectedBlockChange(block.id)
-                        if (!preserveMenuSelectionRef.current) clearSelection()
-                      }}
-                      onBlur={() => {
-                        setFocusedBlockId((current) =>
-                          current === block.id ? null : current
-                        )
-                        setSlash((current) =>
-                          current?.blockId === block.id ? null : current
-                        )
-                        dispatchBatch([], { breakCoalescing: true })
-                      }}
-                      onInput={(event: FormEvent<HTMLElement>) => {
-                        preserveMenuSelectionRef.current = false
-                        clearSelection()
-                        handleInput(block, event.currentTarget)
-                      }}
-                      onPaste={(event) =>
-                        handleTextPaste(block, event.currentTarget, event)
-                      }
-                      onKeyDown={(event) => handleKeyDown(block, event)}
-                    />
+                          onKeyDown={(event) => handleKeyDown(block, event)}
+                        />
+                      </>
+                    )}
                     {blockSlash ? (
                       <SlashMenu
                         items={slashItems}
