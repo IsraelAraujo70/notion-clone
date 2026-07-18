@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 
-import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { LocalizedDocumentTitle } from "@/components/localized-document-title"
 
 export const metadata: Metadata = {
@@ -8,10 +7,5 @@ export const metadata: Metadata = {
 }
 
 export default function DashboardPage() {
-  return (
-    <>
-      <LocalizedDocumentTitle title="Untitled" />
-      <DashboardShell />
-    </>
-  )
+  return <LocalizedDocumentTitle title="Untitled" />
 }

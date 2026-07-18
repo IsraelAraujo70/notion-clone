@@ -98,6 +98,13 @@ interface DropState {
   position: DropPosition
 }
 
+interface ExternalPageDropState {
+  blockId: string | null
+  position: DropPosition
+  parentId: string
+  index: number
+}
+
 interface MarqueeGesture {
   pointerId: number
   startX: number
@@ -130,6 +137,8 @@ interface BlockEditorProps {
   redo: () => void
   /** Abre uma página filha. Sem handler, o bloco `page` vira uma linha inerte. */
   onOpenPage?: (pageId: string) => void
+  externalPageDrag?: { id: string; title: string; icon: string } | null
+  onExternalPageDrop?: (slot: { parentId: string; index: number }) => void
   readOnly?: boolean
   blockPresence?: Map<string, PresencePeer[]>
   /** Upload de imagem (presign + PUT). Devolve URL pública e key. */
@@ -292,6 +301,8 @@ export function BlockEditor({
   undo,
   redo,
   onOpenPage,
+  externalPageDrag,
+  onExternalPageDrop,
   readOnly = false,
   blockPresence,
   onUploadImage,
@@ -319,6 +330,16 @@ export function BlockEditor({
     () => new Set()
   )
   const [drop, setDrop] = useState<DropState | null>(null)
+  const externalPageDropRef = useRef<ExternalPageDropState | null>(null)
+  const [externalPageDrop, setExternalPageDrop] =
+    useState<ExternalPageDropState | null>(null)
+  const updateExternalPageDrop = useCallback(
+    (next: ExternalPageDropState | null) => {
+      externalPageDropRef.current = next
+      setExternalPageDrop(next)
+    },
+    []
+  )
   const [openHandleMenuId, setOpenHandleMenuId] = useState<string | null>(null)
   const [clipboardReady, setClipboardReady] = useState(
     () => fallbackBlockClipboard() !== null
@@ -342,6 +363,7 @@ export function BlockEditor({
   const marqueeFrameRef = useRef<number | null>(null)
   const [marqueeRect, setMarqueeRect] = useState<SelectionRect | null>(null)
   const rows = useMemo(() => visibleBlocks(tree, collapsed), [tree, collapsed])
+
   const rowById = useMemo(
     () =>
       new Map(
@@ -1156,6 +1178,88 @@ export function BlockEditor({
     [clearDrag, dispatchBatch, dropPositionFor, focusVisible, tree, visibleIds]
   )
 
+  const externalPageSlot = useCallback(
+    (target: Block, position: DropPosition) => {
+      if (!externalPageDrag || !target.parentId) return null
+      if (
+        target.id === externalPageDrag.id ||
+        isDescendantOf(tree, target.id, externalPageDrag.id)
+      )
+        return null
+      const parent = getBlock(tree, target.parentId)
+      const targetIndex = parent.content.indexOf(target.id)
+      const sourceIndex = parent.content.indexOf(externalPageDrag.id)
+      const targetAfterRemoval =
+        sourceIndex !== -1 && sourceIndex < targetIndex
+          ? targetIndex - 1
+          : targetIndex
+      return {
+        blockId: target.id,
+        position,
+        parentId: parent.id,
+        index: targetAfterRemoval + (position === "below" ? 1 : 0),
+      } satisfies ExternalPageDropState
+    },
+    [externalPageDrag, tree]
+  )
+
+  const handleExternalPageDragOver = useCallback(
+    (event: DragEvent, target: Block) => {
+      if (!externalPageDrag || readOnly || !onExternalPageDrop) return false
+      const slot = externalPageSlot(target, dropPositionFor(event))
+      if (!slot) {
+        event.stopPropagation()
+        updateExternalPageDrop(null)
+        return true
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      event.dataTransfer.dropEffect = "move"
+      const current = externalPageDropRef.current
+      if (
+        current?.blockId !== slot.blockId ||
+        current.position !== slot.position ||
+        current.parentId !== slot.parentId ||
+        current.index !== slot.index
+      ) {
+        updateExternalPageDrop(slot)
+      }
+      return true
+    },
+    [
+      dropPositionFor,
+      externalPageDrag,
+      externalPageSlot,
+      onExternalPageDrop,
+      readOnly,
+      updateExternalPageDrop,
+    ]
+  )
+
+  const handleExternalPageDrop = useCallback(
+    (event: DragEvent, target: Block) => {
+      if (!externalPageDrag || readOnly || !onExternalPageDrop) return false
+      const slot =
+        externalPageDropRef.current?.blockId === target.id
+          ? externalPageDropRef.current
+          : externalPageSlot(target, dropPositionFor(event))
+      event.stopPropagation()
+      updateExternalPageDrop(null)
+      if (!slot) return true
+      event.preventDefault()
+      onExternalPageDrop({ parentId: slot.parentId, index: slot.index })
+      return true
+    },
+    [
+      dropPositionFor,
+      externalPageDrag,
+      externalPageSlot,
+      onExternalPageDrop,
+      readOnly,
+      updateExternalPageDrop,
+    ]
+  )
+
   const setSelectionBoth = useCallback((next: ReadonlySet<string>) => {
     selectionRef.current = next
     setSelection(next)
@@ -1727,6 +1831,19 @@ export function BlockEditor({
         : []
     const showInlinePreview =
       !readOnly && !isFocused && hasInlineMarkdown(inlineSegments)
+    const pageDropPreview = externalPageDrag ? (
+      <div
+        role="status"
+        aria-label={t("Drop page here")}
+        data-cy="page-drop-preview"
+        className="pointer-events-none my-1 flex items-center gap-2 rounded border border-dashed border-primary/60 bg-primary/10 px-10 py-2 text-sm font-medium opacity-60"
+      >
+        <span aria-hidden="true">{externalPageDrag.icon || "📄"}</span>
+        <span className="truncate">
+          {externalPageDrag.title || t("Untitled")}
+        </span>
+      </div>
+    ) : null
 
     return (
       <div
@@ -1737,6 +1854,10 @@ export function BlockEditor({
         {drop?.blockId === block.id && drop.position === "above" ? (
           <div className="h-0.5 rounded bg-primary" />
         ) : null}
+        {externalPageDrop?.blockId === block.id &&
+        externalPageDrop.position === "above"
+          ? pageDropPreview
+          : null}
         <ContextMenu
           onOpenChange={(open) => {
             if (!open) return
@@ -1754,8 +1875,14 @@ export function BlockEditor({
               data-block-id={block.id}
               data-block-type={block.type}
               draggable={false}
-              onDragOver={(event) => handleDragOver(event, block)}
-              onDrop={(event) => handleDrop(event, block)}
+              onDragOver={(event) => {
+                if (handleExternalPageDragOver(event, block)) return
+                handleDragOver(event, block)
+              }}
+              onDrop={(event) => {
+                if (handleExternalPageDrop(event, block)) return
+                handleDrop(event, block)
+              }}
               onPointerDown={(event) =>
                 handleBlockSelectionPointerDown(event, block.id)
               }
@@ -2304,6 +2431,10 @@ export function BlockEditor({
         {drop?.blockId === block.id && drop.position === "below" ? (
           <div className="h-0.5 rounded bg-primary" />
         ) : null}
+        {externalPageDrop?.blockId === block.id &&
+        externalPageDrop.position === "below"
+          ? pageDropPreview
+          : null}
         {block.type === "toggle" && isCollapsed
           ? null
           : children.map((child) => renderBlock(child, depth + 1))}
@@ -2335,6 +2466,19 @@ export function BlockEditor({
         if (target) void insertImageAfter(target, file)
       }}
       onDragOver={(event) => {
+        if (externalPageDrag && !readOnly && onExternalPageDrop) {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = "move"
+          const root = getBlock(tree, tree.rootId)
+          updateExternalPageDrop({
+            blockId: null,
+            position: "below",
+            parentId: root.id,
+            index: root.content.filter((id) => id !== externalPageDrag.id)
+              .length,
+          })
+          return
+        }
         // Reordenação de bloco é tratada por linha; aqui só aceita arquivo de imagem.
         if (draggingIdsRef.current.length > 0) return
         if (
@@ -2346,6 +2490,18 @@ export function BlockEditor({
         }
       }}
       onDrop={(event) => {
+        if (externalPageDrag && !readOnly && onExternalPageDrop) {
+          event.preventDefault()
+          const root = getBlock(tree, tree.rootId)
+          const slot = externalPageDropRef.current ?? {
+            parentId: root.id,
+            index: root.content.filter((id) => id !== externalPageDrag.id)
+              .length,
+          }
+          updateExternalPageDrop(null)
+          onExternalPageDrop({ parentId: slot.parentId, index: slot.index })
+          return
+        }
         if (draggingIdsRef.current.length > 0 || readOnly || !onUploadImage)
           return
         const file = [...event.dataTransfer.files].find((item) =>
@@ -2409,6 +2565,19 @@ export function BlockEditor({
       {getBlock(tree, tree.rootId).content.map((childId) =>
         renderBlock(getBlock(tree, childId), 0)
       )}
+      {externalPageDrop?.blockId === null && externalPageDrag ? (
+        <div
+          role="status"
+          aria-label={t("Drop page here")}
+          data-cy="page-drop-preview"
+          className="pointer-events-none my-1 flex items-center gap-2 rounded border border-dashed border-primary/60 bg-primary/10 px-10 py-2 text-sm font-medium opacity-60"
+        >
+          <span aria-hidden="true">{externalPageDrag.icon || "📄"}</span>
+          <span className="truncate">
+            {externalPageDrag.title || t("Untitled")}
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

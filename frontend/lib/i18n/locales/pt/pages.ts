@@ -8,6 +8,7 @@ export const pagesPt = {
   "Copy link": "Copiar link",
   "Could not delete. Try again.":
     "Não foi possível excluir. Tente novamente.",
+  "Could not move page": "Não foi possível mover a página",
   "Could not open the page": "Não foi possível abrir a página",
   "Could not search. Try again.":
     "Não foi possível buscar. Tente novamente.",
