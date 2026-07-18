@@ -39,4 +39,13 @@ describe("filteredSlashItems", () => {
       "mermaid",
     ])
   })
+
+  it("finds databases by table and Kanban aliases", () => {
+    expect(filteredSlashItems("kanban").map((item) => item.type)).toEqual([
+      "database",
+    ])
+    expect(filteredSlashItems("table").map((item) => item.type)).toEqual([
+      "database",
+    ])
+  })
 })

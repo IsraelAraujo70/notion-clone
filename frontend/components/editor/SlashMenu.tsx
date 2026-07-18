@@ -63,6 +63,12 @@ export const SLASH_ITEMS = [
     label: "Mermaid",
     keywords: "mermaid diagram flowchart graph",
   },
+  {
+    type: "database",
+    icon: "▦",
+    label: "Database",
+    keywords: "database table board kanban tasks",
+  },
   { type: "callout", icon: "💡", label: "Callout", keywords: "callout notice" },
   {
     type: "divider",

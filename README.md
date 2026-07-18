@@ -13,8 +13,9 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Workspace-scoped full-text search.
 - AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations.
 - Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
+- Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
 
-The current version does not include Notion-style databases, a desktop or offline client, or page-level permissions.
+The current version does not include GitHub Issues synchronization, a desktop or offline client, or page-level permissions.
 
 ## Technical Principles
 

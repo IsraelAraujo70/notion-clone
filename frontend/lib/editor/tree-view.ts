@@ -37,7 +37,10 @@ export function visibleBlocks(
   function walk(parentId: string, depth: number) {
     getChildren(tree, parentId).forEach((block, index) => {
       rows.push({ block, depth, parentId, index })
-      if (block.type !== "toggle" || !collapsed.has(block.id))
+      if (
+        block.type !== "database" &&
+        (block.type !== "toggle" || !collapsed.has(block.id))
+      )
         walk(block.id, depth + 1)
     })
   }

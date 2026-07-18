@@ -1425,7 +1425,10 @@ fn compile_operation(operation: OperationDraft, workspace: Uuid) -> Result<Opera
 }
 
 fn is_generated_block_type(block_type: BlockType) -> bool {
-    !matches!(block_type, BlockType::Page | BlockType::Image)
+    !matches!(
+        block_type,
+        BlockType::Page | BlockType::Image | BlockType::Database | BlockType::DatabaseRow
+    )
 }
 
 fn tool_error(message: &str) -> String {

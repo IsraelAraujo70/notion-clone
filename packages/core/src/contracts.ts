@@ -17,6 +17,8 @@ export const BLOCK_TYPES = [
   "divider",
   "image",
   "mermaid",
+  "database",
+  "database_row",
 ] as const
 
 export type BlockType = (typeof BLOCK_TYPES)[number]
@@ -26,7 +28,8 @@ export type JsonValue =
 
 // Propriedades por tipo (todas opcionais; o tipo do bloco decide o que é lido):
 // text (textuais), checked (to_do), language (code), title/icon (page),
-// url/key/caption (image); text (mermaid source).
+// url/key/caption (image); text (mermaid source); title/view/statuses/schema
+// (database); title/status e valores definidos pelo schema (database_row).
 export type BlockProperties = Record<string, JsonValue>
 
 /** Versão LWW sintética para mudança de `type` (não colide com props do produto). */

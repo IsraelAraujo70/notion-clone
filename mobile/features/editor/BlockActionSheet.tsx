@@ -29,7 +29,10 @@ type BlockActionSheetProps = {
 export function BlockActionSheet(props: BlockActionSheetProps) {
   const { tokens } = useAppTheme()
   const supportsTransform =
-    props.block && !["page", "image", "divider"].includes(props.block.type)
+    props.block &&
+    !["page", "image", "divider", "database", "database_row"].includes(
+      props.block.type
+    )
 
   return (
     <Modal

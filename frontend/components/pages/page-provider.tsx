@@ -85,6 +85,7 @@ export function PageProvider({
     loading: workspaceLoading,
   } = useWorkspace()
   const [pages, setPages] = useState<PageSummary[]>([])
+  const [validatedPageId, setValidatedPageId] = useState<string | null>(null)
   const [containerPageId, setContainerPageId] = useState<string | null>(null)
   const [trash, setTrash] = useState<TrashEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -114,6 +115,7 @@ export function PageProvider({
       if (cancelled) return
       setLoading(true)
       setPages([])
+      setValidatedPageId(null)
       setContainerPageId(null)
       void api
         .listPages(token, activeWorkspaceId)
@@ -132,15 +134,32 @@ export function PageProvider({
     }
   }, [activeWorkspaceId, authLoading, token, workspaceLoading])
 
-  // `/dashboard` sem página, ou uma página de outro workspace (troca de workspace,
-  // página no lixo): a primeira página de topo é o destino canônico. Sem nenhuma
-  // página, o dashboard mostra o estado vazio em vez de redirecionar.
+  // Database rows são navegáveis, mas não aparecem na lista da sidebar. Valide
+  // ids ausentes da lista antes de tratá-los como rota inválida.
   useEffect(() => {
     if (loading || pages.length === 0) return
-    if (!pageId || !pages.some((page) => page.id === pageId)) {
+    if (!pageId) {
       router.replace(pagePath(pages[0].id))
+      return
     }
-  }, [loading, pageId, pages, router])
+    if (pages.some((page) => page.id === pageId)) {
+      return
+    }
+    if (!token || !activeWorkspaceId) return
+
+    let cancelled = false
+    void api
+      .getPage(token, activeWorkspaceId, pageId)
+      .then(() => {
+        if (!cancelled) setValidatedPageId(pageId)
+      })
+      .catch(() => {
+        if (!cancelled) router.replace(pagePath(pages[0].id))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspaceId, loading, pageId, pages, router, token])
 
   const refreshTrash = useCallback(async () => {
     if (!token || !activeWorkspaceId) return
@@ -307,10 +326,11 @@ export function PageProvider({
     () => ({
       pages,
       containerPageId,
-      // Só depois de confirmar que a página existe neste workspace: evita montar
-      // o editor numa página que o redirect acima vai trocar.
       currentPageId:
-        pageId && pages.some((page) => page.id === pageId) ? pageId : null,
+        pageId &&
+        (pageId === validatedPageId || pages.some((page) => page.id === pageId))
+          ? pageId
+          : null,
       loading: loading || authLoading || workspaceLoading,
       canWrite,
       refreshPages: async () => {
@@ -346,6 +366,7 @@ export function PageProvider({
       pageRevision,
       pageDrag,
       pages,
+      validatedPageId,
       refreshTrash,
       renamePage,
       restore,
