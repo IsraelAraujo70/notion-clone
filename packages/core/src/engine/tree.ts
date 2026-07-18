@@ -120,6 +120,32 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(index, length))
 }
 
+function assertDatabaseRelationship(parent: BlockType, child: BlockType) {
+  if (parent === "database" && child !== "database_row") {
+    throw new EngineError("database only accepts database_row children")
+  }
+  if (child === "database_row" && parent !== "database") {
+    throw new EngineError("database_row must belong to a database")
+  }
+}
+
+function assertBlockTypeChange(
+  tree: BlockTree,
+  block: Block,
+  nextType: BlockType
+) {
+  if (block.parentId) {
+    assertDatabaseRelationship(getBlock(tree, block.parentId).type, nextType)
+  } else if (nextType === "database_row") {
+    throw new EngineError("database_row must belong to a database")
+  }
+  for (const child of tree.blocks.values()) {
+    if (child.parentId === block.id) {
+      assertDatabaseRelationship(nextType, child.type)
+    }
+  }
+}
+
 function mutate(tree: BlockTree, ...blocks: Block[]): BlockTree {
   const next = new Map(tree.blocks)
   for (const block of blocks) next.set(block.id, block)
@@ -147,6 +173,7 @@ export function applyOperation(
       const parent = getBlock(tree, op.parentId)
       if (parent.trashedAt)
         throw new EngineError("cannot insert into trashed block")
+      assertDatabaseRelationship(parent.type, op.block.type)
       const index = clampIndex(op.index, parent.content.length)
       const content = [...parent.content]
       content.splice(index, 0, op.block.id)
@@ -185,13 +212,14 @@ export function applyOperation(
       }
       // Inversa sem propVersions: no apply vira stored+1 e sempre vence (undo
       // de uma sequência de updates não pode ser engolido pelo LWW).
-      if (op.blockType && op.blockType !== block.type) {
+      if (op.blockType) {
         const version = lwwAccept(
           block.propVersions,
           op.propVersions,
           TYPE_PROP_VERSION_KEY
         )
         if (version !== null) {
+          assertBlockTypeChange(tree, block, op.blockType)
           inverse.blockType = block.type
           updated.type = op.blockType
           updated.propVersions![TYPE_PROP_VERSION_KEY] = version
@@ -228,6 +256,7 @@ export function applyOperation(
       const newParent = getBlock(tree, op.newParentId)
       if (newParent.trashedAt)
         throw new EngineError("cannot move into trashed block")
+      assertDatabaseRelationship(newParent.type, block.type)
 
       const oldParent = getBlock(tree, block.parentId)
       const oldIndex = oldParent.content.indexOf(op.blockId)
@@ -299,6 +328,7 @@ export function applyOperation(
       // O pai pode estar trashed (deletado depois do filho): o restore ainda vale,
       // o bloco só fica visível quando o ancestral voltar.
       const parent = getBlock(tree, block.parentId)
+      assertDatabaseRelationship(parent.type, block.type)
       const index = clampIndex(
         block.trashedIndex ?? parent.content.length,
         parent.content.length
@@ -358,6 +388,13 @@ export function applyOperation(
       for (const block of op.blocks) {
         if (tree.blocks.has(block.id))
           throw new EngineError(`duplicate block id: ${block.id}`)
+        if (block.parentId && incoming.has(block.parentId)) {
+          const incomingParent = incoming.get(block.parentId)!
+          const listed = incomingParent.content.includes(block.id)
+          if ((block.trashedAt === null) !== listed)
+            throw new EngineError(`invalid transferred subtree: ${block.id}`)
+          assertDatabaseRelationship(incomingParent.type, block.type)
+        }
         for (const childId of block.content) {
           const child = incoming.get(childId)
           if (!child || child.parentId !== block.id)
@@ -365,6 +402,12 @@ export function applyOperation(
         }
       }
       const root = roots[0]!
+      assertDatabaseRelationship(parent.type, root.type)
+      for (const block of op.blocks) {
+        for (const childId of block.content) {
+          assertDatabaseRelationship(block.type, incoming.get(childId)!.type)
+        }
+      }
       const blocks = new Map(tree.blocks)
       for (const block of op.blocks)
         blocks.set(block.id, { ...block, workspaceId: parent.workspaceId })
@@ -431,6 +474,7 @@ export function checkInvariants(tree: BlockTree): void {
     if (block.id !== tree.rootId) {
       if (!block.parentId) throw new EngineError(`orphan block: ${block.id}`)
       const parent = getBlock(tree, block.parentId)
+      assertDatabaseRelationship(parent.type, block.type)
       const inParent = parent.content.includes(block.id)
       if (block.trashedAt === null && !inParent)
         throw new EngineError(`block ${block.id} missing from parent content`)

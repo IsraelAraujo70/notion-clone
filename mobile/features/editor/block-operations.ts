@@ -89,7 +89,12 @@ export function indentOperation(
   const index = parent.content.indexOf(blockId)
   const previousId = parent.content[index - 1]
   const previous = previousId ? tree.blocks.get(previousId) : null
-  if (!previous || previous.type === "divider" || previous.type === "image") {
+  if (
+    !previous ||
+    previous.type === "divider" ||
+    previous.type === "image" ||
+    previous.type === "database"
+  ) {
     return null
   }
   return {

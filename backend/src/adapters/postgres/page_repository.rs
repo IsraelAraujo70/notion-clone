@@ -638,7 +638,8 @@ impl PageRepository for PostgresPageRepository {
             "WITH RECURSIVE subtree AS (
                  SELECT {BLOCK_COLUMNS}, 0 AS depth
                  FROM blocks
-                 WHERE workspace_id = $1 AND id = $2 AND type = 'page' AND trashed_at IS NULL
+                 WHERE workspace_id = $1 AND id = $2
+                   AND type IN ('page', 'database_row') AND trashed_at IS NULL
                  UNION ALL
                  SELECT c.id, c.workspace_id, c.type, c.properties, c.content, c.parent_id,
                         c.trashed_at, c.trashed_index, c.prop_versions, s.depth + 1

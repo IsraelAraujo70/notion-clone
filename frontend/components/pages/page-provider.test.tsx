@@ -7,6 +7,7 @@ import { PageProvider, pagePath, usePages } from "./page-provider"
 const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   listPages: vi.fn(),
+  getPage: vi.fn(),
   applyOperation: vi.fn(),
   listTrash: vi.fn(),
   permanentlyDelete: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("@/components/workspace/workspace-provider", () => ({
 vi.mock("@/lib/api", () => ({
   api: {
     listPages: (...args: unknown[]) => mocks.listPages(...args),
+    getPage: (...args: unknown[]) => mocks.getPage(...args),
     applyOperation: (...args: unknown[]) => mocks.applyOperation(...args),
     listTrash: (...args: unknown[]) => mocks.listTrash(...args),
     permanentlyDelete: (...args: unknown[]) => mocks.permanentlyDelete(...args),
@@ -119,6 +121,7 @@ describe("PageProvider", () => {
       destination_seq: 1,
     })
     mocks.listPages.mockReset().mockResolvedValue(PAGES)
+    mocks.getPage.mockReset().mockRejectedValue(new Error("Page not found"))
     mocks.workspace.activeWorkspace = { id: "ws-1", role: "owner" }
   })
 
@@ -168,6 +171,25 @@ describe("PageProvider", () => {
       expect(mocks.replace).toHaveBeenCalledWith(pagePath("page-root"))
     )
     expect(screen.getByTestId("current")).toHaveTextContent("none")
+  })
+
+  it("accepts a database row that is navigable but absent from the sidebar", async () => {
+    mocks.getPage.mockResolvedValue({
+      page: { rootId: "database-row", blocks: [] },
+      breadcrumbs: [],
+      seq: 1,
+    })
+    renderProvider("database-row")
+
+    await waitFor(() =>
+      expect(screen.getByTestId("current")).toHaveTextContent("database-row")
+    )
+    expect(mocks.getPage).toHaveBeenCalledWith(
+      "secret-token",
+      "ws-1",
+      "database-row"
+    )
+    expect(mocks.replace).not.toHaveBeenCalled()
   })
 
   it("creates a child page as two insert ops and refreshes the tree", async () => {

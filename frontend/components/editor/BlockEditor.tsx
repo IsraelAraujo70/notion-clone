@@ -31,6 +31,7 @@ import {
   slashQuery,
 } from "@/lib/editor/markdown"
 import { createId } from "@reason/core/id"
+import { defaultDatabaseProperties } from "@reason/core/database"
 import {
   hasInlineMarkdown,
   parseInlineMarkdown,
@@ -78,6 +79,7 @@ import {
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import { toast } from "sonner"
 import { useCrossBlockTextSelection } from "./useCrossBlockTextSelection"
+import { DatabaseBlock } from "@/components/database/organisms/database-block"
 
 type DropPosition = "above" | "below"
 
@@ -803,6 +805,7 @@ export function BlockEditor({
       if (index <= 0) return
       const previousSiblingId = parent.content[index - 1]
       const previousSibling = getBlock(tree, previousSiblingId)
+      if (previousSibling.type === "database") return
       dispatchBatch(
         [
           {
@@ -855,6 +858,31 @@ export function BlockEditor({
       )
       const nextText = removal?.text ?? blockText(block)
       setSlash(null)
+
+      if (type === "database") {
+        const database = insertSibling(block, "database", "")
+        if (!database) return
+        dispatchBatch(
+          [
+            {
+              type: "update_block",
+              opId: opId(),
+              blockId: block.id,
+              properties: { text: nextText },
+            },
+            {
+              ...database.op,
+              block: {
+                ...database.op.block,
+                properties: defaultDatabaseProperties(),
+              },
+            },
+          ],
+          { breakCoalescing: true }
+        )
+        onSelectedBlockChange(database.blockId)
+        return
+      }
 
       if (type === "divider") {
         const divider = insertSibling(block, "divider", "")
@@ -1449,7 +1477,12 @@ export function BlockEditor({
       const operations = selectedRoots(menuTargetIdsRef.current).flatMap(
         (id) => {
           const block = tree.blocks.get(id)
-          if (!block || ["page", "image", "divider"].includes(block.type))
+          if (
+            !block ||
+            ["page", "image", "divider", "database", "database_row"].includes(
+              block.type
+            )
+          )
             return []
           return [
             {
@@ -2133,6 +2166,100 @@ export function BlockEditor({
                     </p>
                   ) : null}
                 </div>
+              ) : block.type === "database" ? (
+                <DatabaseBlock
+                  block={block}
+                  rows={children}
+                  readOnly={readOnly}
+                  onUpdateDatabase={(properties, coalesceKey) =>
+                    dispatchBatch(
+                      [
+                        {
+                          type: "update_block",
+                          opId: opId(),
+                          blockId: block.id,
+                          properties,
+                        },
+                      ],
+                      coalesceKey ? { coalesceKey } : { breakCoalescing: true }
+                    )
+                  }
+                  onAddRow={(status) => {
+                    const row = newBlock(
+                      "database_row",
+                      { title: "", status },
+                      createId(),
+                      workspaceId
+                    )
+                    const paragraph = newBlock(
+                      "paragraph",
+                      { text: "" },
+                      createId(),
+                      workspaceId
+                    )
+                    dispatchBatch(
+                      [
+                        {
+                          type: "insert_block",
+                          opId: opId(),
+                          block: row,
+                          parentId: block.id,
+                          index: block.content.length,
+                        },
+                        {
+                          type: "insert_block",
+                          opId: opId(),
+                          block: paragraph,
+                          parentId: row.id,
+                          index: 0,
+                        },
+                      ],
+                      { breakCoalescing: true }
+                    )
+                  }}
+                  onUpdateRow={(rowId, properties, coalesceKey) =>
+                    dispatchBatch(
+                      [
+                        {
+                          type: "update_block",
+                          opId: opId(),
+                          blockId: rowId,
+                          properties,
+                        },
+                      ],
+                      coalesceKey ? { coalesceKey } : { breakCoalescing: true }
+                    )
+                  }
+                  onDeleteRow={(rowId) =>
+                    dispatchBatch(
+                      [{ type: "delete_block", opId: opId(), blockId: rowId }],
+                      { breakCoalescing: true }
+                    )
+                  }
+                  onDeleteProperty={(propertyId, databasePatch) =>
+                    dispatchBatch(
+                      [
+                        {
+                          type: "update_block",
+                          opId: opId(),
+                          blockId: block.id,
+                          properties: databasePatch,
+                        },
+                        ...children
+                          .filter((child) => child.type === "database_row")
+                          .map((row) => ({
+                            type: "update_block" as const,
+                            opId: opId(),
+                            blockId: row.id,
+                            properties: { [propertyId]: null },
+                          })),
+                      ],
+                      { breakCoalescing: true }
+                    )
+                  }
+                  onOpenRow={onOpenPage}
+                  onCommit={() => dispatchBatch([], { breakCoalescing: true })}
+                />
               ) : block.type === "mermaid" ? (
                 <div onContextMenuCapture={(event) => event.stopPropagation()}>
                   <MermaidBlockEditor
@@ -2435,7 +2562,7 @@ export function BlockEditor({
         externalPageDrop.position === "below"
           ? pageDropPreview
           : null}
-        {block.type === "toggle" && isCollapsed
+        {block.type === "database" || (block.type === "toggle" && isCollapsed)
           ? null
           : children.map((child) => renderBlock(child, depth + 1))}
       </div>

@@ -28,6 +28,8 @@ pub enum BlockType {
     Divider,
     Image,
     Mermaid,
+    Database,
+    DatabaseRow,
 }
 
 impl BlockType {
@@ -48,6 +50,8 @@ impl BlockType {
             Self::Divider => "divider",
             Self::Image => "image",
             Self::Mermaid => "mermaid",
+            Self::Database => "database",
+            Self::DatabaseRow => "database_row",
         }
     }
 }
@@ -69,6 +73,8 @@ pub fn parse_block_type(value: &str) -> Result<BlockType, DomainError> {
         "divider" => Ok(BlockType::Divider),
         "image" => Ok(BlockType::Image),
         "mermaid" => Ok(BlockType::Mermaid),
+        "database" => Ok(BlockType::Database),
+        "database_row" => Ok(BlockType::DatabaseRow),
         _ => Err(DomainError::Validation("Unknown block type")),
     }
 }
@@ -234,6 +240,42 @@ fn lww_accept(
     }
 }
 
+fn validate_database_relationship(parent: BlockType, child: BlockType) -> Result<(), DomainError> {
+    if parent == BlockType::Database && child != BlockType::DatabaseRow {
+        return Err(DomainError::Validation(
+            "database only accepts database_row children",
+        ));
+    }
+    if child == BlockType::DatabaseRow && parent != BlockType::Database {
+        return Err(DomainError::Validation(
+            "database_row must belong to a database",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_block_type_change(
+    tree: &BlockTree,
+    block: &Block,
+    next_type: BlockType,
+) -> Result<(), DomainError> {
+    if let Some(parent_id) = block.parent_id {
+        validate_database_relationship(tree.get(parent_id)?.block_type, next_type)?;
+    } else if next_type == BlockType::DatabaseRow {
+        return Err(DomainError::Validation(
+            "database_row must belong to a database",
+        ));
+    }
+    for child in tree
+        .blocks
+        .values()
+        .filter(|child| child.parent_id == Some(block.id))
+    {
+        validate_database_relationship(next_type, child.block_type)?;
+    }
+    Ok(())
+}
+
 /// Aplica a operação in-place e devolve os ids dos blocos que mudaram (para persistir).
 pub fn apply_operation(
     tree: &mut BlockTree,
@@ -260,6 +302,7 @@ pub fn apply_operation(
             if parent.trashed_at.is_some() {
                 return Err(DomainError::Validation("Cannot insert into trashed block"));
             }
+            validate_database_relationship(parent.block_type, block.block_type)?;
             let at = clamp_index(*index, parent.content.len());
             let mut inserted = block.clone();
             inserted.workspace_id = workspace_id;
@@ -285,12 +328,16 @@ pub fn apply_operation(
                 return Err(DomainError::Validation("Cannot update trashed block"));
             }
             let op_versions = prop_versions.as_ref();
+            let accepted_type_change = block_type.and_then(|next_type| {
+                lww_accept(&block.prop_versions, op_versions, TYPE_PROP_VERSION_KEY)
+                    .map(|version| (next_type, version))
+            });
+            if let Some((next_type, _)) = accepted_type_change {
+                validate_block_type_change(tree, block, next_type)?;
+            }
             let block = tree.blocks.get_mut(block_id).expect("block exists");
-            if let Some(next_type) = block_type
-                && let Some(version) =
-                    lww_accept(&block.prop_versions, op_versions, TYPE_PROP_VERSION_KEY)
-            {
-                block.block_type = *next_type;
+            if let Some((next_type, version)) = accepted_type_change {
+                block.block_type = next_type;
                 block
                     .prop_versions
                     .insert(TYPE_PROP_VERSION_KEY.to_string(), version);
@@ -334,6 +381,7 @@ pub fn apply_operation(
             if new_parent.trashed_at.is_some() {
                 return Err(DomainError::Validation("Cannot move into trashed block"));
             }
+            validate_database_relationship(new_parent.block_type, block.block_type)?;
 
             let old_parent = tree.get(old_parent_id)?;
             if !old_parent.content.contains(block_id) {
@@ -393,6 +441,7 @@ pub fn apply_operation(
             // O pai pode estar trashed (deletado depois do filho): o restore ainda vale,
             // o bloco só reaparece quando o ancestral voltar.
             let parent = tree.get(parent_id)?;
+            validate_database_relationship(parent.block_type, block.block_type)?;
             let at = clamp_index(
                 trashed_index.map(i64::from).unwrap_or(i64::MAX),
                 parent.content.len(),
@@ -463,6 +512,13 @@ pub fn apply_operation(
                 if tree.blocks.contains_key(&block.id) {
                     return Err(DomainError::Validation("Duplicate block id"));
                 }
+                if let Some(parent) = block.parent_id.and_then(|id| incoming.get(&id)) {
+                    let listed = parent.content.contains(&block.id);
+                    if block.trashed_at.is_none() != listed {
+                        return Err(DomainError::Validation("Invalid transferred subtree"));
+                    }
+                    validate_database_relationship(parent.block_type, block.block_type)?;
+                }
                 for child_id in &block.content {
                     if incoming.get(child_id).and_then(|child| child.parent_id) != Some(block.id) {
                         return Err(DomainError::Validation("Invalid transferred subtree"));
@@ -470,6 +526,15 @@ pub fn apply_operation(
                 }
             }
             let root_id = roots[0].id;
+            validate_database_relationship(parent.block_type, roots[0].block_type)?;
+            for block in blocks {
+                for child_id in &block.content {
+                    validate_database_relationship(
+                        block.block_type,
+                        incoming[child_id].block_type,
+                    )?;
+                }
+            }
             for block in blocks {
                 let mut inserted = block.clone();
                 inserted.workspace_id = workspace_id;
@@ -1124,5 +1189,163 @@ mod tests {
         assert_eq!(block.block_type.as_str(), "mermaid");
         assert_eq!(block.properties["text"], "graph TD; A-->B");
         assert_eq!(serde_json::to_value(&block).unwrap(), json);
+    }
+
+    #[test]
+    fn database_block_types_match_the_typescript_contract() {
+        assert_eq!(parse_block_type("database").unwrap(), BlockType::Database);
+        assert_eq!(
+            parse_block_type("database_row").unwrap(),
+            BlockType::DatabaseRow
+        );
+        assert_eq!(BlockType::Database.as_str(), "database");
+        assert_eq!(BlockType::DatabaseRow.as_str(), "database_row");
+    }
+
+    #[test]
+    fn database_rows_accept_page_content_but_stay_inside_the_database() {
+        let mut f = fixture();
+        let database_id = Uuid::new_v4();
+        let row_id = Uuid::new_v4();
+        apply!(
+            f,
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(database_id, f.workspace_id, BlockType::Database),
+                parent_id: f.root,
+                index: 0,
+            },
+        )
+        .unwrap();
+
+        apply!(
+            f,
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(row_id, f.workspace_id, BlockType::DatabaseRow),
+                parent_id: database_id,
+                index: 0,
+            },
+        )
+        .unwrap();
+
+        let row_content_id = Uuid::new_v4();
+        apply!(
+            f,
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(row_content_id, f.workspace_id, BlockType::Paragraph),
+                parent_id: row_id,
+                index: 0,
+            },
+        )
+        .unwrap();
+
+        let invalid_child = apply!(
+            f,
+            Operation::InsertBlock {
+                op_id: Uuid::new_v4(),
+                block: block(Uuid::new_v4(), f.workspace_id, BlockType::Paragraph),
+                parent_id: database_id,
+                index: 1,
+            },
+        );
+        assert!(invalid_child.is_err());
+
+        let invalid_move = apply!(
+            f,
+            Operation::MoveBlock {
+                op_id: Uuid::new_v4(),
+                block_id: row_id,
+                new_parent_id: f.root,
+                index: 0,
+            },
+        );
+        assert!(invalid_move.is_err());
+
+        let invalid_conversion = apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: database_id,
+                block_type: Some(BlockType::Paragraph),
+                properties: None,
+                prop_versions: None,
+            },
+        );
+        assert!(invalid_conversion.is_err());
+        assert_eq!(f.tree.get(row_id).unwrap().content, vec![row_content_id]);
+    }
+
+    #[test]
+    fn transfer_rejects_a_child_missing_from_parent_content() {
+        let mut f = fixture();
+        let parent_id = Uuid::new_v4();
+        let row_id = Uuid::new_v4();
+        let parent = block(parent_id, f.workspace_id, BlockType::Paragraph);
+        let mut hidden_row = block(row_id, f.workspace_id, BlockType::DatabaseRow);
+        hidden_row.parent_id = Some(parent_id);
+
+        let result = apply!(
+            f,
+            Operation::TransferSubtreeIn {
+                op_id: Uuid::new_v4(),
+                transfer_id: Uuid::new_v4(),
+                blocks: vec![parent, hidden_row],
+                parent_id: f.root,
+                index: 0,
+                source_workspace_id: Uuid::new_v4(),
+            },
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn transfer_accepts_a_trashed_row_missing_from_database_content() {
+        let mut f = fixture();
+        let database_id = Uuid::new_v4();
+        let mut trashed_row = block(Uuid::new_v4(), f.workspace_id, BlockType::DatabaseRow);
+        trashed_row.parent_id = Some(database_id);
+        trashed_row.trashed_at = Some(now());
+        trashed_row.trashed_index = Some(0);
+
+        let result = apply!(
+            f,
+            Operation::TransferSubtreeIn {
+                op_id: Uuid::new_v4(),
+                transfer_id: Uuid::new_v4(),
+                blocks: vec![
+                    block(database_id, f.workspace_id, BlockType::Database),
+                    trashed_row,
+                ],
+                parent_id: f.root,
+                index: 0,
+                source_workspace_id: Uuid::new_v4(),
+            },
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn update_to_the_current_type_advances_lww() {
+        let mut f = fixture();
+        apply!(
+            f,
+            Operation::UpdateBlock {
+                op_id: Uuid::new_v4(),
+                block_id: f.first,
+                block_type: Some(BlockType::Paragraph),
+                properties: None,
+                prop_versions: Some(HashMap::from([(TYPE_PROP_VERSION_KEY.to_string(), 9)])),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            f.tree.blocks[&f.first].prop_versions[TYPE_PROP_VERSION_KEY],
+            9
+        );
     }
 }

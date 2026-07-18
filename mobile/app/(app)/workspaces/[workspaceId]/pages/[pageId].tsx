@@ -47,6 +47,7 @@ function flattenTree(tree: BlockTree): { block: Block; depth: number }[] {
     const block = tree.blocks.get(id)
     if (!block || block.trashedAt) return
     rows.push({ block, depth })
+    if (block.type === "database") return
     for (const childId of block.content) visit(childId, depth + 1)
   }
   for (const childId of root.content) visit(childId, 0)

@@ -44,6 +44,8 @@ const BLOCK_TYPE_MESSAGES: Record<TrashEntry["type"], Message> = {
   callout: "Callout",
   divider: "Divider",
   image: "Image",
+  database: "Database",
+  database_row: "Database row",
 }
 
 function TrashEntryRow({

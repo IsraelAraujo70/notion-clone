@@ -82,7 +82,116 @@ describe("insert_block", () => {
   })
 })
 
+describe("database structure", () => {
+  it("accepts page content in database rows but only rows in a database", () => {
+    let tree = createPageTree("Test", "root")
+    tree = applyOperation(
+      tree,
+      insertOp(newBlock("database", {}, "database"), "root", 0)
+    ).tree
+    tree = applyOperation(
+      tree,
+      insertOp(newBlock("database_row", {}, "row"), "database", 0)
+    ).tree
+    tree = applyOperation(
+      tree,
+      insertOp(newBlock("paragraph", {}, "row-content"), "row", 0)
+    ).tree
+
+    expect(() =>
+      applyOperation(
+        tree,
+        insertOp(newBlock("paragraph", {}, "invalid-child"), "database", 1)
+      )
+    ).toThrow("database only accepts database_row children")
+    expect(() =>
+      applyOperation(
+        tree,
+        insertOp(newBlock("database_row", {}, "orphan-row"), "root", 1)
+      )
+    ).toThrow("database_row must belong to a database")
+    expect(() =>
+      applyOperation(tree, {
+        type: "move_block",
+        opId: oid(),
+        blockId: "row",
+        newParentId: "root",
+        index: 1,
+      })
+    ).toThrow("database_row must belong to a database")
+    expect(() =>
+      applyOperation(tree, {
+        type: "update_block",
+        opId: oid(),
+        blockId: "database",
+        blockType: "paragraph",
+      })
+    ).toThrow("database_row must belong to a database")
+
+    checkInvariants(tree)
+    expect(tree.blocks.get("row")?.content).toEqual(["row-content"])
+  })
+
+  it("rejects a transferred row omitted from its parent's content", () => {
+    const tree = createPageTree("Test", "root")
+    const malformedParent = newBlock("paragraph", {}, "incoming-parent")
+    const hiddenRow = {
+      ...newBlock("database_row", {}, "hidden-row"),
+      parentId: malformedParent.id,
+    }
+
+    expect(() =>
+      applyOperation(tree, {
+        type: "transfer_subtree_in",
+        opId: oid(),
+        transferId: oid(),
+        blocks: [malformedParent, hiddenRow],
+        parentId: tree.rootId,
+        index: 0,
+        sourceWorkspaceId: "source",
+      })
+    ).toThrow("invalid transferred subtree")
+  })
+
+  it("accepts a transferred trashed row omitted from database content", () => {
+    const tree = createPageTree("Test", "root")
+    const database = newBlock("database", {}, "incoming-database")
+    const trashedRow = {
+      ...newBlock("database_row", {}, "trashed-row"),
+      parentId: database.id,
+      trashedAt: "2026-07-18T00:00:00.000Z",
+      trashedIndex: 0,
+    }
+
+    const transferred = applyOperation(tree, {
+      type: "transfer_subtree_in",
+      opId: oid(),
+      transferId: oid(),
+      blocks: [database, trashedRow],
+      parentId: tree.rootId,
+      index: 0,
+      sourceWorkspaceId: "source",
+    }).tree
+
+    expect(getBlock(transferred, "trashed-row").trashedAt).not.toBeNull()
+    checkInvariants(transferred)
+  })
+})
+
 describe("update_block", () => {
+  it("advances LWW when an update writes the current type", () => {
+    const tree = fixture()
+    const updated = applyOperation(tree, {
+      type: "update_block",
+      opId: oid(),
+      blockId: "a",
+      blockType: "paragraph",
+      propVersions: { _type: 9 },
+    }).tree
+
+    expect(getBlock(updated, "a").propVersions?._type).toBe(9)
+  })
+
   it("patches properties, deletes with null, and turns block types in place", () => {
     let tree = fixture()
     tree = applyOperation(tree, {

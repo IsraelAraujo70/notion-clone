@@ -13,6 +13,7 @@ import { toast } from "sonner"
 
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import type { Operation } from "@reason/core/contracts"
+import { defaultDatabaseProperties } from "@reason/core/database"
 import {
   applyOperation,
   createPageTree,
@@ -125,6 +126,41 @@ function treeWithEmptyParagraph(): BlockTree {
       parentId: "workspace-container-not-in-page-snapshot",
     }),
   }
+}
+
+function treeWithDatabase(): BlockTree {
+  const page = createPageTree("Test", "page-root")
+  const database = newBlock(
+    "database",
+    {
+      ...defaultDatabaseProperties(),
+      schema: [
+        { id: "title", name: "Name", type: "title" },
+        { id: "status", name: "Status", type: "status" },
+        { id: "details", name: "Details", type: "text" },
+      ],
+    },
+    "database"
+  )
+  const row = newBlock(
+    "database_row",
+    { title: "Task", status: "not_started", details: "Remove me" },
+    "database-row"
+  )
+  const withDatabase = applyOperation(page, {
+    type: "insert_block",
+    opId: "insert-database",
+    block: database,
+    parentId: page.rootId,
+    index: 0,
+  }).tree
+  return applyOperation(withDatabase, {
+    type: "insert_block",
+    opId: "insert-database-row",
+    block: row,
+    parentId: database.id,
+    index: 0,
+  }).tree
 }
 
 function setEditableText(editable: HTMLElement, text: string) {
@@ -318,6 +354,81 @@ describe("BlockEditor slash menu", () => {
           blockId: "empty-block",
           blockType: "mermaid",
           properties: expect.objectContaining({ text: "" }),
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+
+  it("inserts a database through canonical block operations", () => {
+    const dispatchBatch = vi.fn()
+    const { container } = render(
+      <BlockEditor
+        {...editorProps(treeWithEmptyParagraph(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+    const editable = container.querySelector<HTMLElement>(
+      '[data-block-id="empty-block"] [contenteditable]'
+    )!
+
+    editable.focus()
+    setEditableText(editable, "/database")
+    fireEvent.mouseDown(screen.getByRole("button", { name: /Database$/ }))
+
+    expect(dispatchBatch).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "empty-block",
+          properties: { text: "" },
+        }),
+        expect.objectContaining({
+          type: "insert_block",
+          parentId: "page-root",
+          block: expect.objectContaining({
+            type: "database",
+            properties: expect.objectContaining({
+              view: "table",
+              statuses: expect.any(Array),
+            }),
+          }),
+        }),
+      ],
+      { breakCoalescing: true }
+    )
+  })
+
+  it("deletes a database property and clears its values through canonical operations", () => {
+    const dispatchBatch = vi.fn()
+    render(
+      <BlockEditor
+        {...editorProps(treeWithDatabase(), new Set())}
+        dispatchBatch={dispatchBatch}
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Property options: Details" })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Delete property" }))
+
+    expect(dispatchBatch).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "database",
+          properties: {
+            schema: [
+              expect.objectContaining({ id: "title" }),
+              expect.objectContaining({ id: "status" }),
+            ],
+          },
+        }),
+        expect.objectContaining({
+          type: "update_block",
+          blockId: "database-row",
+          properties: { details: null },
         }),
       ],
       { breakCoalescing: true }
@@ -826,9 +937,7 @@ describe("BlockEditor block selection", () => {
       },
     })
     expect(clipboardValues.get("text/plain")).toBe("lect-a\n\nsel")
-    expect(clipboardValues.get(CROSS_BLOCK_MARKDOWN_MIME)).toBe(
-      "lect-a\n\nsel"
-    )
+    expect(clipboardValues.get(CROSS_BLOCK_MARKDOWN_MIME)).toBe("lect-a\n\nsel")
     expect(clipboardValues.has(BLOCK_CLIPBOARD_MIME)).toBe(false)
 
     rerender(

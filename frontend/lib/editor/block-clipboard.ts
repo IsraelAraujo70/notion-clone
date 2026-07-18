@@ -27,6 +27,8 @@ const BLOCK_TYPES = new Set<BlockType>([
   "callout",
   "divider",
   "image",
+  "database",
+  "database_row",
 ])
 
 export interface ClipboardBlock {
@@ -138,6 +140,20 @@ function selectionBlockMarkdown(
           ? row.block.properties.title
           : "Untitled"
       return `${indent}${escapedParagraph(title)}`
+    }
+    case "database": {
+      const title =
+        typeof row.block.properties.title === "string"
+          ? row.block.properties.title
+          : "Untitled database"
+      return `${indent}${escapedParagraph(title)}`
+    }
+    case "database_row": {
+      const title =
+        typeof row.block.properties.title === "string"
+          ? row.block.properties.title
+          : "Untitled"
+      return `${indent}- ${escapedParagraph(title)}`
     }
     case "paragraph":
       return `${indent}${escapedParagraph(text)}`
