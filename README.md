@@ -1,59 +1,59 @@
 # Reason
 
-Reason é um workspace colaborativo para escrever e organizar documentos em blocos. Páginas, textos, listas, imagens e subpáginas formam uma árvore; cada alteração vira uma operação persistida e sincronizada. O produto possui clientes web e mobile Android em desenvolvimento sobre o mesmo protocolo.
+Reason is a collaborative workspace for writing and organizing block-based documents. Pages, text, lists, images, and subpages form a tree, and every change becomes a persisted, synchronized operation. The product has web and Android clients built on the same protocol.
 
-**Produção:** [reason.israeldeveloper.com.br](https://reason.israeldeveloper.com.br)
+**Production:** [reason.israeldeveloper.com.br](https://reason.israeldeveloper.com.br)
 
-## O que já funciona
+## Current Features
 
-- Cadastro, sessões, perfil, workspaces, convites e papéis de acesso.
-- Editor de blocos com Markdown inline, atalhos, slash menu, reordenação, indentação, undo/redo e páginas aninhadas.
-- Persistência, lixeira, restauração, links públicos revogáveis e transferência de páginas entre workspaces.
-- Alterações otimistas, colaboração por WebSocket e recuperação por cursor após desconexão.
-- Busca textual isolada por workspace.
-- IA para continuar, resumir e transformar conteúdo, além de Q&A com busca semântica e citações.
-- MCP autenticado para agentes lerem, pesquisarem e editarem blocos, além de receberem imagens.
+- Sign-up, sessions, profiles, workspaces, invitations, and access roles.
+- Block editor with inline Markdown, keyboard shortcuts, a slash menu, reordering, indentation, undo/redo, and nested pages.
+- Persistence, trash and restore, revocable public links, and page transfers between workspaces.
+- Optimistic updates, WebSocket collaboration, and cursor-based recovery after disconnection.
+- Workspace-scoped full-text search.
+- AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations.
+- Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
 
-Não fazem parte da versão atual: databases no estilo Notion, cliente desktop/offline e permissões por página.
+The current version does not include Notion-style databases, a desktop or offline client, or page-level permissions.
 
-## Princípios técnicos
+## Technical Principles
 
-1. **Tudo é bloco.** Uma página é um bloco com filhos. `content` define a ordem; `parentId` define pertencimento.
-2. **Toda escrita é uma operação.** Frontend e backend aplicam as mesmas regras, com idempotência, cursor por workspace e LWW por propriedade.
-3. **A IA não tem atalho.** Escritas de IA passam pela mesma autorização, transação, log, sincronização e undo das escritas humanas.
+1. **Everything is a block.** A page is a block with children. `content` defines ordering, while `parentId` defines membership.
+2. **Every write is an operation.** The frontend and backend apply the same rules, with idempotency, per-workspace cursors, and per-property LWW semantics.
+3. **AI has no shortcut.** AI writes go through the same authorization, transactions, operation log, synchronization, and undo flow as human writes.
 
-## Arquitetura
+## Architecture
 
-O frontend Next.js aplica alterações localmente. A API Rust autoriza, valida e persiste operações no PostgreSQL. WebSocket distribui mudanças; SSE transmite execuções de IA. Um worker processa embeddings e limpeza de arquivos. O PostgreSQL também armazena busca textual e vetores com pgvector.
+The Next.js frontend applies changes locally. The Rust API authorizes, validates, and persists operations in PostgreSQL. WebSocket distributes changes, while SSE streams AI executions. A worker processes embeddings and file cleanup. PostgreSQL also provides full-text search and vector storage through pgvector.
 
 ```text
 Browser ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgvector
-                                         └────── worker / armazenamento S3
+                                         └────── worker / S3 storage
 ```
 
-As decisões e os limites estão em [docs/arquitetura.md](docs/arquitetura.md).
+Architecture decisions and boundaries are documented in [docs/arquitetura.md](docs/arquitetura.md).
 
-## Desenvolvimento local
+## Local Development
 
-Pré-requisitos: Docker Desktop, Node.js e npm. Rust só é necessário para executar comandos Cargo fora do container.
+Prerequisites: Docker Desktop, Node.js, and npm. Rust is only required to run Cargo commands outside the container.
 
 ```bash
 cp .env.example .env
 make dev
 ```
 
-`make dev` inicia PostgreSQL, MinIO, API e worker em Docker, além do Next.js na máquina.
+`make dev` starts PostgreSQL, MinIO, the API, and the worker in Docker, and runs Next.js on the host machine.
 
 - Web: `http://localhost:3000`
 - API: `http://localhost:18080`
 - PostgreSQL: `localhost:55433` (`notion_clone`)
 - MinIO: `http://localhost:9000`
 
-Use `make backend` quando não precisar do frontend.
+Use `make backend` when you do not need the frontend.
 
 ### Mobile
 
-O cliente Expo em `mobile/` usa a API de produção por padrão. Para apontar para outra API:
+The Expo client in `mobile/` uses the production API by default. To point it to another API:
 
 ```bash
 cd mobile
@@ -62,24 +62,24 @@ npm install
 npm start
 ```
 
-Em um aparelho Android, uma API local precisa usar o IP acessível da máquina, não `localhost`. Para gerar um APK interno, configure o EAS e execute `eas build --profile preview --platform android`.
+On an Android device, a local API must use the machine's reachable IP address instead of `localhost`. To generate an internal APK, configure EAS and run `eas build --profile preview --platform android`.
 
-O workflow `Android beta` gera um APK pelo GitHub Actions e publica o asset `reason-beta.apk` no release fixo `android-beta`. A landing aponta para esse asset por padrão; `NEXT_PUBLIC_ANDROID_APK_URL` permite substituir a URL.
+The `Android beta` workflow builds an APK with GitHub Actions and publishes the `reason-beta.apk` asset to the fixed `android-beta` release. The landing page points to this asset by default; set `NEXT_PUBLIC_ANDROID_APK_URL` to override the URL.
 
-## Verificação
+## Verification
 
 ```bash
-make test       # Rust + core compartilhado + Vitest + typecheck mobile
-make test-e2e   # Cypress com a stack completa
-make down       # encerra o ambiente local
+make test       # Rust + shared core + Vitest + mobile typecheck
+make test-e2e   # Cypress against the full stack
+make down       # Stop the local environment
 ```
 
-Veja [docs/testes.md](docs/testes.md) para saber o que cada gate cobre.
+See [docs/testes.md](docs/testes.md) for details about what each gate covers.
 
-## Documentação
+## Documentation
 
-- [Arquitetura](docs/arquitetura.md)
-- [Protocolo de blocos e operações](docs/protocolo.md)
+- [Architecture](docs/arquitetura.md)
+- [Block and operation protocol](docs/protocolo.md)
 - [API](docs/api.md)
 - [MCP](docs/mcp.md)
-- [Testes e gates](docs/testes.md)
+- [Tests and gates](docs/testes.md)
