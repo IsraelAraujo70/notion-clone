@@ -1,6 +1,13 @@
 "use client"
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -11,7 +18,11 @@ import {
   Trash2Icon,
 } from "lucide-react"
 
-import { pagePath, usePages } from "@/components/pages/page-provider"
+import {
+  PAGE_DRAG_MIME,
+  pagePath,
+  usePages,
+} from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { Button } from "@/components/ui/button"
 import { isUnauthorizedApiError } from "@/lib/api"
@@ -73,6 +84,24 @@ export function buildPageTree(pages: PageSummary[]): PageNode[] {
     else roots.push(node)
   }
   return roots
+}
+
+export function isPageDescendant(
+  pages: PageSummary[],
+  ancestorId: string,
+  candidateId: string
+) {
+  const parentById = new Map(
+    pages.map((page) => [page.id, page.parent_page_id])
+  )
+  const visited = new Set<string>()
+  let current: string | null | undefined = candidateId
+  while (current && !visited.has(current)) {
+    if (current === ancestorId) return true
+    visited.add(current)
+    current = parentById.get(current)
+  }
+  return false
 }
 
 function PageIcon({
@@ -244,12 +273,23 @@ function MoveWorkspaceDialog({
 function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const router = useRouter()
   const { t } = useI18n()
-  const { currentPageId, canWrite, createChildPage, deletePage } = usePages()
+  const {
+    pages,
+    currentPageId,
+    canWrite,
+    createChildPage,
+    deletePage,
+    pageDrag,
+    startPageDrag,
+    endPageDrag,
+  } = usePages()
   const { activeWorkspace, activeWorkspaceId, workspaces } = useWorkspace()
   const [open, setOpen] = useState(true)
   const [busy, setBusy] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [moving, setMoving] = useState(false)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverOpenedRef = useRef(false)
   const destinations = workspaces.filter(
     (workspace) =>
       workspace.id !== activeWorkspaceId && workspace.role === "owner"
@@ -259,6 +299,24 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
   const indent = Math.min(depth, 4) * 12
   const leadingOffset = 8 + indent
   const contentOffset = leadingOffset + (hasChildren ? 28 : 0)
+  const validDropTarget = Boolean(
+    pageDrag &&
+    pageDrag.id !== node.id &&
+    !isPageDescendant(pages, pageDrag.id, node.id)
+  )
+
+  const clearHover = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
+    hoverTimerRef.current = null
+    hoverOpenedRef.current = false
+  }
+
+  useEffect(
+    () => () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
+    },
+    []
+  )
 
   const addChild = async () => {
     setBusy(true)
@@ -280,8 +338,55 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
     <Link
       href={pagePath(node.id)}
       data-cy={`nav-page-${node.id}`}
+      data-page-drop-target={validDropTarget ? "true" : undefined}
       aria-label={title}
       title={title}
+      draggable={canWrite}
+      onDragStart={(event) => {
+        if (!canWrite) {
+          event.preventDefault()
+          return
+        }
+        const drag = { id: node.id, title: node.title, icon: node.icon }
+        event.dataTransfer.effectAllowed = "move"
+        event.dataTransfer.setData(PAGE_DRAG_MIME, JSON.stringify(drag))
+        startPageDrag(drag)
+      }}
+      onDragOver={(event) => {
+        if (
+          !validDropTarget ||
+          !event.dataTransfer.types.includes(PAGE_DRAG_MIME)
+        )
+          return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "move"
+        if (
+          currentPageId === node.id ||
+          hoverTimerRef.current ||
+          hoverOpenedRef.current
+        )
+          return
+        hoverTimerRef.current = setTimeout(() => {
+          hoverTimerRef.current = null
+          hoverOpenedRef.current = true
+          setOpen(true)
+          router.push(pagePath(node.id))
+        }, 600)
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null))
+          return
+        clearHover()
+      }}
+      onDrop={(event) => {
+        if (!validDropTarget) return
+        event.preventDefault()
+        clearHover()
+      }}
+      onDragEnd={() => {
+        clearHover()
+        endPageDrag()
+      }}
     >
       <PageIcon
         icon={node.icon}

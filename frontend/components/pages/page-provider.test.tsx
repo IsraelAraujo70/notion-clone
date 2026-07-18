@@ -67,6 +67,8 @@ function Probe() {
     deletePage,
     permanentDelete,
     movePageToWorkspace,
+    movePageWithinWorkspace,
+    pageRevision,
   } = usePages()
   return (
     <div>
@@ -74,6 +76,7 @@ function Probe() {
       <span data-testid="root">{containerPageId ?? "none"}</span>
       <span data-testid="write">{String(canWrite)}</span>
       <span data-testid="count">{pages.length}</span>
+      <span data-testid="revision">{pageRevision}</span>
       <button onClick={() => createChildPage("page-root")}>criar</button>
       <button onClick={() => createTopLevelPage()}>criar-topo</button>
       <button onClick={() => renamePage("page-child", "Nova")}>renomear</button>
@@ -83,6 +86,11 @@ function Probe() {
       <button onClick={() => permanentDelete("page-child")}>purgar</button>
       <button onClick={() => movePageToWorkspace("page-child", "ws-2")}>
         mover
+      </button>
+      <button
+        onClick={() => movePageWithinWorkspace("page-child", "page-root", 2)}
+      >
+        mover-interno
       </button>
     </div>
   )
@@ -281,6 +289,31 @@ describe("PageProvider", () => {
       "page-child",
       "ws-2",
     ])
+    expect(mocks.listPages).toHaveBeenCalled()
+  })
+
+  it("moves a page within the workspace with move_block and reloads the editor", async () => {
+    renderProvider("page-root")
+    await waitFor(() =>
+      expect(screen.getByTestId("root")).toHaveTextContent("container")
+    )
+    mocks.listPages.mockClear()
+
+    await userEvent.click(screen.getByText("mover-interno"))
+
+    await waitFor(() => expect(mocks.applyOperation).toHaveBeenCalledTimes(1))
+    const [, workspaceId, operation] = mocks.applyOperation.mock.calls[0]
+    expect(workspaceId).toBe("ws-1")
+    expect(operation).toMatchObject({
+      type: "move_block",
+      blockId: "page-child",
+      newParentId: "page-root",
+      index: 2,
+    })
+    expect(operation.opId).toEqual(expect.any(String))
+    await waitFor(() =>
+      expect(screen.getByTestId("revision")).toHaveTextContent("1")
+    )
     expect(mocks.listPages).toHaveBeenCalled()
   })
 })

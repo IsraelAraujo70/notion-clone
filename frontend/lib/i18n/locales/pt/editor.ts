@@ -19,6 +19,7 @@ export const editorPt = {
   Cut: "Recortar",
   Divider: "Divisor",
   "Drag or open block options": "Arrastar ou abrir opções do bloco",
+  "Drop page here": "Soltar página aqui",
   Duplicate: "Duplicar",
   "Edit with AI": "Editar com AI",
   "Heading 1": "Título 1",

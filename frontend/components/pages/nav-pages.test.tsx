@@ -1,6 +1,6 @@
-import { render } from "@testing-library/react"
+import { act, fireEvent, render } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { NavPages, buildPageTree } from "@/components/pages/nav-pages"
 import { Sidebar, SidebarProvider } from "@/components/ui/sidebar"
@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   pages: [] as PageSummary[],
   movePageToWorkspace: vi.fn(),
+  startPageDrag: vi.fn(),
+  endPageDrag: vi.fn(),
+  pageDrag: null as PageSummary | null,
   canWrite: false,
   workspaces: [{ id: "ws-1", name: "Origem", role: "owner" }],
 }))
@@ -20,6 +23,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 vi.mock("@/components/pages/page-provider", () => ({
+  PAGE_DRAG_MIME: "application/x-reason-page+json",
   pagePath: (pageId: string) => `/dashboard/pages/${pageId}`,
   usePages: () => ({
     pages: mocks.pages,
@@ -32,6 +36,9 @@ vi.mock("@/components/pages/page-provider", () => ({
     deletePage: vi.fn(),
     renamePage: vi.fn(),
     movePageToWorkspace: mocks.movePageToWorkspace,
+    startPageDrag: mocks.startPageDrag,
+    endPageDrag: mocks.endPageDrag,
+    pageDrag: mocks.pageDrag,
   }),
 }))
 
@@ -80,9 +87,16 @@ describe("NavPages", () => {
   beforeEach(() => {
     mocks.push.mockReset()
     mocks.movePageToWorkspace.mockReset().mockResolvedValue(undefined)
+    mocks.startPageDrag.mockReset()
+    mocks.endPageDrag.mockReset()
+    mocks.pageDrag = null
     mocks.pages = []
     mocks.canWrite = false
     mocks.workspaces = [{ id: "ws-1", name: "Origem", role: "owner" }]
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it("builds roots when an old page points to a missing parent", () => {
@@ -204,5 +218,61 @@ describe("NavPages", () => {
     expect(select).not.toHaveTextContent("Somente leitura")
     await user.click(getByDataCy("move-workspace-submit"))
     expect(mocks.movePageToWorkspace).toHaveBeenCalledWith("root", "ws-2")
+  })
+
+  it("starts a page drag and opens a valid destination after hovering", () => {
+    vi.useFakeTimers()
+    mocks.pages = [
+      page("source", null, "Origem"),
+      page("target", null, "Destino"),
+    ]
+    mocks.canWrite = true
+    mocks.pageDrag = mocks.pages[0]
+    renderNavPages()
+    const source = getByDataCy("nav-page-source")
+    const target = getByDataCy("nav-page-target")
+    const dataTransfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      types: ["application/x-reason-page+json"],
+      setData: vi.fn(),
+    }
+
+    fireEvent.dragStart(source, { dataTransfer })
+    expect(mocks.startPageDrag).toHaveBeenCalledWith({
+      id: "source",
+      title: "Origem",
+      icon: "📄",
+    })
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      "application/x-reason-page+json",
+      expect.any(String)
+    )
+
+    fireEvent.dragOver(target, { dataTransfer })
+    act(() => vi.advanceTimersByTime(599))
+    expect(mocks.push).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(1))
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/target")
+  })
+
+  it("does not open a descendant because moving into it would create a cycle", () => {
+    vi.useFakeTimers()
+    mocks.pages = [page("source", null), page("child", "source")]
+    mocks.canWrite = true
+    mocks.pageDrag = mocks.pages[0]
+    renderNavPages()
+
+    const target = getByDataCy("nav-page-child")
+    expect(target).not.toHaveAttribute("data-page-drop-target")
+    fireEvent.dragOver(target, {
+      dataTransfer: {
+        types: ["application/x-reason-page+json"],
+        dropEffect: "none",
+      },
+    })
+    act(() => vi.advanceTimersByTime(600))
+
+    expect(mocks.push).not.toHaveBeenCalled()
   })
 })

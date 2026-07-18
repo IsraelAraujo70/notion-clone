@@ -61,6 +61,7 @@ import { AiAssistant } from "@/components/ai/organisms/ai-assistant"
 import type { AiAction } from "@reason/core/ai/contracts"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 import type { Message } from "@/lib/i18n/messages"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 function opId() {
@@ -123,7 +124,15 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const searchParams = useSearchParams()
   const { token, user } = useAuth()
   const { activeWorkspaceId } = useWorkspace()
-  const { pages, canWrite, refreshPages, pageRevision } = usePages()
+  const {
+    pages,
+    canWrite,
+    refreshPages,
+    pageRevision,
+    pageDrag,
+    movePageWithinWorkspace,
+    endPageDrag,
+  } = usePages()
 
   const [tree, setTree] = useState<BlockTree | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<Crumb[]>([])
@@ -717,6 +726,17 @@ export function EditorPage({ pageId }: { pageId: string }) {
               undo={undo}
               redo={redo}
               onOpenPage={(childId) => router.push(pagePath(childId))}
+              externalPageDrag={pageDrag}
+              onExternalPageDrop={
+                pageDrag
+                  ? ({ parentId, index }) => {
+                      const pageId = pageDrag.id
+                      void movePageWithinWorkspace(pageId, parentId, index)
+                        .catch(() => toast.error(t("Could not move page")))
+                        .finally(endPageDrag)
+                    }
+                  : undefined
+              }
               readOnly={!canWrite}
               blockPresence={blockPresence}
               onUploadImage={
