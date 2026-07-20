@@ -1,5 +1,11 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons"
-import type { Block, BlockType, Operation } from "@reason/core/contracts"
+import type {
+  Block,
+  BlockType,
+  JsonValue,
+  Operation,
+} from "@reason/core/contracts"
+import { defaultDatabaseProperties } from "@reason/core/database"
 import {
   createOpQueue,
   type OpQueue,
@@ -14,7 +20,7 @@ import {
 } from "@reason/core/engine/tree"
 import { createId } from "@reason/core/id"
 import * as Haptics from "expo-haptics"
-import { useLocalSearchParams, useNavigation } from "expo-router"
+import { router, useLocalSearchParams, useNavigation } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import {
   Keyboard,
@@ -27,7 +33,9 @@ import {
 } from "react-native"
 
 import { ScreenState } from "@/components/ScreenState"
+import { DatabaseBlock } from "@/features/database/DatabaseBlock"
 import { BlockActionSheet } from "@/features/editor/BlockActionSheet"
+import { BlockInsertSheet } from "@/features/editor/BlockInsertSheet"
 import { EditorBlock } from "@/features/editor/EditorBlock"
 import {
   duplicateSubtreeOperations,
@@ -69,8 +77,10 @@ export default function PageScreen() {
   const [saveState, setSaveState] = useState<SaveState>("saved")
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [menuBlockId, setMenuBlockId] = useState<string | null>(null)
+  const [insertSheetOpen, setInsertSheetOpen] = useState(false)
   const treeRef = useRef<BlockTree | null>(null)
   const queueRef = useRef<OpQueue | null>(null)
+  const openingRowRef = useRef(false)
 
   useEffect(() => {
     if (!token || !workspaceId) return
@@ -149,6 +159,7 @@ export default function PageScreen() {
       operations.length === 0 ||
       offline ||
       role === "viewer" ||
+      saveState === "error" ||
       !queueRef.current
     )
       return
@@ -186,6 +197,13 @@ export default function PageScreen() {
   }
 
   function addParagraph(afterBlockId: string | null = focusedBlockId) {
+    addBlock("paragraph", afterBlockId)
+  }
+
+  function addBlock(
+    blockType: BlockType,
+    afterBlockId: string | null = focusedBlockId
+  ) {
     if (!root) return
     const anchor = afterBlockId
       ? treeRef.current?.blocks.get(afterBlockId)
@@ -195,8 +213,14 @@ export default function PageScreen() {
       : root
     if (!parent) return
     const block = newBlock(
-      "paragraph",
-      { text: "" },
+      blockType,
+      blockType === "database"
+        ? defaultDatabaseProperties()
+        : {
+            text: "",
+            ...(blockType === "to_do" ? { checked: false } : {}),
+            ...(blockType === "code" ? { language: "plaintext" } : {}),
+          },
       createId(),
       root.workspaceId
     )
@@ -221,6 +245,25 @@ export default function PageScreen() {
 
   function closeBlockMenu() {
     setMenuBlockId(null)
+  }
+
+  async function openDatabaseRow(rowId: string) {
+    if (openingRowRef.current) return
+    openingRowRef.current = true
+    Keyboard.dismiss()
+    try {
+      await queueRef.current?.drained()
+    } catch {
+      openingRowRef.current = false
+      return
+    }
+    router.push({
+      pathname: "/(app)/workspaces/[workspaceId]/pages/[pageId]",
+      params: { workspaceId, pageId: rowId, role },
+    })
+    setTimeout(() => {
+      openingRowRef.current = false
+    }, 500)
   }
 
   function deleteSelectedBlock() {
@@ -327,47 +370,163 @@ export default function PageScreen() {
       />
 
       <View style={styles.blocks}>
-        {rows.map(({ block, depth }) => (
-          <EditorBlock
-            key={block.id}
-            block={block}
-            depth={depth}
-            editable={canEdit}
-            focusRequested={focusedBlockId === block.id}
-            selected={menuBlockId === block.id}
-            onChangeText={(text) => updateProperty(block.id, "text", text)}
-            onFocus={() => setFocusedBlockId(block.id)}
-            onLongPress={() => openBlockMenu(block.id)}
-            onSubmit={() => addParagraph(block.id)}
-            onToggle={() =>
-              updateProperty(
-                block.id,
-                "checked",
-                !Boolean(block.properties.checked)
-              )
-            }
-          />
-        ))}
+        {rows.map(({ block, depth }) => {
+          if (block.type === "database") {
+            const databaseRows = block.content.flatMap((rowId) => {
+              const row = tree.blocks.get(rowId)
+              return row?.type === "database_row" && !row.trashedAt ? [row] : []
+            })
+            return (
+              <View
+                key={block.id}
+                style={{ marginLeft: Math.min(depth, 4) * 18 }}
+              >
+                <DatabaseBlock
+                  block={block}
+                  rows={databaseRows}
+                  editable={canEdit}
+                  selected={menuBlockId === block.id}
+                  onLongPress={() => openBlockMenu(block.id)}
+                  onUpdateDatabase={(properties, coalesceKey) =>
+                    applyLocal(
+                      {
+                        type: "update_block",
+                        opId: createId(),
+                        blockId: block.id,
+                        properties,
+                      },
+                      coalesceKey
+                    )
+                  }
+                  onAddRow={(status) => {
+                    const row = newBlock(
+                      "database_row",
+                      { title: "", status },
+                      createId(),
+                      root.workspaceId
+                    )
+                    const paragraph = newBlock(
+                      "paragraph",
+                      { text: "" },
+                      createId(),
+                      root.workspaceId
+                    )
+                    applyBatch([
+                      {
+                        type: "insert_block",
+                        opId: createId(),
+                        block: row,
+                        parentId: block.id,
+                        index: block.content.length,
+                      },
+                      {
+                        type: "insert_block",
+                        opId: createId(),
+                        block: paragraph,
+                        parentId: row.id,
+                        index: 0,
+                      },
+                    ])
+                  }}
+                  onUpdateRow={(rowId, properties, coalesceKey) =>
+                    applyLocal(
+                      {
+                        type: "update_block",
+                        opId: createId(),
+                        blockId: rowId,
+                        properties,
+                      },
+                      coalesceKey
+                    )
+                  }
+                  onDeleteRow={(rowId) =>
+                    applyLocal({
+                      type: "delete_block",
+                      opId: createId(),
+                      blockId: rowId,
+                    })
+                  }
+                  onDeleteProperty={(propertyId, databasePatch) =>
+                    applyBatch([
+                      {
+                        type: "update_block",
+                        opId: createId(),
+                        blockId: block.id,
+                        properties: databasePatch,
+                      },
+                      ...databaseRows.map((row) => ({
+                        type: "update_block" as const,
+                        opId: createId(),
+                        blockId: row.id,
+                        properties: { [propertyId]: null } as Record<
+                          string,
+                          JsonValue | null
+                        >,
+                      })),
+                    ])
+                  }
+                  onOpenRow={(rowId) => void openDatabaseRow(rowId)}
+                />
+              </View>
+            )
+          }
+
+          return (
+            <EditorBlock
+              key={block.id}
+              block={block}
+              depth={depth}
+              editable={canEdit}
+              focusRequested={focusedBlockId === block.id}
+              selected={menuBlockId === block.id}
+              onChangeText={(text) => updateProperty(block.id, "text", text)}
+              onFocus={() => setFocusedBlockId(block.id)}
+              onLongPress={() => openBlockMenu(block.id)}
+              onSubmit={() => addParagraph(block.id)}
+              onToggle={() =>
+                updateProperty(
+                  block.id,
+                  "checked",
+                  !Boolean(block.properties.checked)
+                )
+              }
+            />
+          )
+        })}
       </View>
 
       {canEdit ? (
-        <Pressable
-          onPress={() => addParagraph()}
-          style={({ pressed }) => [
-            styles.addButton,
-            { backgroundColor: pressed ? tokens.muted : tokens.background },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="plus"
-            size={18}
-            color={tokens.mutedForeground}
-          />
-          <Text style={[styles.addText, { color: tokens.mutedForeground }]}>
-            Novo bloco
-          </Text>
-        </Pressable>
+        <View style={styles.addActions}>
+          <Pressable
+            onPress={() => {
+              Keyboard.dismiss()
+              setInsertSheetOpen(true)
+            }}
+            style={({ pressed }) => [
+              styles.addButton,
+              { backgroundColor: pressed ? tokens.muted : tokens.background },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="plus"
+              size={18}
+              color={tokens.mutedForeground}
+            />
+            <Text style={[styles.addText, { color: tokens.mutedForeground }]}>
+              Novo bloco
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
+
+      <BlockInsertSheet
+        visible={insertSheetOpen}
+        onClose={() => setInsertSheetOpen(false)}
+        onSelect={(blockType) => {
+          setInsertSheetOpen(false)
+          addBlock(blockType)
+        }}
+      />
 
       <BlockActionSheet
         block={menuBlock}
@@ -402,13 +561,13 @@ const styles = StyleSheet.create({
     lineHeight: 44,
   },
   blocks: { marginTop: 18, gap: 2 },
+  addActions: { marginTop: 8 },
   addButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
     paddingVertical: 11,
     paddingLeft: 24,
-    marginTop: 8,
     borderRadius: 8,
   },
   addText: { fontFamily: fonts.sans, fontSize: 14 },
