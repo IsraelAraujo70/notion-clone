@@ -122,6 +122,39 @@ export function EditorBlock({
     )
   }
 
+  if (block.type === "database") {
+    const board = block.properties.view === "board"
+    return (
+      <GestureDetector gesture={longPress}>
+        <Pressable
+          style={[
+            styles.database,
+            {
+              marginLeft: left,
+              borderColor: tokens.border,
+              backgroundColor: tokens.card,
+            },
+            selected && { backgroundColor: tokens.accent },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name={board ? "view-column-outline" : "table-large"}
+            size={20}
+            color={tokens.mutedForeground}
+          />
+          <View style={styles.databaseText}>
+            <Text style={[styles.databaseTitle, { color: tokens.foreground }]}>
+              {text || "Database sem titulo"}
+            </Text>
+            <Text style={[styles.caption, { color: tokens.mutedForeground }]}>
+              {board ? "Kanban" : "Tabela"} · {block.content.length} itens
+            </Text>
+          </View>
+        </Pressable>
+      </GestureDetector>
+    )
+  }
+
   if (block.type === "mermaid") {
     return (
       <GestureDetector gesture={longPress}>
@@ -328,5 +361,21 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sansMedium,
     fontSize: 16,
     textDecorationLine: "underline",
+  },
+  database: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  databaseText: { flex: 1 },
+  databaseTitle: {
+    fontFamily: fonts.headingBold,
+    fontSize: 16,
+    lineHeight: 22,
   },
 })

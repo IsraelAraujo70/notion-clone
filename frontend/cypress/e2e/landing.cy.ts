@@ -6,7 +6,7 @@ describe("landing page", () => {
     cy.contains("become").should("be.visible")
     cy.contains("a page.").should("be.visible")
     cy.contains("A workspace shaped by blocks").should("be.visible")
-    cy.contains("A block-native writing surface.").should("be.visible")
+    cy.contains("Team wiki").should("be.visible")
     cy.contains("desafio").should("not.exist")
     cy.contains("M1").should("not.exist")
     cy.contains("local editor").should("not.exist")

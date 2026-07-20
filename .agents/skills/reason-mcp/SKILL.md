@@ -23,7 +23,43 @@ url = "https://api.reason.israeldeveloper.com.br/mcp"
 bearer_token_env_var = "REASON_MCP_TOKEN"
 ```
 
-Never put a real `rsn_mcp_...` token in this skill, source control, command output, or chat. A project `.env` is not automatically loaded by Codex; `REASON_MCP_TOKEN` must be present in the Codex process environment before startup. If the Reason tools are unavailable, ask the user to configure or restart Codex instead of attempting to discover or print the token.
+Never put a real `rsn_mcp_...` token in this skill, source control, command output, or chat. In this repository, the canonical credential is `REASON_MCP_TOKEN` in the root `.env`, which is ignored by Git. Load that file into the process environment before starting or diagnosing OpenCode; never print its value. The project `opencode.json` reads the credential through `{env:REASON_MCP_TOKEN}`.
+
+For every OpenCode CLI invocation from this repository, extract only the MCP token in the same shell command. Do not `source .env`: other application values may contain shell-significant characters.
+
+```bash
+export REASON_MCP_TOKEN="$(ruby -ne 'print $1.strip if /^REASON_MCP_TOKEN=(.*)$/' .env)"; npx --yes opencode-ai <command>
+```
+
+OpenCode configuration and environment variables are loaded at startup. After changing `.env`, restart OpenCode before using the injected `reason_*` tools.
+
+## OpenCode Client Recovery
+
+If OpenCode Desktop does not inject the `reason_*` tools into the current session, do not stop after asking for repeated restarts and do not bypass MCP with direct HTTP. Diagnose and recover through the official OpenCode CLI, which loads the same `opencode.json` and MCP configuration.
+
+1. Read the token from the project `.env` and confirm it exists without printing it:
+
+   ```bash
+   export REASON_MCP_TOKEN="$(ruby -ne 'print $1.strip if /^REASON_MCP_TOKEN=(.*)$/' .env)"; test -n "$REASON_MCP_TOKEN"
+   ```
+
+2. Verify the MCP handshake from the project directory:
+
+   ```bash
+   export REASON_MCP_TOKEN="$(ruby -ne 'print $1.strip if /^REASON_MCP_TOKEN=(.*)$/' .env)"; npx --yes opencode-ai mcp list
+   ```
+
+3. If `reason` reports `connected`, execute the user's request with `opencode run`. The prompt must explicitly require only the Reason MCP tools and forbid direct HTTP, database, storage, shell-based Reason access, and file edits:
+
+   ```bash
+   export REASON_MCP_TOKEN="$(ruby -ne 'print $1.strip if /^REASON_MCP_TOKEN=(.*)$/' .env)"; npx --yes opencode-ai run --pure \
+      "Use exclusively the reason MCP tools. Do not use direct HTTP, the database, storage, shell access to Reason data, or file edits. <precise user request>"
+   ```
+
+4. Use `--auto` only when the user explicitly authorized the requested mutation and the prompt narrowly identifies the workspace, page, operation, and verification step.
+5. Require the CLI agent to read the target first, use canonical `reason_apply_operations`, re-read after a mutation, and return the resulting page ID or concise evidence.
+
+This fallback is still a real MCP client test. Direct calls to the Reason application API remain forbidden.
 
 ## Available Tools
 
@@ -164,6 +200,8 @@ Before every write, verify:
 
 ## Error Handling
 
+- Desktop tools unavailable: follow **OpenCode Client Recovery** before asking for another restart. If `mcp list` reports connected, complete the request through `opencode run` using only `reason_*` tools.
+- CLI reports disconnected: inspect OpenCode MCP configuration and confirm token presence without printing it; only then ask the user to restart or fix credentials.
 - Permission error: identify the missing scope or required workspace role without asking for the token.
 - Workspace absent from `reason_list_workspaces`: ask the user to grant it in **Configurações > Integrações**.
 - Search unavailable: use page listing and targeted reads if practical; do not claim semantic results.

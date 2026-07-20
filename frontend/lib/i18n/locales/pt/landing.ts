@@ -1,5 +1,4 @@
 export const landingPt = {
-  "A block-native writing surface.": "Uma superfície de escrita nativa em blocos.",
   "A keyboard-first shell with command search, page navigation, and account actions.":
     "Uma interface orientada ao teclado, com busca de comandos, navegação entre páginas e ações da conta.",
   "A page is a block with children.": "Uma página é um bloco com filhos.",
@@ -11,13 +10,11 @@ export const landingPt = {
   "Built around the same path for people, sync, and AI.":
     "Construído sobre o mesmo caminho para pessoas, sincronização e IA.",
   Code: "Código",
-  Commands: "Comandos",
-  Drafts: "Rascunhos",
   "Download Android beta": "Baixar beta para Android",
   "Download Android beta APK": "Baixar beta para Android em APK",
+  "Everything you write is a block.": "Tudo o que você escreve é um bloco.",
+  "Expandable idea": "Ideia expansível",
   "Fast command surface": "Interface de comandos ágil",
-  Heading: "Título",
-  Home: "Início",
   "Launch notes": "Notas de lançamento",
   "Operation-based sync": "Sincronização baseada em operações",
   "Paragraphs, headings, lists, tasks, toggles, quotes, code, callouts, dividers, drag, and undo.":
@@ -26,19 +23,21 @@ export const landingPt = {
   "Private by default": "Privado por padrão",
   Product: "Produto",
   "Protected workspace": "Workspace protegido",
-  Quote: "Citação",
   "Real signup, login, logout, password reset, password reveal, and strength feedback.":
     "Cadastro, entrada, saída, redefinição e exibição de senha reais, além de feedback de força.",
   "Real-time convergence": "Convergência em tempo real",
   "Reason is a block-first workspace for writing, arranging pages, protecting private work, and building toward real-time sync without treating the editor as a costume.":
     "Reason é um workspace orientado a blocos para escrever, organizar páginas, proteger trabalhos privados e evoluir para sincronização em tempo real sem tratar o editor como uma fantasia.",
+  Retros: "Retros",
+  Roadmap: "Roadmap",
   "Scoped search": "Busca com escopo",
   "Slash commands": "Comandos de barra",
   Start: "Começar",
-  Task: "Tarefa",
+  "Team wiki": "Wiki da equipe",
   "Turn every edit into an operation": "Transforme cada edição em uma operação",
-  Untitled: "Sem título",
   "Where every idea can": "Onde cada ideia pode",
+  "Where every idea can become a page.":
+    "Onde cada ideia pode virar uma página.",
   "Workspace page": "Página do workspace",
   "Workspace permissions": "Permissões do workspace",
   "Write, reorder, and reshape ideas one block at a time.":
@@ -47,7 +46,9 @@ export const landingPt = {
   "apply(operation)": "apply(operation)",
   become: "virar",
   "drag blocks": "arraste blocos",
-  "reason workspace": "workspace reason",
+  fill: "encher",
+  "grow into": "evoluir para",
+  "turn into": "se transformar em",
   "Switch to dark mode": "Mudar para o modo escuro",
   "Switch to light mode": "Mudar para o modo claro",
 } as const
