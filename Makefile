@@ -2,18 +2,20 @@ COMPOSE ?= docker compose
 BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker
 WEB_DIR ?= frontend
 MOBILE_DIR ?= mobile
+DESKTOP_DIR ?= desktop
 CORE_DIR ?= packages/core
 NEXT_PUBLIC_API_BASE_URL ?= http://localhost:18080
 EXPO_PUBLIC_API_BASE_URL ?= https://api.reason.israeldeveloper.com.br
 DOCKER_WAIT_SECONDS ?= 120
 
-.PHONY: help docker-ready backend dev mobile watch up down restart logs ps test test-api test-core test-web test-mobile test-e2e clean kill-web
+.PHONY: help docker-ready backend dev mobile desktop watch up down restart logs ps test test-api test-core test-web test-mobile test-desktop test-e2e clean kill-web
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make dev                       Start Postgres+MinIO+API in Docker, Next via npm run dev' \
 		'  make mobile                    Start the Expo mobile client' \
+		'  make desktop                   Start backend, Next and the Electron desktop spike' \
 		'  make backend                   Start Postgres+MinIO+API containers' \
 		'  make watch                     Backend with Docker Compose Watch' \
 		'  make up                        Same as backend (background)' \
@@ -21,7 +23,7 @@ help:
 		'  make restart                   Restart backend containers' \
 		'  make logs                      Follow backend container logs' \
 		'  make ps                        Show container status' \
-		'  make test                      Run API and web gate tests' \
+		'  make test                      Run API, core, web, mobile and desktop gates' \
 		'  make test-e2e                  Run Cypress full-stack E2E tests' \
 		'  make clean                     Stop containers, free :3000, remove volumes'
 
@@ -62,6 +64,43 @@ dev: backend
 mobile:
 	cd $(MOBILE_DIR) && EXPO_PUBLIC_API_BASE_URL=$(EXPO_PUBLIC_API_BASE_URL) npm start
 
+desktop: backend
+	@set -e; \
+	web_pid=''; \
+	web_listener_pids=''; \
+	cleanup() { \
+		if [ -n "$$web_listener_pids" ]; then \
+			kill $$web_listener_pids 2>/dev/null || true; \
+		fi; \
+		if [ -n "$$web_pid" ]; then \
+			kill $$web_pid 2>/dev/null || true; \
+			wait $$web_pid 2>/dev/null || true; \
+		fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	if curl -fsS http://localhost:3000 >/dev/null 2>&1; then \
+		echo 'Reusing Next.js on http://localhost:3000'; \
+	else \
+		(cd $(WEB_DIR) && NEXT_PUBLIC_API_BASE_URL=$(NEXT_PUBLIC_API_BASE_URL) npm run dev) & \
+		web_pid=$$!; \
+		i=0; \
+		while ! curl -fsS http://localhost:3000 >/dev/null 2>&1; do \
+			if ! kill -0 $$web_pid 2>/dev/null; then \
+				wait $$web_pid 2>/dev/null || true; \
+				echo 'Next.js stopped before becoming ready.'; \
+				exit 1; \
+			fi; \
+			if [ $$i -ge $(DOCKER_WAIT_SECONDS) ]; then \
+				echo 'Next.js did not become ready within $(DOCKER_WAIT_SECONDS)s.'; \
+				exit 1; \
+			fi; \
+			i=$$((i + 1)); \
+			sleep 1; \
+		done; \
+		web_listener_pids=$$(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null); \
+	fi; \
+	cd $(DESKTOP_DIR) && REASON_WEB_URL=http://localhost:3000 npm start
+
 watch: docker-ready
 	$(COMPOSE) up --watch --build $(BACKEND_SERVICES)
 
@@ -91,7 +130,7 @@ logs: docker-ready
 ps: docker-ready
 	$(COMPOSE) ps
 
-test: test-api test-core test-web test-mobile
+test: test-api test-core test-web test-mobile test-desktop
 
 test-api:
 	cd backend && cargo test --lib --bins
@@ -104,6 +143,9 @@ test-web:
 
 test-mobile:
 	cd $(MOBILE_DIR) && npm run typecheck
+
+test-desktop:
+	cd $(DESKTOP_DIR) && npm test
 
 test-e2e: docker-ready
 	$(COMPOSE) --profile e2e up -d --build api-e2e worker-e2e web-e2e

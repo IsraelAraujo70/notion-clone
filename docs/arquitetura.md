@@ -28,6 +28,10 @@ O chat mobile usa as mesmas conversas e ações `workspace_agent` da web. `expo/
 
 `packages/core/` contém contratos, aplicação determinística de operações, undo e fila compartilhados entre web e mobile. Componentes visuais não são compartilhados: o editor web usa DOM, enquanto o mobile usa controles e gestos nativos que emitem as mesmas operações. O mobile reproduz as nove paletas light/dark da web e usa as mesmas famílias tipográficas Inter, Bricolage Grotesque e IBM Plex Mono.
 
+## Desktop (spike)
+
+`desktop/` contém um shell Electron experimental e online-first. Ele carrega o frontend web sem acesso Node no renderer, com isolamento de contexto, sandbox, sessão persistente e allowlist exata de origem. O preload expõe somente metadados estáticos versionados e não acessa credenciais. Navegações externas HTTP são abertas pelo sistema; outros protocolos, webviews e permissões não aprovadas são bloqueados. A decisão e os critérios para avançar estão em `docs/adr/desktop-electron.md`.
+
 ## Backend
 
 O backend usa Ports and Adapters:

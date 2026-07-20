@@ -73,7 +73,7 @@ jobs:
         run: npm run build
 
   clients:
-    name: Core and mobile
+    name: Core, mobile and desktop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -89,6 +89,7 @@ jobs:
           cache-dependency-path: |
             packages/core/package-lock.json
             mobile/package-lock.json
+            desktop/package-lock.json
 
       - name: Install core dependencies
         working-directory: packages/core
@@ -105,3 +106,11 @@ jobs:
       - name: Typecheck mobile
         working-directory: mobile
         run: npm run typecheck
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Test desktop shell
+        working-directory: desktop
+        run: npm test
