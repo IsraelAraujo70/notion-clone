@@ -2,47 +2,14 @@ import path from "node:path"
 
 import { app, BrowserWindow, shell } from "electron"
 
-import {
-  isAllowedAppUrl,
-  isAllowedPermission,
-  isSafeExternalUrl,
-  resolveAppUrl,
-} from "./navigation"
+import { isAllowedPermission, resolveAppUrl } from "./navigation"
+import { secureWindowNavigation } from "./window-navigation"
 import { createWindowOptions } from "./window-options"
 
 let mainWindow: BrowserWindow | null = null
 
 app.setName("reason")
 app.enableSandbox()
-
-function openExternalUrl(url: string): void {
-  if (isSafeExternalUrl(url)) {
-    void shell.openExternal(url).catch(() => undefined)
-  }
-}
-
-function secureWindowNavigation(window: BrowserWindow): void {
-  window.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedAppUrl(url, app.isPackaged)) return
-
-    event.preventDefault()
-    openExternalUrl(url)
-  })
-
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedAppUrl(url, app.isPackaged)) {
-      void window.loadURL(url)
-    } else {
-      openExternalUrl(url)
-    }
-
-    return { action: "deny" }
-  })
-
-  window.webContents.on("will-attach-webview", (event) => {
-    event.preventDefault()
-  })
-}
 
 function resolveIconPath(): string {
   return app.isPackaged
@@ -65,7 +32,12 @@ function createWindow(iconPath: string): BrowserWindow {
       isAllowedPermission(permission, webContents.getURL(), app.isPackaged)
     )
   })
-  secureWindowNavigation(window)
+  secureWindowNavigation(
+    window.webContents,
+    app.isPackaged,
+    (url) => void window.loadURL(url),
+    (url) => void shell.openExternal(url).catch(() => undefined)
+  )
 
   window.once("ready-to-show", () => window.show())
   window.on("closed", () => {
