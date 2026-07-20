@@ -15,7 +15,7 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
 - Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
 
-The current version does not include GitHub Issues synchronization, a desktop or offline client, or page-level permissions.
+The current version does not include GitHub Issues synchronization, a released desktop or offline client, or page-level permissions. An experimental Electron shell lives in `desktop/` while the desktop architecture is validated.
 
 ## Technical Principles
 
@@ -36,7 +36,7 @@ Architecture decisions and boundaries are documented in [docs/arquitetura.md](do
 
 ## Local Development
 
-Prerequisites: Docker Desktop, Node.js, and npm. Rust is only required to run Cargo commands outside the container.
+Prerequisites: Docker Desktop, Node.js 22.12 or newer, and npm. Rust is only required to run Cargo commands outside the container.
 
 ```bash
 cp .env.example .env
@@ -67,10 +67,21 @@ On an Android device, a local API must use the machine's reachable IP address in
 
 The `Android beta` workflow builds an APK with GitHub Actions and publishes the `reason-beta.apk` asset to the fixed `android-beta` release. The landing page points to this asset by default; set `NEXT_PUBLIC_ANDROID_APK_URL` to override the URL.
 
+### Desktop spike
+
+The Electron spike loads the local web app by default and keeps the renderer sandboxed without Node access. Install its dependencies once, then start the complete local stack with one command:
+
+```bash
+npm --prefix desktop install
+make desktop
+```
+
+`make desktop` starts the same backend services as `make dev`, starts or reuses Next.js on port `3000`, and opens Electron at `/dashboard`. Existing sessions enter the workspace; unauthenticated sessions are redirected to `/login`, so the desktop app never starts on the marketing landing page. The packaged app and desktop window use the standalone Reason mark from `frontend/app/icon.svg`. Use `cd desktop && REASON_WEB_URL=https://reason.israeldeveloper.com.br npm start` to exercise only the production origin. The decision and manual validation checklist are in [docs/adr/desktop-electron.md](docs/adr/desktop-electron.md).
+
 ## Verification
 
 ```bash
-make test       # Rust + shared core + Vitest + mobile typecheck
+make test       # Rust + shared core + web/mobile + desktop security tests
 make test-e2e   # Cypress against the full stack
 make down       # Stop the local environment
 ```
@@ -84,3 +95,4 @@ See [docs/testes.md](docs/testes.md) for details about what each gate covers.
 - [API](docs/api.md)
 - [MCP](docs/mcp.md)
 - [Tests and gates](docs/testes.md)
+- [Desktop Electron ADR](docs/adr/desktop-electron.md)

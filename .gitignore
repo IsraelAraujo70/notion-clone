@@ -10,3 +10,6 @@ coverage/
 mobile/.expo/
 mobile/dist/
 mobile/.eas/
+desktop/dist/
+desktop/out/
+desktop/assets/icon.iconset/
