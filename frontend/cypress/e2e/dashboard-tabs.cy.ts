@@ -32,6 +32,17 @@ describe("dashboard page tabs", () => {
           cy.location("pathname").should("eq", "/dashboard/ai")
           cy.get('[data-cy="dashboard-tab-ai"]').should("be.visible")
           cy.get('[data-cy="ai-workspace-page"]').should("be.visible")
+          cy.window().then((window) => {
+            const composer = window.document.querySelector(
+              '[data-testid="ai-composer-overlay"]'
+            )!
+            expect(window.document.documentElement.scrollHeight).to.be.lte(
+              window.innerHeight + 1
+            )
+            expect(
+              Math.abs(composer.getBoundingClientRect().bottom - window.innerHeight)
+            ).to.be.lessThan(2)
+          })
 
           cy.get(`[data-cy="nav-page-${firstPageId}"]`).click()
           cy.location("pathname").should(

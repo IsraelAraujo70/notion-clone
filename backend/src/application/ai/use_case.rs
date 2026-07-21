@@ -26,7 +26,6 @@ use crate::domain::{
     error::DomainError,
 };
 
-const MAX_TOOL_ROUNDS: usize = 8;
 const MAX_OPERATIONS: usize = 64;
 const MAX_RUN_TIME: Duration = Duration::from_secs(30 * 60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -800,9 +799,8 @@ impl AiUseCases {
         let mut applied_count = 0usize;
         let mut final_text = String::new();
         let mut citations = Vec::new();
-        let mut finished = false;
         let mut researched = action != "workspace_agent";
-        for round in 0..=MAX_TOOL_ROUNDS {
+        loop {
             let mut stream = self
                 .provider
                 .chat_stream(AiChatRequest {
@@ -886,10 +884,6 @@ impl AiUseCases {
                     }
                 }
                 final_text.push_str(&round_text);
-                finished = true;
-                break;
-            }
-            if round == MAX_TOOL_ROUNDS {
                 break;
             }
             messages.push(AiMessage {
@@ -1150,9 +1144,6 @@ impl AiUseCases {
                     tool_call_id: Some(call.id),
                 });
             }
-        }
-        if !finished {
-            return Err(DomainError::Validation("AI tool round limit exceeded").into());
         }
         validate_completion_postconditions(
             action,

@@ -61,6 +61,11 @@ describe("AiAssistantPanel", () => {
       "bottom-0"
     )
     expect(screen.getByRole("log")).toHaveStyle({ paddingBottom: "152px" })
+    expect(screen.getByLabelText("Conversation messages")).toHaveClass(
+      "min-h-0",
+      "overflow-y-auto",
+      "overscroll-contain"
+    )
   })
 
   it("groups tool calls behind one compact activity row", async () => {
