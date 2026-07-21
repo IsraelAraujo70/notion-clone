@@ -101,5 +101,6 @@ export type AiRun = {
   error: string | null
   last_seq: number | null
   created_at: string
+  deadline_at: string
   completed_at: string | null
 }

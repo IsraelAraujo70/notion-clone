@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 
-import type { PageSummary } from "@/lib/api"
+import { ApiError, type PageSummary } from "@/lib/api"
 import { hasPageMention } from "@/lib/ai/page-mentions"
 import {
   activeConversationStorageKey,
@@ -17,6 +17,7 @@ import type {
   AiAction,
   AiConversation,
   AiMessage,
+  AiRun,
 } from "@reason/core/ai/contracts"
 import type { Operation } from "@reason/core/contracts"
 
@@ -24,7 +25,14 @@ export type AiOperationApproval = {
   runId: string
   proposalId: string
   operation: Operation
-  status: "pending" | "deciding" | "applying" | "approved" | "rejected"
+  decision?: boolean
+  status:
+    | "pending"
+    | "deciding"
+    | "applying"
+    | "approved"
+    | "rejected"
+    | "failed"
 }
 
 export type AiToolActivity = {
@@ -55,9 +63,27 @@ type Props = {
   onRequestOpen: () => void
 }
 
+function recoveredApprovalStatus(
+  approval: AiOperationApproval,
+  run: AiRun | null
+): "approved" | "rejected" | "failed" {
+  if (approval.decision === false) return "rejected"
+  if (
+    run?.status === "completed" &&
+    run.operation_group_id &&
+    typeof run.last_seq === "number"
+  ) {
+    return "approved"
+  }
+  return "failed"
+}
+
 export function useAiAssistantController(props: Props) {
   const { t } = useI18n()
   const translateEffect = useEffectEvent(t)
+  const recoveryToken = props.token
+  const recoveryWorkspaceId = props.workspaceId
+  const onRunRecovered = props.onRunCompleted
   const [showHistory, setShowHistory] = useState(false)
   const [conversations, setConversations] = useState<AiConversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -78,6 +104,7 @@ export function useAiAssistantController(props: Props) {
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const approvalOperationsRef = useRef(new Map<string, Operation>())
+  const recoveredApprovalIdsRef = useRef(new Set<string>())
   const pollingAbortRef = useRef<AbortController | null>(null)
   const historyAbortRef = useRef<AbortController | null>(null)
   const conversationIdRef = useRef<string | null>(null)
@@ -103,6 +130,70 @@ export function useAiAssistantController(props: Props) {
       requestContextRef.current.workspaceId === props.workspaceId &&
       !signal?.aborted,
     [props.token, props.workspaceId]
+  )
+
+  const recoverRun = useCallback(
+    async (runId: string, generation: number) => {
+      const polling = new AbortController()
+      pollingAbortRef.current?.abort()
+      pollingAbortRef.current = polling
+      setBusy(true)
+      try {
+        const run = await aiTransport.waitForRun(
+          recoveryToken,
+          recoveryWorkspaceId,
+          runId,
+          polling.signal
+        )
+        if (isCurrentRequest(generation, polling.signal)) {
+          if (run.operation_group_id && typeof run.last_seq === "number") {
+            onRunRecovered(run.operation_group_id, run.last_seq)
+          }
+          if (run.status === "failed") {
+            setError(run.error ?? t("The response failed."))
+          } else {
+            setStatus(t("The run completed on the server."))
+          }
+        }
+        return run
+      } catch (caught) {
+        if (
+          caught instanceof DOMException &&
+          caught.name === "AbortError" &&
+          pollingAbortRef.current === polling &&
+          isCurrentRequest(generation)
+        ) {
+          setStatus(t("Display stopped."))
+        }
+        if (
+          isCurrentRequest(generation, polling.signal) &&
+          !(caught instanceof DOMException && caught.name === "AbortError")
+        ) {
+          setStatus(
+            t(
+              "Could not confirm the run's final status. Confirmed changes remain."
+            )
+          )
+        }
+        return null
+      } finally {
+        const ownsPolling = pollingAbortRef.current === polling
+        if (ownsPolling) {
+          pollingAbortRef.current = null
+        }
+        if (ownsPolling && isCurrentRequest(generation)) {
+          setBusy(false)
+          setStopping(false)
+        }
+      }
+    },
+    [
+      isCurrentRequest,
+      onRunRecovered,
+      recoveryToken,
+      recoveryWorkspaceId,
+      t,
+    ]
   )
 
   const loadConversations = useCallback(
@@ -150,6 +241,7 @@ export function useAiAssistantController(props: Props) {
       toolSequenceRef.current = 0
       setApprovals([])
       approvalOperationsRef.current.clear()
+      recoveredApprovalIdsRef.current.clear()
       setBusy(false)
       setStopping(false)
       setStatus(null)
@@ -181,9 +273,23 @@ export function useAiAssistantController(props: Props) {
                 Array.isArray(parsed.activities) ? parsed.activities : []
               )
               setTools(Array.isArray(parsed.tools) ? parsed.tools : [])
-              setApprovals(
-                Array.isArray(parsed.approvals) ? parsed.approvals : []
-              )
+              const storedApprovals = Array.isArray(parsed.approvals)
+                ? parsed.approvals
+                : []
+              setApprovals(storedApprovals)
+              for (const approval of storedApprovals) {
+                if (
+                  approval.status === "pending" ||
+                  approval.status === "deciding" ||
+                  approval.status === "applying"
+                ) {
+                  approvalOperationsRef.current.set(
+                    approval.proposalId,
+                    approval.operation
+                  )
+                  recoveredApprovalIdsRef.current.add(approval.proposalId)
+                }
+              }
             } catch {
               window.sessionStorage.removeItem(
                 conversationActivityStorageKey(props.workspaceId, storedId)
@@ -220,11 +326,7 @@ export function useAiAssistantController(props: Props) {
   }, [isCurrentRequest, loadConversations, props.token, props.workspaceId])
 
   useEffect(() => {
-    if (
-      !conversationId ||
-      activityHydratedId !== conversationId ||
-      busy
-    ) {
+    if (!conversationId || activityHydratedId !== conversationId) {
       return
     }
     window.sessionStorage.setItem(
@@ -232,21 +334,43 @@ export function useAiAssistantController(props: Props) {
       JSON.stringify({
         activities,
         tools,
-        approvals: approvals.filter(
-          (approval) =>
-            approval.status === "approved" || approval.status === "rejected"
-        ),
+        approvals,
       })
     )
   }, [
     activityHydratedId,
     activities,
     approvals,
-    busy,
     conversationId,
     props.workspaceId,
     tools,
   ])
+
+  useEffect(() => {
+    if (!conversationId || activityHydratedId !== conversationId || busy) {
+      return
+    }
+    const applying = approvals.find(
+      (approval) =>
+        (approval.status === "deciding" ||
+          approval.status === "applying") &&
+        recoveredApprovalIdsRef.current.has(approval.proposalId)
+    )
+    if (!applying) return
+    recoveredApprovalIdsRef.current.delete(applying.proposalId)
+    const generation = generationRef.current
+    void recoverRun(applying.runId, generation).then((run) => {
+      if (!isCurrentRequest(generation)) return
+      const status = recoveredApprovalStatus(applying, run)
+      setApprovals((current) =>
+        current.map((approval) =>
+          approval.proposalId === applying.proposalId
+            ? { ...approval, status }
+            : approval
+        )
+      )
+    })
+  }, [activityHydratedId, approvals, busy, conversationId, isCurrentRequest, recoverRun])
 
   const handleRequestedAction = useEffectEvent(props.onRequestedActionHandled)
   const requestOpen = useEffectEvent(props.onRequestOpen)
@@ -289,6 +413,8 @@ export function useAiAssistantController(props: Props) {
     setActivities([])
     setTools([])
     setApprovals([])
+    approvalOperationsRef.current.clear()
+    recoveredApprovalIdsRef.current.clear()
     window.sessionStorage.setItem(
       activeConversationStorageKey(props.workspaceId),
       id
@@ -322,9 +448,23 @@ export function useAiAssistantController(props: Props) {
               Array.isArray(parsed.activities) ? parsed.activities : []
             )
             setTools(Array.isArray(parsed.tools) ? parsed.tools : [])
-            setApprovals(
-              Array.isArray(parsed.approvals) ? parsed.approvals : []
-            )
+            const storedApprovals = Array.isArray(parsed.approvals)
+              ? parsed.approvals
+              : []
+            setApprovals(storedApprovals)
+            for (const approval of storedApprovals) {
+              if (
+                approval.status === "pending" ||
+                approval.status === "deciding" ||
+                approval.status === "applying"
+              ) {
+                approvalOperationsRef.current.set(
+                  approval.proposalId,
+                  approval.operation
+                )
+                recoveredApprovalIdsRef.current.add(approval.proposalId)
+              }
+            }
           } catch {
             setActivities([])
             setTools([])
@@ -379,6 +519,7 @@ export function useAiAssistantController(props: Props) {
     toolSequenceRef.current = 0
     setApprovals([])
     approvalOperationsRef.current.clear()
+    recoveredApprovalIdsRef.current.clear()
     const abort = new AbortController()
     abortRef.current = abort
     let id = conversationId
@@ -549,53 +690,12 @@ export function useAiAssistantController(props: Props) {
         }
       }
     } catch (caught) {
-      if (runId && isCurrentRequest(generation)) {
-        const polling = new AbortController()
-        pollingAbortRef.current?.abort()
-        pollingAbortRef.current = polling
-        try {
-          const run = await aiTransport.waitForRun(
-            props.token,
-            props.workspaceId,
-            runId,
-            polling.signal
-          )
-          if (isCurrentRequest(generation, polling.signal)) {
-            if (run.operation_group_id && typeof run.last_seq === "number") {
-              props.onRunCompleted(run.operation_group_id, run.last_seq)
-            }
-            if (run.status === "failed") {
-              setError(run.error ?? t("The response failed."))
-            } else {
-              setStatus(t("The run completed on the server."))
-            }
-          }
-        } catch (pollError) {
-          if (
-            isCurrentRequest(generation, polling.signal) &&
-            !(
-              pollError instanceof DOMException &&
-              pollError.name === "AbortError"
-            )
-          ) {
-            setStatus(
-              t(
-                "Could not confirm the run's final status. Confirmed changes remain."
-              )
-            )
-          }
-        } finally {
-          if (pollingAbortRef.current === polling) {
-            pollingAbortRef.current = null
-          }
-        }
-      } else if (
-        caught instanceof DOMException &&
-        caught.name === "AbortError"
-      ) {
+      if (caught instanceof DOMException && caught.name === "AbortError") {
         if (isCurrentRequest(generation)) {
           setStatus(t("Display stopped."))
         }
+      } else if (runId && isCurrentRequest(generation)) {
+        await recoverRun(runId, generation)
       } else if (isCurrentRequest(generation)) {
         setError(
           caught instanceof Error ? caught.message : t("The response failed.")
@@ -618,9 +718,12 @@ export function useAiAssistantController(props: Props) {
   ) => {
     const proposal = approvals.find((item) => item.proposalId === proposalId)
     if (!proposal || proposal.status !== "pending") return
+    const recovered = recoveredApprovalIdsRef.current.delete(proposalId)
     setApprovals((current) =>
       current.map((item) =>
-        item.proposalId === proposalId ? { ...item, status: "deciding" } : item
+        item.proposalId === proposalId
+          ? { ...item, status: "deciding", decision: approved }
+          : item
       )
     )
     try {
@@ -632,7 +735,40 @@ export function useAiAssistantController(props: Props) {
         approved,
         allowConversation
       )
+      if (recovered) {
+        setApprovals((current) =>
+          current.map((item) =>
+            item.proposalId === proposalId
+              ? { ...item, status: approved ? "applying" : "rejected" }
+              : item
+          )
+        )
+        const run = await recoverRun(proposal.runId, generationRef.current)
+        const status = recoveredApprovalStatus(
+          { ...proposal, decision: approved },
+          run
+        )
+        setApprovals((current) =>
+          current.map((item) =>
+            item.proposalId === proposalId ? { ...item, status } : item
+          )
+        )
+      }
     } catch (caught) {
+      if (recovered && caught instanceof ApiError && caught.status === 400) {
+        const run = await recoverRun(proposal.runId, generationRef.current)
+        const status = recoveredApprovalStatus(
+          { ...proposal, decision: approved },
+          run
+        )
+        setApprovals((current) =>
+          current.map((item) =>
+            item.proposalId === proposalId ? { ...item, status } : item
+          )
+        )
+        return
+      }
+      if (recovered) recoveredApprovalIdsRef.current.add(proposalId)
       setApprovals((current) =>
         current.map((item) =>
           item.proposalId === proposalId ? { ...item, status: "pending" } : item
@@ -675,6 +811,7 @@ export function useAiAssistantController(props: Props) {
       toolSequenceRef.current = 0
       setApprovals([])
       approvalOperationsRef.current.clear()
+      recoveredApprovalIdsRef.current.clear()
       setMentionedPageIds([])
       setShowHistory(false)
     },
@@ -715,6 +852,7 @@ export function useAiAssistantController(props: Props) {
       setStopping(true)
       setStatus(t("Stopping local display only..."))
       abortRef.current?.abort()
+      pollingAbortRef.current?.abort()
     },
   }
 }

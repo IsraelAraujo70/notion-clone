@@ -30,6 +30,7 @@ export const aiPt = {
   "Enter sends · Shift+Enter inserts a line break":
     "Enter envia · Shift+Enter quebra linha",
   "Edit content": "Editar conteúdo",
+  Failed: "Falhou",
   "Find in the workspace": "Encontrar no workspace",
   "Find pages about ": "Encontre páginas sobre ",
   "Format page": "Formatar página",
