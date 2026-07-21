@@ -9,12 +9,13 @@ Navegador ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgve
 App Expo ─── HTTP / WebSocket / SSE ──────┤
 Cliente MCP ── Streamable HTTP ────────────┤  │
      │                                      ├── armazenamento S3
-     └── token com escopos e grants         └── worker: mídia e embeddings
+     └── token com escopos e grants         ├── worker: mídia e embeddings
+                                            └── GitHub App / REST API
 ```
 
 ## Frontend
 
-`frontend/app/` contém rotas e limites do Next.js. Componentes de produto ficam nas respectivas features; `components/ui/` contém o código vendorizado do shadcn. As transformações da árvore e contratos compartilhados vivem em `packages/core/`, o transporte HTTP em `frontend/lib/api.ts` e a sincronização em `frontend/lib/sync/`.
+`frontend/app/` contém rotas e limites do Next.js. Componentes de produto ficam nas respectivas features; `components/ui/` contém o código vendorizado do shadcn. As transformações da árvore e contratos compartilhados vivem em `packages/core/`, o transporte HTTP em `frontend/lib/api.ts` e a sincronização em `frontend/lib/sync/`. A feature `components/code-review/` contém parser e projeções puras de diff, além das superfícies unified/split; `components/github/` coordena instalação, vínculo e carregamento dos arquivos sem expor token GitHub ao navegador.
 
 O editor mantém uma árvore local e aplica cada operação antes da resposta da rede. A fila envia operações em ordem e pode agrupar atualizações textuais pendentes. Alterações estruturais, undo e navegação preservam a ordem. O cliente ignora o próprio eco por `opId` e aplica eventos remotos pelo `seq` do workspace.
 
@@ -43,6 +44,14 @@ O backend usa Ports and Adapters:
 
 Handlers cuidam do transporte e chamam casos de uso. SQL, locks e transações pertencem ao adapter PostgreSQL. O domínio não conhece Axum, SQLx, variáveis de ambiente ou provedores externos.
 
+## GitHub
+
+A integração usa uma GitHub App opcional. O owner inicia a instalação com sessão Reason; o setup troca um state curto e de uso único por um segundo state OAuth. O destino interno de retorno é validado e persistido junto ao hash do state, sem aceitar URL arbitrária nem expor o UUID da página ao GitHub. O callback também trata cancelamento e só associa a instalação depois que a listagem paginada `GET /user/installations` confirma que o usuário OAuth tem acesso ao `installation_id` retornado pelo setup. Tokens OAuth e de instalação ficam apenas em memória. A chave privada e o client secret vêm do ambiente e nunca alcançam o frontend.
+
+A migration `0021` descarta states OAuth efêmeros criados antes desse vínculo seguro; instalações iniciadas durante o deploy precisam ser reiniciadas, sem perda de instalação ou vínculo persistente.
+
+`github_installations` e `github_pr_links` são projeções externas com isolamento por `workspace_id` e FKs compostas para bloco e instalação. Vincular exige `editor` ou `owner`; o alvo é validado antes da chamada externa e novamente na transação de persistência. Ler links, metadados e arquivos exige membership, e o editor consulta apenas o vínculo do bloco ativo. Diffs são carregados sob demanda com paginação e limite explícito; respostas truncadas informam que a revisão precisa continuar no GitHub. Essa persistência não altera `blocks`, o log de operações nem o cursor de sync.
+
 ## Escrita e sincronização
 
 1. O cliente aplica uma operação localmente e a envia por HTTP.
@@ -60,13 +69,13 @@ Conversas, execuções e uso são privados por usuário e workspace. O contexto 
 
 ## MCP
 
-O MCP é um adapter stateless montado em `/mcp`. Tokens de integração são separados das sessões do navegador, armazenados por hash e limitados por escopo, expiração e grants de workspace. As ferramentas reusam os casos de uso de páginas, embeddings e operações; uma remoção de membership ou mudança de papel vale imediatamente.
+O MCP é um adapter stateless montado em `/mcp`. Tokens de integração são separados das sessões do navegador, armazenados por hash e limitados por escopo, expiração e grants de workspace. As ferramentas reusam os casos de uso de páginas, embeddings, operações e vínculos GitHub; uma remoção de membership ou mudança de papel vale imediatamente. `github:read` e `github:write` são separados de `content:read` e `content:write` para que acesso a notas não conceda integração externa implicitamente.
 
 Leituras de imagem partem de um `block_id` autorizado, não de uma chave S3 fornecida livremente. Escritas MCP passam pelo mesmo apply atômico, log, cursor e broadcast do editor e da IA; o `actor_id` permanece o usuário dono do token.
 
 ## Persistência e segurança
 
-PostgreSQL guarda usuários, sessões, workspaces, membros, blocos, operações, links públicos, busca, dados de IA e embeddings. Todo conteúdo de tenant carrega `workspace_id`, usado também nos filtros de autorização.
+PostgreSQL guarda usuários, sessões, workspaces, membros, blocos, operações, links públicos, busca, dados de IA, embeddings e projeções GitHub. Todo conteúdo de tenant carrega `workspace_id`, usado também nos filtros de autorização.
 
 `blocks` mantém `parent_id`, `content`, propriedades JSON e versões LWW. `operations` mantém a operação aceita, `op_id` e o `seq` monotônico. A mudança do bloco, o log e o cursor são atômicos.
 

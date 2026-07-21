@@ -1,8 +1,15 @@
 "use client"
 
-import { useState, type CSSProperties, type ReactNode } from "react"
-import { useParams } from "next/navigation"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
+import { useParams, useSearchParams } from "next/navigation"
 import { FileTextIcon, PlusIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AiWorkspacePage } from "@/components/ai/organisms/ai-workspace-page"
@@ -14,10 +21,7 @@ import {
 import { CommandMenuProvider } from "@/components/command/organisms/command-menu-provider"
 import { EditorPage } from "@/components/editor/editor-page"
 import { PageLayoutProvider } from "@/components/editor/page-layout-provider"
-import {
-  PageProvider,
-  usePages,
-} from "@/components/pages/page-provider"
+import { PageProvider, usePages } from "@/components/pages/page-provider"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -136,7 +140,27 @@ function DashboardContent({ children }: { children: ReactNode }) {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const params = useParams<{ pageId?: string | string[] }>()
+  const searchParams = useSearchParams()
   const pageId = typeof params.pageId === "string" ? params.pageId : undefined
+  const githubResultHandledRef = useRef(false)
+
+  useEffect(() => {
+    const result = searchParams.get("github_installation")
+    if (!result || githubResultHandledRef.current) return
+    githubResultHandledRef.current = true
+    if (result === "success") {
+      toast.success("GitHub App connected")
+    } else {
+      toast.error("Could not connect the GitHub App")
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.delete("github_installation")
+    window.history.replaceState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    )
+  }, [searchParams])
 
   return (
     <RequireAuth>

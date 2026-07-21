@@ -9,6 +9,31 @@ pub const DEFAULT_RESEND_FROM_EMAIL: &str = "MicroSaaS Starter <onboarding@resen
 pub const DEFAULT_AI_CHAT_MODEL: &str = "openai/gpt-5.6-luna";
 pub const DEFAULT_AI_TITLE_MODEL: &str = "deepseek/deepseek-v4-flash";
 pub const DEFAULT_AI_EMBEDDING_MODEL: &str = "openai/text-embedding-3-large";
+pub const DEFAULT_GITHUB_API_URL: &str = "https://api.github.com";
+
+#[derive(Clone)]
+pub struct GitHubConfig {
+    pub app_id: i64,
+    pub app_slug: String,
+    pub private_key: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub api_url: String,
+}
+
+impl std::fmt::Debug for GitHubConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GitHubConfig")
+            .field("app_id", &self.app_id)
+            .field("app_slug", &self.app_slug)
+            .field("private_key", &"[redacted]")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"[redacted]")
+            .field("api_url", &self.api_url)
+            .finish()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -19,6 +44,7 @@ pub struct Config {
     pub resend_api_key: Option<String>,
     pub resend_from_email: String,
     pub s3: Option<S3Config>,
+    pub github: Option<GitHubConfig>,
 }
 
 impl Config {
@@ -33,6 +59,7 @@ impl Config {
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
             s3: s3_from_env(),
+            github: github_from_env(),
         }
     }
 
@@ -47,12 +74,46 @@ impl Config {
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
             s3: s3_from_env(),
+            github: github_from_env(),
         }
     }
 
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+}
+
+fn github_from_env() -> Option<GitHubConfig> {
+    let app_id = env_string("GITHUB_APP_ID");
+    let app_slug = env_string("GITHUB_APP_SLUG");
+    let private_key = env_string("GITHUB_PRIVATE_KEY");
+    let client_id = env_string("GITHUB_CLIENT_ID");
+    let client_secret = env_string("GITHUB_CLIENT_SECRET");
+    if app_id.is_none()
+        && app_slug.is_none()
+        && private_key.is_none()
+        && client_id.is_none()
+        && client_secret.is_none()
+    {
+        return None;
+    }
+    let app_id = app_id
+        .expect("GITHUB_APP_ID must be set when GitHub is configured")
+        .parse::<i64>()
+        .ok()
+        .filter(|value| *value > 0)
+        .expect("GITHUB_APP_ID must be a positive integer");
+    Some(GitHubConfig {
+        app_id,
+        app_slug: app_slug.expect("GITHUB_APP_SLUG must be set when GitHub is configured"),
+        private_key: private_key
+            .expect("GITHUB_PRIVATE_KEY must be set when GitHub is configured")
+            .replace("\\n", "\n"),
+        client_id: client_id.expect("GITHUB_CLIENT_ID must be set when GitHub is configured"),
+        client_secret: client_secret
+            .expect("GITHUB_CLIENT_SECRET must be set when GitHub is configured"),
+        api_url: env::var("GITHUB_API_URL").unwrap_or_else(|_| DEFAULT_GITHUB_API_URL.to_string()),
+    })
 }
 
 fn s3_from_env() -> Option<S3Config> {

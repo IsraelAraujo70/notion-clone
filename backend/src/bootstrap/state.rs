@@ -5,9 +5,11 @@ use sqlx::PgPool;
 use crate::adapters::ai::{NoopAiProvider, openrouter::OpenRouterAiProvider};
 use crate::adapters::email::noop::NoopEmailSender;
 use crate::adapters::email::resend::ResendEmailSender;
+use crate::adapters::github::ReqwestGitHubGateway;
 use crate::adapters::postgres::{
     PostgresAiRepository, PostgresAuthRepository, PostgresEmbeddingRepository,
-    PostgresIntegrationRepository, PostgresPageRepository, PostgresWorkspaceRepository,
+    PostgresGitHubRepository, PostgresIntegrationRepository, PostgresPageRepository,
+    PostgresWorkspaceRepository,
 };
 use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
 use crate::application::ai::AiUseCases;
@@ -17,6 +19,7 @@ use crate::application::auth::{
     UpdateProfileUseCase,
 };
 use crate::application::embeddings::{DEFAULT_EMBEDDING_MODEL, SemanticSearchUseCase};
+use crate::application::github::GitHubUseCases;
 use crate::application::integrations::IntegrationUseCases;
 use crate::application::pages::{
     ApplyOperationUseCase, GetImageUseCase, GetPageUseCase, ListOperationsUseCase,
@@ -28,6 +31,7 @@ use crate::application::ports::auth::AuthRepository;
 use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
 use crate::application::ports::embedding::SemanticEmbeddingRepository;
+use crate::application::ports::github::{GitHubGateway, GitHubRepository};
 use crate::application::ports::integration::IntegrationRepository;
 use crate::application::ports::page::PageRepository;
 use crate::application::ports::storage::ObjectStorage;
@@ -38,10 +42,12 @@ use crate::application::workspaces::{
     ListInvitesUseCase, ListMembersUseCase, ListWorkspacesUseCase, RemoveMemberUseCase,
     RevokeInviteUseCase, UpdateMemberRoleUseCase,
 };
+use crate::bootstrap::config::GitHubConfig;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub public_web_url: String,
     pub hub: RealtimeHub,
     pub storage: Arc<dyn ObjectStorage>,
     pub signup: SignupUseCase,
@@ -76,6 +82,7 @@ pub struct AppState {
     pub transfer_subtree: TransferSubtreeUseCase,
     pub semantic_search: SemanticSearchUseCase,
     pub integrations: IntegrationUseCases,
+    pub github: GitHubUseCases,
     pub ai: AiUseCases,
 }
 
@@ -86,6 +93,7 @@ impl AppState {
         resend_api_key: Option<String>,
         resend_from_email: String,
         s3: Option<S3Config>,
+        github_config: Option<GitHubConfig>,
     ) -> Self {
         let auth_repository: Arc<dyn AuthRepository> =
             Arc::new(PostgresAuthRepository::new(pool.clone()));
@@ -120,6 +128,21 @@ impl AppState {
             Arc::new(PostgresEmbeddingRepository::new(pool.clone()));
         let integration_repository: Arc<dyn IntegrationRepository> =
             Arc::new(PostgresIntegrationRepository::new(pool.clone()));
+        let github_repository: Arc<dyn GitHubRepository> =
+            Arc::new(PostgresGitHubRepository::new(pool.clone()));
+        let github_gateway: Option<Arc<dyn GitHubGateway>> = github_config.map(|config| {
+            Arc::new(
+                ReqwestGitHubGateway::new(
+                    config.app_id,
+                    config.app_slug,
+                    &config.private_key,
+                    config.client_id,
+                    config.client_secret,
+                    config.api_url,
+                )
+                .expect("GITHUB_PRIVATE_KEY must be a valid RSA PEM key"),
+            ) as Arc<dyn GitHubGateway>
+        });
         let embedding_model =
             std::env::var("AI_EMBEDDING_MODEL").unwrap_or_else(|_| DEFAULT_EMBEDDING_MODEL.into());
         let semantic_search =
@@ -155,6 +178,7 @@ impl AppState {
 
         Self {
             pool,
+            public_web_url: public_web_url.clone(),
             hub: hub.clone(),
             storage: storage.clone(),
             signup: SignupUseCase::new(auth_repository.clone(), clock.clone()),
@@ -211,7 +235,7 @@ impl AppState {
                 page_repository.clone(),
                 workspace_repository.clone(),
                 clock.clone(),
-                public_web_url,
+                public_web_url.clone(),
             ),
             permanently_delete: PermanentlyDeleteUseCase::new(
                 page_repository,
@@ -222,6 +246,12 @@ impl AppState {
             semantic_search,
             integrations: IntegrationUseCases::new(
                 integration_repository,
+                workspace_repository.clone(),
+                clock.clone(),
+            ),
+            github: GitHubUseCases::new(
+                github_repository,
+                github_gateway,
                 workspace_repository,
                 clock,
             ),

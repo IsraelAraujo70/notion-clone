@@ -67,6 +67,21 @@ impl IntoResponse for HttpError {
                 "storage_not_configured",
                 "Object storage is not configured",
             ),
+            AppError::GitHubNotConfigured => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "github_not_configured",
+                "GitHub App integration is not configured",
+            ),
+            AppError::GitHubPullRequestNotFound => (
+                StatusCode::NOT_FOUND,
+                "github_pull_request_not_found",
+                "GitHub pull request link was not found",
+            ),
+            AppError::GitHubUnavailable => (
+                StatusCode::BAD_GATEWAY,
+                "github_unavailable",
+                "GitHub could not satisfy the request",
+            ),
             AppError::AiUnavailable => (
                 StatusCode::BAD_GATEWAY,
                 "ai_unavailable",
@@ -80,5 +95,24 @@ impl IntoResponse for HttpError {
         };
 
         (status, Json(json!({"error": code, "message": message}))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn github_file_access_uses_non_disclosing_statuses() {
+        assert_eq!(
+            HttpError(AppError::GitHubPullRequestNotFound)
+                .into_response()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            HttpError(AppError::Forbidden).into_response().status(),
+            StatusCode::FORBIDDEN
+        );
     }
 }

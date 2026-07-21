@@ -15,6 +15,10 @@ pub enum IntegrationScope {
     SearchRead,
     #[serde(rename = "media:read")]
     MediaRead,
+    #[serde(rename = "github:read")]
+    GitHubRead,
+    #[serde(rename = "github:write")]
+    GitHubWrite,
 }
 
 impl IntegrationScope {
@@ -24,6 +28,8 @@ impl IntegrationScope {
             Self::ContentWrite => "content:write",
             Self::SearchRead => "search:read",
             Self::MediaRead => "media:read",
+            Self::GitHubRead => "github:read",
+            Self::GitHubWrite => "github:write",
         }
     }
 
@@ -33,6 +39,8 @@ impl IntegrationScope {
             "content:write" => Some(Self::ContentWrite),
             "search:read" => Some(Self::SearchRead),
             "media:read" => Some(Self::MediaRead),
+            "github:read" => Some(Self::GitHubRead),
+            "github:write" => Some(Self::GitHubWrite),
             _ => None,
         }
     }

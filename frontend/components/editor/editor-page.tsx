@@ -17,6 +17,7 @@ import { SparklesIcon } from "lucide-react"
 import { useDashboardTabs } from "@/components/dashboard/dashboard-tabs"
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import { usePageLayout } from "@/components/editor/page-layout-provider"
+import { PullRequestPanel } from "@/components/github/organisms/pull-request-panel"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
 import { pagePath, usePages } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
@@ -124,7 +125,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const { openPage } = useDashboardTabs()
   const searchParams = useSearchParams()
   const { token, user } = useAuth()
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const {
     pages,
     canWrite,
@@ -732,6 +733,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
               }}
               onKeyDown={handleTitleKeyDown}
             />
+            {token && activeWorkspaceId && activeWorkspace ? (
+              <PullRequestPanel
+                key={`github:${activeWorkspaceId}:${tree.rootId}`}
+                token={token}
+                workspaceId={activeWorkspaceId}
+                blockId={tree.rootId}
+                workspaceRole={activeWorkspace.role}
+                canWrite={canWrite}
+              />
+            ) : null}
             <BlockEditor
               key={`${activeWorkspaceId}:${pageId}`}
               tree={tree}
