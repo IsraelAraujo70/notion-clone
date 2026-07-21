@@ -26,7 +26,6 @@ use crate::domain::{
     error::DomainError,
 };
 
-const MAX_TOOL_ROUNDS: usize = 8;
 const MAX_OPERATIONS: usize = 64;
 const MAX_RUN_TIME: Duration = Duration::from_secs(30 * 60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -800,9 +799,8 @@ impl AiUseCases {
         let mut applied_count = 0usize;
         let mut final_text = String::new();
         let mut citations = Vec::new();
-        let mut finished = false;
         let mut researched = action != "workspace_agent";
-        for round in 0..=MAX_TOOL_ROUNDS {
+        loop {
             let mut stream = self
                 .provider
                 .chat_stream(AiChatRequest {
@@ -886,10 +884,6 @@ impl AiUseCases {
                     }
                 }
                 final_text.push_str(&round_text);
-                finished = true;
-                break;
-            }
-            if round == MAX_TOOL_ROUNDS {
                 break;
             }
             messages.push(AiMessage {
@@ -1150,9 +1144,6 @@ impl AiUseCases {
                     tool_call_id: Some(call.id),
                 });
             }
-        }
-        if !finished {
-            return Err(DomainError::Validation("AI tool round limit exceeded").into());
         }
         validate_completion_postconditions(
             action,
@@ -1688,8 +1679,14 @@ fn compile_operation(
             let mut properties = properties;
             if let (Some(block_type), Some(properties)) = (block_type, properties.as_mut()) {
                 normalize_generated_properties(block_type, properties, false)?;
-            } else if let Some(properties) = properties.as_mut() {
-                normalize_rich_text_property("text", properties);
+            } else if properties
+                .as_ref()
+                .is_some_and(|properties| properties.contains_key("rich_text"))
+            {
+                return Err(
+                    "update_block with legacy rich_text requires blockType for normalization."
+                        .into(),
+                );
             }
             Ok(Operation::UpdateBlock {
                 op_id,
@@ -1760,19 +1757,6 @@ fn normalize_generated_properties(
         ));
     }
     Ok(())
-}
-
-fn normalize_rich_text_property(target: &str, properties: &mut Map<String, Value>) {
-    if properties.get(target).and_then(Value::as_str).is_none() {
-        if let Some(value) = properties
-            .remove("rich_text")
-            .and_then(|value| extract_generated_text(&value))
-        {
-            properties.insert(target.into(), Value::String(value));
-        }
-    } else {
-        properties.remove("rich_text");
-    }
 }
 
 fn extract_generated_text(value: &Value) -> Option<String> {
@@ -3299,6 +3283,47 @@ mod tests {
         };
         assert_eq!(block.properties.get("text"), Some(&json!("Filé de frango")));
         assert!(!block.properties.contains_key("rich_text"));
+    }
+
+    #[test]
+    fn compiler_normalizes_page_rich_text_update_to_title() {
+        let page_id = Uuid::new_v4();
+        let operations = compile_operations(
+            &json!({"operations":[{
+                "type":"update_block",
+                "blockId":page_id,
+                "blockType":"page",
+                "properties":{"rich_text":[{"plain_text":"Novo título"}]}
+            }]}),
+            Uuid::new_v4(),
+            true,
+        )
+        .unwrap();
+        let Operation::UpdateBlock {
+            properties: Some(properties),
+            ..
+        } = &operations[0]
+        else {
+            panic!("expected update operation")
+        };
+        assert_eq!(properties.get("title"), Some(&json!("Novo título")));
+        assert!(!properties.contains_key("text"));
+        assert!(!properties.contains_key("rich_text"));
+    }
+
+    #[test]
+    fn compiler_rejects_ambiguous_rich_text_update_without_block_type() {
+        let result = compile_operations(
+            &json!({"operations":[{
+                "type":"update_block",
+                "blockId":Uuid::new_v4(),
+                "properties":{"rich_text":[{"plain_text":"Ambiguous"}]}
+            }]}),
+            Uuid::new_v4(),
+            true,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

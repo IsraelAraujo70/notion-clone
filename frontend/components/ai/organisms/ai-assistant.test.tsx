@@ -65,6 +65,7 @@ describe("AiAssistant", () => {
       error: null,
       last_seq: 7,
       created_at: "now",
+      deadline_at: "later",
       completed_at: "now",
     })
   })
@@ -245,23 +246,50 @@ describe("AiAssistant", () => {
       ).toBe("conversation-1")
     )
     await screen.findByText("Conversation restored")
+    view.unmount()
     window.sessionStorage.setItem(
       conversationActivityStorageKey("workspace-1", "conversation-1"),
       JSON.stringify({
         tools: [
           { id: "run-1:0", name: "search_workspace", status: "completed" },
         ],
-        approvals: [],
+        approvals: [
+          {
+            runId: "run-1",
+            proposalId: "proposal-1",
+            status: "pending",
+            operation: {
+              type: "delete_block",
+              opId: "op-1",
+              blockId: "block-1",
+            },
+          },
+        ],
       })
     )
 
-    view.unmount()
     render(<AiAssistant {...props} />)
 
     expect(await screen.findByText("Conversation restored")).toBeVisible()
     expect(
       await screen.findByRole("button", { name: /1 tools/i })
     ).toHaveAttribute("aria-expanded", "false")
+    expect(await screen.findByText("Move to trash")).toBeVisible()
+    await userEvent.click(screen.getByRole("button", { name: "Allow once" }))
+    expect(aiTransport.decideOperation).toHaveBeenCalledWith(
+      "token",
+      "workspace-1",
+      "run-1",
+      "proposal-1",
+      true,
+      false
+    )
+    expect(aiTransport.waitForRun).toHaveBeenCalledWith(
+      "token",
+      "workspace-1",
+      "run-1",
+      expect.any(AbortSignal)
+    )
     expect(aiTransport.getConversation).toHaveBeenLastCalledWith(
       "token",
       "workspace-1",
@@ -391,6 +419,20 @@ describe("AiAssistant", () => {
     )
     await userEvent.click(screen.getByRole("button", { name: "Send" }))
     expect(await screen.findByText("Create page")).toBeVisible()
+    await waitFor(() => {
+      const stored = JSON.parse(
+        window.sessionStorage.getItem(
+          conversationActivityStorageKey("workspace-1", "conversation-1")
+        ) ?? "{}"
+      )
+      expect(stored.approvals).toEqual([
+        expect.objectContaining({
+          proposalId: "proposal-1",
+          status: "pending",
+          operation: expect.objectContaining({ type: "insert_block" }),
+        }),
+      ])
+    })
     await userEvent.click(
       screen.getByRole("button", { name: "Allow in this conversation" })
     )
@@ -551,4 +593,158 @@ describe("AiAssistant", () => {
 
     await waitFor(() => expect(pollingSignal?.aborted).toBe(true))
   })
+
+  it("does not poll a started run after the user stops local display", async () => {
+    vi.mocked(aiTransport.streamMessage).mockImplementation(
+      async (_token, _workspace, _conversation, _input, onEvent, signal) => {
+        onEvent({ type: "run_started", run_id: "run-1" })
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true }
+          )
+        })
+      }
+    )
+    render(
+      <AiAssistant
+        variant="page"
+        token="token"
+        workspaceId="workspace-1"
+        pages={[]}
+        pageBlockIds={[]}
+        selectedBlockIds={[]}
+        anchorBlockId={null}
+        canWrite
+        requestedAction={null}
+        onRequestedActionHandled={vi.fn()}
+        onRunCompleted={vi.fn()}
+        onBeforeMutatingAction={() => Promise.resolve()}
+      />
+    )
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Keep researching"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Stop display" })
+    )
+
+    await screen.findByText("Display stopped.")
+    expect(aiTransport.waitForRun).not.toHaveBeenCalled()
+  })
+
+  it("stops recovery polling when the user stops local display", async () => {
+    let pollingSignal: AbortSignal | undefined
+    vi.mocked(aiTransport.streamMessage).mockImplementation(
+      async (_token, _workspace, _conversation, _input, onEvent) => {
+        onEvent({ type: "run_started", run_id: "run-1" })
+        throw new TypeError("network lost")
+      }
+    )
+    vi.mocked(aiTransport.waitForRun).mockImplementation(
+      async (_token, _workspace, _run, signal) => {
+        pollingSignal = signal
+        return new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true }
+          )
+        })
+      }
+    )
+    render(
+      <AiAssistant
+        variant="page"
+        token="token"
+        workspaceId="workspace-1"
+        pages={[]}
+        pageBlockIds={[]}
+        selectedBlockIds={[]}
+        anchorBlockId={null}
+        canWrite
+        requestedAction={null}
+        onRequestedActionHandled={vi.fn()}
+        onRunCompleted={vi.fn()}
+        onBeforeMutatingAction={() => Promise.resolve()}
+      />
+    )
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Keep researching"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+    await waitFor(() => expect(pollingSignal).toBeDefined())
+    await userEvent.click(
+      screen.getByRole("button", { name: "Stop display" })
+    )
+
+    await waitFor(() => expect(pollingSignal?.aborted).toBe(true))
+    await screen.findByText("Display stopped.")
+  })
+
+  it.each(["deciding", "applying"] as const)(
+    "recovers a %s approval after remount",
+    async (approvalStatus) => {
+      window.sessionStorage.setItem(
+        activeConversationStorageKey("workspace-1"),
+        "conversation-1"
+      )
+      window.sessionStorage.setItem(
+        conversationActivityStorageKey("workspace-1", "conversation-1"),
+        JSON.stringify({
+          tools: [],
+          approvals: [
+            {
+              runId: "run-1",
+              proposalId: "proposal-1",
+              status: approvalStatus,
+              decision: true,
+              operation: {
+                type: "delete_block",
+                opId: "op-1",
+                blockId: "block-1",
+              },
+            },
+          ],
+        })
+      )
+      vi.mocked(aiTransport.listConversations).mockResolvedValue([conversation])
+      vi.mocked(aiTransport.getConversation).mockResolvedValue({
+        conversation,
+        messages: [],
+      })
+
+      render(
+        <AiAssistant
+          variant="page"
+          token="token"
+          workspaceId="workspace-1"
+          pages={[]}
+          pageBlockIds={[]}
+          selectedBlockIds={[]}
+          anchorBlockId={null}
+          canWrite
+          requestedAction={null}
+          onRequestedActionHandled={vi.fn()}
+          onRunCompleted={vi.fn()}
+          onBeforeMutatingAction={() => Promise.resolve()}
+        />
+      )
+
+      await waitFor(() =>
+        expect(aiTransport.waitForRun).toHaveBeenCalledWith(
+          "token",
+          "workspace-1",
+          "run-1",
+          expect.any(AbortSignal)
+        )
+      )
+    }
+  )
 })

@@ -11,7 +11,10 @@ function json(body: unknown) {
 }
 
 describe("aiTransport", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 
   it("loads persisted conversation messages through the centralized boundary", async () => {
     vi.stubGlobal(
@@ -83,6 +86,7 @@ describe("aiTransport", () => {
             error: null,
             last_seq: 42,
             created_at: "now",
+            deadline_at: "later",
             completed_at: "now",
           })
         )
@@ -215,6 +219,7 @@ describe("aiTransport", () => {
             error: null,
             last_seq: null,
             created_at: "now",
+            deadline_at: "later",
             completed_at: "now",
           })
         )
@@ -277,6 +282,7 @@ describe("aiTransport", () => {
             error: "provider failed",
             last_seq: 18,
             created_at: "now",
+            deadline_at: "later",
             completed_at: "now",
           })
         )
@@ -315,6 +321,7 @@ describe("aiTransport", () => {
       error: null,
       last_seq: null,
       created_at: "now",
+      deadline_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       completed_at: null,
     }
     vi.stubGlobal(
@@ -342,6 +349,43 @@ describe("aiTransport", () => {
     )
 
     expect(run.status).toBe("completed")
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("uses the server deadline instead of the old ten-second polling window", async () => {
+    vi.useFakeTimers()
+    const running = {
+      id: "run-long",
+      workspace_id: "workspace-1",
+      conversation_id: null,
+      action: "workspace_agent",
+      status: "running",
+      model: "test",
+      operation_group_id: null,
+      error: null,
+      last_seq: null,
+      created_at: new Date().toISOString(),
+      deadline_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      completed_at: null,
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json(running))
+        .mockResolvedValueOnce(
+          json({ ...running, status: "completed", completed_at: "later" })
+        )
+    )
+
+    const result = aiTransport.waitForRun(
+      "token",
+      "workspace-1",
+      "run-long"
+    )
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await expect(result).resolves.toMatchObject({ status: "completed" })
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 })

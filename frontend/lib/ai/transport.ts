@@ -9,6 +9,8 @@ import type {
 } from "@reason/core/ai/contracts"
 import { parseSseStream } from "@reason/core/ai/sse"
 
+const RUN_RECOVERY_TIMEOUT_MS = 30 * 60 * 1000
+
 async function aiRequest<T>(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -92,18 +94,26 @@ export const aiTransport = {
     signal?: AbortSignal,
     options: { attempts?: number; intervalMs?: number } = {}
   ) {
-    const attempts = options.attempts ?? 20
-    const intervalMs = options.intervalMs ?? 500
+    const attempts = options.attempts
+    const intervalMs = options.intervalMs ?? 10_000
+    let deadline = Date.now() + RUN_RECOVERY_TIMEOUT_MS
+    let attempt = 0
     let lastError: unknown
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+    while (attempts === undefined || attempt < attempts) {
+      attempt += 1
       try {
         const run = await getRun(token, workspaceId, runId, signal)
+        const serverDeadline = Date.parse(run.deadline_at)
+        if (Number.isFinite(serverDeadline)) deadline = serverDeadline
         if (run.status === "completed" || run.status === "failed") return run
       } catch (caught) {
         if (signal?.aborted) throw caught
         lastError = caught
       }
-      if (attempt < attempts - 1) await wait(intervalMs, signal)
+      if (attempts !== undefined && attempt >= attempts) break
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) break
+      await wait(Math.min(intervalMs, remainingMs), signal)
     }
     if (lastError instanceof Error) throw lastError
     throw new Error("AI run status polling timed out")

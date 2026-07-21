@@ -37,6 +37,7 @@ import { WorkspaceProvider } from "@/components/workspace/workspace-provider"
 import { isUnauthorizedApiError } from "@/lib/api"
 import { RequireAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n/i18n-provider"
+import { cn } from "@/lib/utils"
 
 function EmptyWorkspace() {
   const { openPage } = useDashboardTabs()
@@ -106,10 +107,15 @@ function DashboardContent({ children }: { children: ReactNode }) {
         }
       >
         <AppSidebar />
-        <SidebarInset className="flex min-h-svh min-w-0 flex-col overflow-hidden bg-background">
+        <SidebarInset className="flex h-svh min-h-0 min-w-0 flex-col overflow-hidden bg-background">
           {children}
           <DashboardTabsRail />
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              aiActive ? "overflow-hidden" : "overflow-auto"
+            )}
+          >
             {aiActive ? (
               <AiWorkspacePage />
             ) : currentPageId ? (

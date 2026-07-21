@@ -98,6 +98,10 @@ export function AiOperationApproval({
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <XIcon className="size-3.5" /> {t("Denied")}
           </span>
+        ) : approval.status === "failed" ? (
+          <span className="inline-flex items-center gap-1 text-xs text-destructive">
+            <XIcon className="size-3.5" /> {t("Failed")}
+          </span>
         ) : null}
       </div>
       {pending || approval.status === "deciding" ? (
