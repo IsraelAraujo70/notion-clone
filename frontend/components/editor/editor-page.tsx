@@ -11,9 +11,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { SparklesIcon } from "lucide-react"
 
+import { useDashboardTabs } from "@/components/dashboard/dashboard-tabs"
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import { usePageLayout } from "@/components/editor/page-layout-provider"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
@@ -120,7 +121,7 @@ function touchesSidebar(op: Operation, tree: BlockTree | null): boolean {
 export function EditorPage({ pageId }: { pageId: string }) {
   const { t } = useI18n()
   const { fullWidth } = usePageLayout()
-  const router = useRouter()
+  const { openPage } = useDashboardTabs()
   const searchParams = useSearchParams()
   const { token, user } = useAuth()
   const { activeWorkspaceId } = useWorkspace()
@@ -160,6 +161,11 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const socketReadyRef = useRef(false)
   const socketWorkspaceRef = useRef<string | null>(null)
   const aiGroupsRef = useRef(new OperationGroupCoordinator())
+
+  useEffect(() => {
+    performance.clearMarks("reason:editor-mounted")
+    performance.mark("reason:editor-mounted", { detail: { pageId } })
+  }, [pageId])
 
   const recordReadyAiGroups = useCallback(() => {
     for (const group of aiGroupsRef.current.takeReady(remoteBuffer.cursor)) {
@@ -313,6 +319,18 @@ export function EditorPage({ pageId }: { pageId: string }) {
           setBreadcrumbs(response.breadcrumbs)
           setRecentEditors(response.recent_editors ?? [])
           syncReadyRef.current = true
+          performance.clearMarks("reason:page-ready")
+          performance.mark("reason:page-ready", { detail: { pageId } })
+          if (
+            performance.getEntriesByName("reason:tab-open-start").length > 0
+          ) {
+            performance.clearMeasures("reason:tab-open-to-page-ready")
+            performance.measure(
+              "reason:tab-open-to-page-ready",
+              "reason:tab-open-start",
+              "reason:page-ready"
+            )
+          }
           void runCatchUp()
         })
         .catch(() => {
@@ -555,7 +573,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
 
   if (loadError) {
     return (
-      <main className="grid min-h-svh place-items-center bg-background text-foreground">
+      <main className="grid min-h-full place-items-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
           {t("Could not open this page.")}
           <Button
@@ -570,7 +588,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
+    <main className="min-h-full bg-background text-foreground">
       <header className="sticky top-0 z-10 flex min-h-12 min-w-0 items-center justify-between gap-2 border-b bg-background/80 px-2 py-1.5 backdrop-blur sm:h-12 sm:gap-4 sm:px-6 sm:py-0">
         <SidebarTrigger
           className="md:hidden"
@@ -598,6 +616,21 @@ export function EditorPage({ pageId }: { pageId: string }) {
                     <BreadcrumbLink
                       href={pagePath(crumb.id)}
                       data-cy={`breadcrumb-${crumb.id}`}
+                      onClick={(event) => {
+                        if (
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        ) {
+                          return
+                        }
+                        event.preventDefault()
+                        openPage(crumb.id, {
+                          title: crumb.title,
+                          icon: crumb.icon,
+                        })
+                      }}
                     >
                       <span aria-hidden="true" className="mr-1">
                         {crumb.icon || "📄"}
@@ -725,7 +758,10 @@ export function EditorPage({ pageId }: { pageId: string }) {
               dispatchBatch={dispatchBatch}
               undo={undo}
               redo={redo}
-              onOpenPage={(childId) => router.push(pagePath(childId))}
+              onOpenPage={(childId) => {
+                const page = pages.find((candidate) => candidate.id === childId)
+                openPage(childId, { title: page?.title, icon: page?.icon })
+              }}
               externalPageDrag={pageDrag}
               onExternalPageDrop={
                 pageDrag
@@ -786,6 +822,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
           requestedAction={pendingAiAction}
           onRequestedActionHandled={() => setPendingAiAction(null)}
           onRunCompleted={completeAiGroup}
+          onOperationApproved={() => void refreshPages()}
           onBeforeMutatingAction={() =>
             queueRef.current?.drained() ?? Promise.resolve()
           }

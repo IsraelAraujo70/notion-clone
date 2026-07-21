@@ -4,6 +4,8 @@ import type {
   AiCitation,
   AiMessage as Message,
 } from "@reason/core/ai/contracts"
+import { Bubble, BubbleContent } from "@/components/ui/bubble"
+import { Message as MessageRow, MessageContent } from "@/components/ui/message"
 import { AiCitation as CitationButton } from "../atoms/ai-citation"
 
 const markdownComponents = {
@@ -69,37 +71,39 @@ export function AiMessage({
   message: Message
   onOpenCitation: (citation: AiCitation) => void
 }) {
+  const user = message.role === "user"
+
   return (
-    <article
-      className={
-        message.role === "user"
-          ? "ml-8 rounded-xl bg-primary px-3 py-2 text-sm text-primary-foreground"
-          : "mr-4 text-sm leading-6"
-      }
-    >
-      {message.role === "assistant" ? (
-        <div className="min-w-0 break-words">
-          <ReactMarkdown
-            components={markdownComponents}
-            remarkPlugins={[remarkGfm]}
-          >
-            {message.content}
-          </ReactMarkdown>
-        </div>
-      ) : (
-        <p className="whitespace-pre-wrap">{message.content}</p>
-      )}
-      {message.citations?.length ? (
-        <div className="mt-2 space-y-1.5">
-          {message.citations.map((citation) => (
-            <CitationButton
-              key={`${citation.page_id}:${citation.block_id}`}
-              citation={citation}
-              onOpen={onOpenCitation}
-            />
-          ))}
-        </div>
-      ) : null}
-    </article>
+    <MessageRow align={user ? "end" : "start"}>
+      <MessageContent>
+        <Bubble variant={user ? "secondary" : "ghost"}>
+          <BubbleContent>
+            {user ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <div className="min-w-0 break-words text-sm leading-6">
+                <ReactMarkdown
+                  components={markdownComponents}
+                  remarkPlugins={[remarkGfm]}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )}
+            {message.citations?.length ? (
+              <div className="mt-3 flex flex-col gap-1.5">
+                {message.citations.map((citation) => (
+                  <CitationButton
+                    key={`${citation.page_id}:${citation.block_id}`}
+                    citation={citation}
+                    onOpen={onOpenCitation}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </MessageRow>
   )
 }

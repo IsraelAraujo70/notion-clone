@@ -10,10 +10,19 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   search: vi.fn(),
   selectWorkspace: vi.fn(),
+  openPage: vi.fn(),
+  openPath: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+}))
+
+vi.mock("@/components/dashboard/dashboard-tabs", () => ({
+  useDashboardTabs: () => ({
+    openPage: mocks.openPage,
+    openPath: mocks.openPath,
+  }),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -21,7 +30,10 @@ vi.mock("@/lib/auth", () => ({
 }))
 
 vi.mock("@/components/workspace/workspace-provider", () => ({
-  useWorkspace: () => ({ selectWorkspace: mocks.selectWorkspace }),
+  useWorkspace: () => ({
+    activeWorkspaceId: "ws-1",
+    selectWorkspace: mocks.selectWorkspace,
+  }),
 }))
 
 vi.mock("@/lib/api", () => ({
@@ -40,6 +52,8 @@ describe("CommandMenuProvider", () => {
     mocks.logout.mockReset()
     mocks.search.mockReset().mockResolvedValue([])
     mocks.selectWorkspace.mockReset()
+    mocks.openPage.mockReset()
+    mocks.openPath.mockReset()
   })
 
   const pages = [
@@ -60,7 +74,10 @@ describe("CommandMenuProvider", () => {
     ).toBeInTheDocument()
 
     await userEvent.click(screen.getByText("Notas"))
-    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/page-root")
+    expect(mocks.openPage).toHaveBeenCalledWith("page-root", {
+      title: "Notas",
+      icon: "",
+    })
   })
 
   it("shows untitled pages and routes to them", async () => {
@@ -72,7 +89,10 @@ describe("CommandMenuProvider", () => {
 
     await userEvent.click(screen.getByText("Open commands"))
     await userEvent.click(screen.getByText("Untitled"))
-    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/page-child")
+    expect(mocks.openPage).toHaveBeenCalledWith("page-child", {
+      title: "",
+      icon: "",
+    })
   })
 
   it("logs out from the command palette", async () => {

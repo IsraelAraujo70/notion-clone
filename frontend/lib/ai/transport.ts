@@ -67,6 +67,24 @@ function wait(delayMs: number, signal?: AbortSignal) {
 
 export const aiTransport = {
   getRun,
+  decideOperation: (
+    token: string,
+    workspaceId: string,
+    runId: string,
+    proposalId: string,
+    approved: boolean,
+    allowConversation = false,
+    signal?: AbortSignal
+  ) =>
+    aiRequest<{ ok: true }>(
+      `/workspaces/${workspaceId}/ai/runs/${runId}/proposals/${proposalId}`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({ approved, allowConversation }),
+        signal,
+      }
+    ),
   async waitForRun(
     token: string,
     workspaceId: string,

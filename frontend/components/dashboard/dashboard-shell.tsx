@@ -1,16 +1,21 @@
 "use client"
 
 import { useState, type CSSProperties, type ReactNode } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { FileTextIcon, PlusIcon } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { AiWorkspacePage } from "@/components/ai/organisms/ai-workspace-page"
+import {
+  DashboardTabsProvider,
+  DashboardTabsRail,
+  useDashboardTabs,
+} from "@/components/dashboard/dashboard-tabs"
 import { CommandMenuProvider } from "@/components/command/organisms/command-menu-provider"
 import { EditorPage } from "@/components/editor/editor-page"
 import { PageLayoutProvider } from "@/components/editor/page-layout-provider"
 import {
   PageProvider,
-  pagePath,
   usePages,
 } from "@/components/pages/page-provider"
 import { Button } from "@/components/ui/button"
@@ -34,7 +39,7 @@ import { RequireAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n/i18n-provider"
 
 function EmptyWorkspace() {
-  const router = useRouter()
+  const { openPage } = useDashboardTabs()
   const { canWrite, createTopLevelPage } = usePages()
   const { t } = useI18n()
   const [creating, setCreating] = useState(false)
@@ -66,7 +71,7 @@ function EmptyWorkspace() {
               onClick={async () => {
                 setCreating(true)
                 try {
-                  router.push(pagePath(await createTopLevelPage()))
+                  openPage(await createTopLevelPage())
                 } catch (error) {
                   if (!isUnauthorizedApiError(error)) {
                     throw error
@@ -88,6 +93,8 @@ function EmptyWorkspace() {
 
 function DashboardContent({ children }: { children: ReactNode }) {
   const { currentPageId, pages, loading } = usePages()
+  const { activePath, isMobile } = useDashboardTabs()
+  const aiActive = !isMobile && activePath.startsWith("/dashboard/ai")
 
   return (
     <CommandMenuProvider pages={pages}>
@@ -99,18 +106,22 @@ function DashboardContent({ children }: { children: ReactNode }) {
         }
       >
         <AppSidebar />
-        <SidebarInset className="bg-background">
+        <SidebarInset className="flex min-h-svh min-w-0 flex-col overflow-hidden bg-background">
           {children}
-          {currentPageId ? (
-            <EditorPage pageId={currentPageId} />
-          ) : !loading && pages.length === 0 ? (
-            <EmptyWorkspace />
-          ) : (
-            // Sem página na URL: o PageProvider está redirecionando para a primeira.
-            <div className="grid min-h-svh place-items-center">
-              <Spinner />
-            </div>
-          )}
+          <DashboardTabsRail />
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            {aiActive ? (
+              <AiWorkspacePage />
+            ) : currentPageId ? (
+              <EditorPage pageId={currentPageId} />
+            ) : !loading && pages.length === 0 && isMobile ? (
+              <EmptyWorkspace />
+            ) : (
+              <div className="grid min-h-0 flex-1 place-items-center">
+                <Spinner />
+              </div>
+            )}
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </CommandMenuProvider>
@@ -126,7 +137,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       <PageLayoutProvider>
         <WorkspaceProvider>
           <PageProvider pageId={pageId}>
-            <DashboardContent>{children}</DashboardContent>
+            <DashboardTabsProvider>
+              <DashboardContent>{children}</DashboardContent>
+            </DashboardTabsProvider>
           </PageProvider>
         </WorkspaceProvider>
       </PageLayoutProvider>

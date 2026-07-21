@@ -8,7 +8,7 @@ use chrono::Utc;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::application::ai::context::{
@@ -28,7 +28,8 @@ use crate::domain::{
 
 const MAX_TOOL_ROUNDS: usize = 8;
 const MAX_OPERATIONS: usize = 64;
-const MAX_RUN_TIME: Duration = Duration::from_secs(45);
+const MAX_RUN_TIME: Duration = Duration::from_secs(30 * 60);
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const TITLE_RUN_TIME: Duration = Duration::from_secs(10);
 const RUN_RECOVERY_GRACE: Duration = Duration::from_secs(30);
 const CONTEXT_BUDGET_TOKENS: usize = 8_000;
@@ -66,6 +67,16 @@ pub enum AiEvent {
     Tool {
         name: String,
     },
+    ApprovalRequested {
+        run_id: Uuid,
+        proposal_id: Uuid,
+        operation: Operation,
+        auto_approved: bool,
+    },
+    ApprovalResolved {
+        proposal_id: Uuid,
+        approved: bool,
+    },
     Usage {
         prompt_tokens: u64,
         completion_tokens: u64,
@@ -98,6 +109,36 @@ pub struct AiUseCases {
     apply: ApplyOperationUseCase,
     chat_model: String,
     title_model: String,
+    approvals: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
+    approved_conversations: Arc<Mutex<HashSet<ConversationApproval>>>,
+}
+
+struct PendingApproval {
+    user_id: Uuid,
+    workspace_id: Uuid,
+    run_id: Uuid,
+    conversation_id: Option<Uuid>,
+    decision: oneshot::Sender<bool>,
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+struct ConversationApproval {
+    user_id: Uuid,
+    workspace_id: Uuid,
+    conversation_id: Uuid,
+}
+
+fn validate_conversation_approval_request(
+    approved: bool,
+    allow_conversation: bool,
+    conversation_id: Option<Uuid>,
+) -> Result<(), DomainError> {
+    if allow_conversation && (!approved || conversation_id.is_none()) {
+        return Err(DomainError::Validation(
+            "Conversation approval requires an approved conversation operation",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -114,7 +155,10 @@ enum ActionScope {
         selected: HashSet<Uuid>,
         replacement_indexes: HashMap<Uuid, HashSet<i64>>,
     },
-    Workspace,
+    Workspace {
+        root: Uuid,
+        authorized: HashSet<Uuid>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -219,7 +263,121 @@ impl AiUseCases {
             apply,
             chat_model,
             title_model,
+            approvals: Arc::new(Mutex::new(HashMap::new())),
+            approved_conversations: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    pub async fn decide_operation(
+        &self,
+        user: Uuid,
+        workspace: Uuid,
+        run: Uuid,
+        proposal: Uuid,
+        approved: bool,
+        allow_conversation: bool,
+    ) -> Result<(), AppError> {
+        require_member(&self.workspaces, workspace, user).await?;
+        if approved {
+            require_writer(&self.workspaces, workspace, user).await?;
+        }
+        let mut approvals = self.approvals.lock().await;
+        let pending = approvals.get(&proposal).ok_or(DomainError::Validation(
+            "AI operation proposal is no longer pending",
+        ))?;
+        if pending.user_id != user || pending.workspace_id != workspace || pending.run_id != run {
+            return Err(DomainError::Forbidden.into());
+        }
+        validate_conversation_approval_request(
+            approved,
+            allow_conversation,
+            pending.conversation_id,
+        )?;
+        let conversation_id = pending.conversation_id;
+        let pending = approvals
+            .remove(&proposal)
+            .expect("validated pending approval exists");
+        drop(approvals);
+        if let Some(conversation_id) = conversation_id.filter(|_| allow_conversation) {
+            self.approved_conversations
+                .lock()
+                .await
+                .insert(ConversationApproval {
+                    user_id: user,
+                    workspace_id: workspace,
+                    conversation_id,
+                });
+        }
+        pending
+            .decision
+            .send(approved)
+            .map_err(|_| DomainError::Validation("AI operation proposal expired"))?;
+        Ok(())
+    }
+
+    async fn request_operation_approval(
+        &self,
+        user: Uuid,
+        workspace: Uuid,
+        run_id: Uuid,
+        conversation_id: Option<Uuid>,
+        operation: Operation,
+        tx: &mpsc::Sender<AiEvent>,
+    ) -> Result<(Uuid, bool), AppError> {
+        let proposal_id = Uuid::new_v4();
+        let conversation_approved = if let Some(conversation_id) = conversation_id {
+            self.approved_conversations
+                .lock()
+                .await
+                .contains(&ConversationApproval {
+                    user_id: user,
+                    workspace_id: workspace,
+                    conversation_id,
+                })
+        } else {
+            false
+        };
+        if conversation_approved {
+            tx.send(AiEvent::ApprovalRequested {
+                run_id,
+                proposal_id,
+                operation,
+                auto_approved: true,
+            })
+            .await
+            .map_err(|_| DomainError::Validation("AI approval stream closed"))?;
+            return Ok((proposal_id, true));
+        }
+        let (decision, receiver) = oneshot::channel();
+        self.approvals.lock().await.insert(
+            proposal_id,
+            PendingApproval {
+                user_id: user,
+                workspace_id: workspace,
+                run_id,
+                conversation_id,
+                decision,
+            },
+        );
+        if tx
+            .send(AiEvent::ApprovalRequested {
+                run_id,
+                proposal_id,
+                operation,
+                auto_approved: false,
+            })
+            .await
+            .is_err()
+        {
+            self.approvals.lock().await.remove(&proposal_id);
+            return Err(DomainError::Validation("AI approval stream closed").into());
+        }
+        let resolved = tokio::time::timeout(APPROVAL_TIMEOUT, receiver).await;
+        self.approvals.lock().await.remove(&proposal_id);
+        let approved = resolved
+            .map_err(|_| DomainError::Validation("AI operation approval timed out"))?
+            .map_err(|_| DomainError::Validation("AI operation approval was cancelled"))?;
+        Ok((proposal_id, approved))
     }
 
     pub async fn list_conversations(
@@ -491,7 +649,23 @@ impl AiUseCases {
             .iter()
             .map(|view| view.page.clone())
             .collect::<Vec<_>>();
-        let mut scope = action_scope(action, page.as_ref(), &input.selection)?;
+        let mut scope = if action == "workspace_agent" {
+            let root = self.pages.list_pages(workspace).await?.root_page_id;
+            ActionScope::Workspace {
+                root,
+                authorized: HashSet::from([root]),
+            }
+        } else {
+            action_scope(action, page.as_ref(), &input.selection)?
+        };
+        if let ActionScope::Workspace { authorized, .. } = &mut scope {
+            if let Some(page) = &page {
+                authorized.extend(page.page.blocks.iter().map(|block| block.id));
+            }
+            for mentioned_page in &mentioned_pages {
+                authorized.extend(mentioned_page.page.blocks.iter().map(|block| block.id));
+            }
+        }
         let context_selection = match &scope {
             ActionScope::Transform { selected, .. } if action == "transform_page" => {
                 selected.iter().copied().collect::<Vec<_>>()
@@ -597,6 +771,16 @@ impl AiUseCases {
                     "additionalProperties":false
                 }),
             });
+            if require_writer(&self.workspaces, workspace, user)
+                .await
+                .is_ok()
+            {
+                tools.push(AiToolDefinition {
+                    name: "apply_operations".into(),
+                    description: "Propose typed block operations. Every operation is shown to the user and is applied only after that operation is explicitly approved. Read a page before editing it. Use the trusted workspace root ID to create a top-level page. Propose a new parent first, wait for its tool result, then use the returned createdBlockIds for child operations.".into(),
+                    parameters: apply_operations_schema(action),
+                });
+            }
         } else {
             tools.push(AiToolDefinition {
                 name: "read_context".into(),
@@ -605,7 +789,7 @@ impl AiUseCases {
             });
             tools.push(AiToolDefinition {
                 name: "apply_operations".into(),
-                description: "Apply typed block operation drafts within the trusted server action scope. Server-controlled metadata is ignored and replaced.".into(),
+                description: "Propose typed block operation drafts within the trusted server action scope. Each operation is applied only after explicit user approval. Server-controlled metadata is ignored and replaced.".into(),
                 parameters: apply_operations_schema(action),
             });
         }
@@ -644,7 +828,7 @@ impl AiUseCases {
             }
             deduplicate_tool_calls(&mut calls);
             if calls.is_empty() {
-                if action == "workspace_agent" && !researched {
+                if action == "workspace_agent" && !researched && applied_count == 0 {
                     messages.push(AiMessage {
                         role: AiRole::Assistant,
                         content: round_text,
@@ -659,16 +843,22 @@ impl AiUseCases {
                     });
                     continue;
                 }
-                if action == "workspace_agent" && !has_sourced_context {
+                if action == "workspace_agent" && applied_count == 0 && !has_sourced_context {
                     round_text.clear();
                     round_text.push_str(NO_SOURCE_ANSWER);
                 }
-                if action == "workspace_agent" && round_text.trim() == NO_SOURCE_ANSWER {
+                if action == "workspace_agent"
+                    && applied_count == 0
+                    && round_text.trim() == NO_SOURCE_ANSWER
+                {
                     round_text.clear();
                     round_text.push_str(NO_SOURCE_ANSWER);
                     citations.clear();
                 }
-                if action == "workspace_agent" && round_text != NO_SOURCE_ANSWER {
+                if action == "workspace_agent"
+                    && applied_count == 0
+                    && round_text != NO_SOURCE_ANSWER
+                {
                     let correction = if citations.is_empty() && has_sourced_context {
                         Some("Select the source blocks that support the final answer before responding.".to_string())
                     } else {
@@ -728,6 +918,10 @@ impl AiUseCases {
                         match self.pages.get_page(workspace, page_id).await {
                             Ok(view) => {
                                 researched = true;
+                                if let ActionScope::Workspace { authorized, .. } = &mut scope {
+                                    authorized
+                                        .extend(view.page.blocks.iter().map(|block| block.id));
+                                }
                                 has_sourced_context |=
                                     view.page.blocks.iter().any(block_has_citable_text);
                                 merge_citation_sources(
@@ -799,7 +993,11 @@ impl AiUseCases {
                                 .await;
                             continue;
                         }
-                        let operations = match compile_operations(&call.arguments, workspace) {
+                        let operations = match compile_operations(
+                            &call.arguments,
+                            workspace,
+                            action == "workspace_agent",
+                        ) {
                             Ok(operations) => operations,
                             Err(message) => {
                                 messages.push(tool_result_message(call.id, tool_error(&message)));
@@ -825,56 +1023,113 @@ impl AiUseCases {
                                 .await;
                             continue;
                         }
-                        if validate_operations(&mut scope, workspace, &operations).is_err() {
-                            messages.push(tool_result_message(
-                                call.id,
-                                tool_error(
-                                    "Operations are outside the trusted action scope. Use only the exact IDs and indexes in the system scope metadata.",
-                                ),
-                            ));
-                            let _ = tx
-                                .send(AiEvent::Tool {
-                                    name: call.name.clone(),
-                                })
-                                .await;
-                            continue;
-                        }
-                        let expected_workspace_seq = if action == "transform_page" {
+                        let mut expected_workspace_seq = if action == "transform_page" {
                             let initial = page
                                 .as_ref()
                                 .ok_or(DomainError::Validation("Page transform requires a page"))?;
-                            let current =
-                                self.pages.get_page(workspace, initial.page.root_id).await?;
-                            revalidate_page_snapshot(initial, &current, &scope)?;
                             Some(initial.seq)
                         } else {
                             None
                         };
-                        let id = *group_id.get_or_insert_with(Uuid::new_v4);
-                        let group = OperationGroup {
-                            id,
-                            source: "ai".into(),
-                            provenance: json!({"runId":run_id,"action":action,"model":self.chat_model}),
-                        };
-                        let committed = operations.len();
-                        for batch in operation_commit_batches(action, operations) {
+                        let mut approved_count = 0usize;
+                        let mut rejected_count = 0usize;
+                        let mut created_block_ids = Vec::new();
+                        let mut invalid = false;
+                        let mut transform_started = false;
+                        for operation in operations {
+                            let mut next_scope = scope.clone();
+                            if validate_operations(
+                                &mut next_scope,
+                                workspace,
+                                std::slice::from_ref(&operation),
+                            )
+                            .is_err()
+                            {
+                                invalid = true;
+                                break;
+                            }
+                            let (proposal_id, approved) = self
+                                .request_operation_approval(
+                                    user,
+                                    workspace,
+                                    run_id,
+                                    input.conversation_id,
+                                    operation.clone(),
+                                    &tx,
+                                )
+                                .await?;
+                            if !approved {
+                                rejected_count += 1;
+                                let _ = tx
+                                    .send(AiEvent::ApprovalResolved {
+                                        proposal_id,
+                                        approved: false,
+                                    })
+                                    .await;
+                                continue;
+                            }
+                            if action == "transform_page" && !transform_started {
+                                let initial = page.as_ref().ok_or(DomainError::Validation(
+                                    "Page transform requires a page",
+                                ))?;
+                                let current =
+                                    self.pages.get_page(workspace, initial.page.root_id).await?;
+                                revalidate_page_snapshot(initial, &current, &scope)?;
+                                transform_started = true;
+                            }
+                            let id = *group_id.get_or_insert_with(Uuid::new_v4);
+                            let group = OperationGroup {
+                                id,
+                                source: "ai".into(),
+                                provenance: json!({"runId":run_id,"action":action,"model":self.chat_model}),
+                            };
+                            let created_block_id = match &operation {
+                                Operation::InsertBlock { block, .. } => Some(block.id),
+                                _ => None,
+                            };
                             let acks = self
                                 .apply
                                 .execute_batch_at_seq(
                                     user,
                                     workspace,
-                                    batch,
+                                    vec![operation],
                                     Some(group.clone()),
                                     expected_workspace_seq,
                                 )
                                 .await?;
+                            scope = next_scope;
+                            approved_count += acks.len();
+                            if let Some(block_id) = created_block_id {
+                                created_block_ids.push(block_id);
+                            }
                             applied_count += acks.len();
                             last_seq = acks.iter().map(|ack| ack.seq).chain(last_seq).max();
+                            if action == "transform_page" {
+                                expected_workspace_seq = last_seq;
+                            }
                             let mut run_progress = progress.lock().await;
                             run_progress.group_id = group_id;
                             run_progress.last_seq = last_seq;
+                            let _ = tx
+                                .send(AiEvent::ApprovalResolved {
+                                    proposal_id,
+                                    approved: true,
+                                })
+                                .await;
                         }
-                        json!({"ok":true,"committed":committed}).to_string()
+                        if invalid {
+                            tool_error(
+                                "An operation was outside the trusted action scope. Read the target page again and propose only authorized IDs and parents.",
+                            )
+                        } else {
+                            json!({
+                                "ok":true,
+                                "approved":approved_count,
+                                "rejected":rejected_count,
+                                "createdBlockIds":created_block_ids
+                            })
+                            .to_string()
+                        }
                     }
                     "select_citations" if action == "workspace_agent" => {
                         citations =
@@ -1126,17 +1381,18 @@ fn validate_input(input: &AiActionInput) -> Result<(), AppError> {
 }
 
 fn apply_operations_schema(action: &str) -> Value {
+    let allow_pages = action == "workspace_agent";
     let variants = match action {
-        "continue_writing" | "summarize_page" => vec![insert_operation_schema()],
+        "continue_writing" | "summarize_page" => vec![insert_operation_schema(false)],
         "transform_selection" | "transform_page" => vec![
-            insert_operation_schema(),
-            update_operation_schema(),
+            insert_operation_schema(false),
+            update_operation_schema(false),
             move_operation_schema(),
             delete_operation_schema(),
         ],
         _ => vec![
-            insert_operation_schema(),
-            update_operation_schema(),
+            insert_operation_schema(allow_pages),
+            update_operation_schema(allow_pages),
             move_operation_schema(),
             delete_operation_schema(),
             restore_operation_schema(),
@@ -1171,13 +1427,24 @@ fn content_block_type_schema() -> Value {
     ]})
 }
 
+fn writable_block_type_schema(allow_pages: bool) -> Value {
+    if allow_pages {
+        json!({"type":"string","enum":[
+            "page","paragraph","heading1","heading2","heading3","bulleted_list_item",
+            "numbered_list_item","to_do","toggle","quote","code","callout","divider","mermaid"
+        ]})
+    } else {
+        content_block_type_schema()
+    }
+}
+
 fn metadata_properties() -> Value {
     json!({
         "opId":{"type":"string","format":"uuid"}
     })
 }
 
-fn insert_operation_schema() -> Value {
+fn insert_operation_schema(allow_pages: bool) -> Value {
     let mut properties = metadata_properties()
         .as_object()
         .cloned()
@@ -1192,7 +1459,7 @@ fn insert_operation_schema() -> Value {
             "properties":{
                 "id":{"type":"string","format":"uuid"},
                 "workspaceId":{"type":"string","format":"uuid"},
-                "type":content_block_type_schema(),
+                "type":writable_block_type_schema(allow_pages),
                 "properties":{"type":"object","additionalProperties":true},
                 "propVersions":{"type":"object","additionalProperties":{"type":"integer"}},
                 "content":{"type":"array","items":{"type":"string","format":"uuid"}},
@@ -1210,14 +1477,14 @@ fn insert_operation_schema() -> Value {
     })
 }
 
-fn update_operation_schema() -> Value {
+fn update_operation_schema(allow_pages: bool) -> Value {
     json!({
         "type":"object",
         "properties":{
             "type":{"const":"update_block"},
             "opId":{"type":"string","format":"uuid"},
             "blockId":{"type":"string","format":"uuid"},
-            "blockType":content_block_type_schema(),
+            "blockType":writable_block_type_schema(allow_pages),
             "properties":{"type":"object","additionalProperties":true},
             "propVersions":{"type":"object","additionalProperties":{"type":"integer"}}
         },
@@ -1289,7 +1556,14 @@ fn trusted_scope_instructions(scope: &ActionScope) -> String {
                 selected[0]
             )
         }
-        ActionScope::Workspace => "No mutation operations are allowed.".into(),
+        ActionScope::Workspace { root, authorized } => {
+            let mut ids = authorized.iter().map(Uuid::to_string).collect::<Vec<_>>();
+            ids.sort();
+            format!(
+                "Every mutation requires explicit user approval. Top-level pages may be inserted under workspace root {root}. Other operations may target only IDs from pages read during this run. Currently authorized IDs: [{}].",
+                ids.join(", ")
+            )
+        }
     }
 }
 
@@ -1306,12 +1580,16 @@ fn action_rule(action: &str) -> &'static str {
             "Format the whole mutable page scope. Inspect every block in the scope, preserve all meaning and content, and meaningfully structure the page with appropriate headings, lists, and paragraphs. Include every mutable scope ID exactly once in reviewedBlockIds when applying operations. Blocks that are already correctly formatted need no pointless mutation, but must still be listed as reviewed. Do not stop after one cosmetic operation or claim completion unless the complete scope was handled."
         }
         _ => {
-            "Investigate before answering. Start with explicitly MENTIONED PAGE IDs when present; otherwise, when the current page ID is available, call read_page for it first; if neither exists, begin with search_workspace. Follow child-page links and use search_workspace with new queries until you find the final answer or exhaust useful leads; never stop at an intermediate location or clue. Call select_citations only after finding the answer. Answer only from authorized tool results, do not emit inline citation markers, and never mutate content."
+            "Investigate before answering factual workspace questions. Start with explicitly MENTIONED PAGE IDs when present; otherwise, when the current page ID is available, call read_page for it first; if neither exists, begin with search_workspace. Read a page before changing it. When the user asks for a change and apply_operations is available, complete the whole requested change by proposing typed operations; every operation is applied only after explicit user approval in the interface. Never ask for approval in prose and never stop after an intermediate operation. Use the trusted workspace root to create top-level pages. After a page is approved, use its returned createdBlockIds to add the requested content. Call select_citations only for factual answers based on workspace sources."
         }
     }
 }
 
-fn compile_operations(arguments: &Value, workspace: Uuid) -> Result<Vec<Operation>, String> {
+fn compile_operations(
+    arguments: &Value,
+    workspace: Uuid,
+    allow_pages: bool,
+) -> Result<Vec<Operation>, String> {
     let draft: ApplyOperationsDraft = serde_json::from_value(arguments.clone()).map_err(|_| {
         "Malformed typed operations. Use camelCase fields and one of the advertised operation shapes."
             .to_string()
@@ -1319,7 +1597,7 @@ fn compile_operations(arguments: &Value, workspace: Uuid) -> Result<Vec<Operatio
     draft
         .operations
         .into_iter()
-        .map(|operation| compile_operation(operation, workspace))
+        .map(|operation| compile_operation(operation, workspace, allow_pages))
         .collect()
 }
 
@@ -1355,7 +1633,11 @@ fn validate_transform_coverage(
     Ok(())
 }
 
-fn compile_operation(operation: OperationDraft, workspace: Uuid) -> Result<Operation, String> {
+fn compile_operation(
+    operation: OperationDraft,
+    workspace: Uuid,
+    allow_pages: bool,
+) -> Result<Operation, String> {
     let op_id = Uuid::new_v4();
     match operation {
         OperationDraft::InsertBlock {
@@ -1364,16 +1646,20 @@ fn compile_operation(operation: OperationDraft, workspace: Uuid) -> Result<Opera
             index,
             ..
         } => {
-            if !is_generated_block_type(block.block_type) {
-                return Err("Pages and images cannot be generated by AI operations.".into());
+            if !is_generated_block_type(block.block_type)
+                && !(allow_pages && block.block_type == BlockType::Page)
+            {
+                return Err("This block type cannot be generated by AI operations.".into());
             }
+            let mut properties = block.properties;
+            normalize_generated_properties(block.block_type, &mut properties, true)?;
             Ok(Operation::InsertBlock {
                 op_id,
                 block: Block {
                     id: block.id.unwrap_or_else(Uuid::new_v4),
                     workspace_id: workspace,
                     block_type: block.block_type,
-                    properties: block.properties,
+                    properties,
                     prop_versions: HashMap::new(),
                     content: Vec::new(),
                     parent_id: Some(parent_id),
@@ -1390,11 +1676,20 @@ fn compile_operation(operation: OperationDraft, workspace: Uuid) -> Result<Opera
             properties,
             ..
         } => {
-            if block_type.is_some_and(|block_type| !is_generated_block_type(block_type)) {
-                return Err("Pages and images cannot be generated by AI operations.".into());
+            if block_type.is_some_and(|block_type| {
+                !is_generated_block_type(block_type)
+                    && !(allow_pages && block_type == BlockType::Page)
+            }) {
+                return Err("This block type cannot be generated by AI operations.".into());
             }
             if block_type.is_none() && properties.is_none() {
                 return Err("update_block requires blockType or properties.".into());
+            }
+            let mut properties = properties;
+            if let (Some(block_type), Some(properties)) = (block_type, properties.as_mut()) {
+                normalize_generated_properties(block_type, properties, false)?;
+            } else if let Some(properties) = properties.as_mut() {
+                normalize_rich_text_property("text", properties);
             }
             Ok(Operation::UpdateBlock {
                 op_id,
@@ -1429,6 +1724,82 @@ fn is_generated_block_type(block_type: BlockType) -> bool {
         block_type,
         BlockType::Page | BlockType::Image | BlockType::Database | BlockType::DatabaseRow
     )
+}
+
+fn normalize_generated_properties(
+    block_type: BlockType,
+    properties: &mut Map<String, Value>,
+    require_text: bool,
+) -> Result<(), String> {
+    let (target, fallback) = if block_type == BlockType::Page {
+        ("title", "text")
+    } else {
+        ("text", "title")
+    };
+    let target_value = properties
+        .remove(target)
+        .and_then(|value| extract_generated_text(&value));
+    let fallback_value = properties
+        .remove(fallback)
+        .and_then(|value| extract_generated_text(&value));
+    let rich_text_value = properties
+        .remove("rich_text")
+        .and_then(|value| extract_generated_text(&value));
+    if let Some(value) = target_value.or(fallback_value).or(rich_text_value) {
+        properties.insert(target.into(), Value::String(value));
+    }
+    if require_text
+        && block_type != BlockType::Divider
+        && !properties
+            .get(target)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(format!(
+            "Generated {block_type:?} blocks require a non-empty {target} string."
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_rich_text_property(target: &str, properties: &mut Map<String, Value>) {
+    if properties.get(target).and_then(Value::as_str).is_none() {
+        if let Some(value) = properties
+            .remove("rich_text")
+            .and_then(|value| extract_generated_text(&value))
+        {
+            properties.insert(target.into(), Value::String(value));
+        }
+    } else {
+        properties.remove("rich_text");
+    }
+}
+
+fn extract_generated_text(value: &Value) -> Option<String> {
+    if let Some(value) = value.as_str() {
+        return Some(value.into());
+    }
+    let segments = value.as_array()?;
+    let mut text = String::new();
+    let mut found = false;
+    for segment in segments {
+        let content = segment.as_str().or_else(|| {
+            segment
+                .get("plain_text")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    segment
+                        .get("text")
+                        .and_then(|text| text.get("content"))
+                        .and_then(Value::as_str)
+                })
+        });
+        if let Some(content) = content {
+            text.push_str(content);
+            found = true;
+        }
+    }
+    found.then_some(text)
 }
 
 fn tool_error(message: &str) -> String {
@@ -1560,7 +1931,9 @@ fn action_scope(
                 replacement_indexes,
             })
         }
-        "workspace_agent" => Ok(ActionScope::Workspace),
+        "workspace_agent" => {
+            Err(DomainError::Validation("Workspace scope requires the workspace root").into())
+        }
         _ => Err(DomainError::Validation("Unknown AI action").into()),
     }
 }
@@ -1732,8 +2105,44 @@ fn validate_operations(
                 }
             }
         }
-        ActionScope::Workspace => {
-            return Err(DomainError::Validation("Workspace Q&A cannot mutate content").into());
+        ActionScope::Workspace { root, authorized } => {
+            for operation in operations {
+                match operation {
+                    Operation::InsertBlock {
+                        block, parent_id, ..
+                    } if block.workspace_id == workspace
+                        && block.content.is_empty()
+                        && (authorized.contains(parent_id) || parent_id == root)
+                        && (is_generated_content_block(block)
+                            || block.block_type == BlockType::Page) =>
+                    {
+                        authorized.insert(block.id);
+                    }
+                    Operation::UpdateBlock {
+                        block_id,
+                        block_type,
+                        ..
+                    } if authorized.contains(block_id)
+                        && block_type.is_none_or(|value| {
+                            is_generated_block_type(value) || value == BlockType::Page
+                        }) => {}
+                    Operation::MoveBlock {
+                        block_id,
+                        new_parent_id,
+                        ..
+                    } if authorized.contains(block_id)
+                        && (authorized.contains(new_parent_id) || new_parent_id == root) => {}
+                    Operation::DeleteBlock { block_id, .. }
+                    | Operation::RestoreBlock { block_id, .. }
+                        if authorized.contains(block_id) => {}
+                    _ => {
+                        return Err(DomainError::Validation(
+                            "Operation is outside workspace agent scope",
+                        )
+                        .into());
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -1743,6 +2152,7 @@ fn is_generated_content_block(block: &Block) -> bool {
     is_generated_block_type(block.block_type)
 }
 
+#[cfg(test)]
 fn operation_commit_batches(action: &str, operations: Vec<Operation>) -> Vec<Vec<Operation>> {
     if action == "continue_writing" {
         operations
@@ -1887,6 +2297,15 @@ fn validate_completion_postconditions(
         }
         return Ok(());
     }
+    if applied_count > 0 {
+        if group_id.is_none() || last_seq.is_none() || final_text.trim().is_empty() {
+            return Err(DomainError::Validation(
+                "Workspace mutation completed without committed operations or confirmation text",
+            )
+            .into());
+        }
+        return Ok(());
+    }
     if final_text == NO_SOURCE_ANSWER {
         return if citations.is_empty() {
             Ok(())
@@ -2022,6 +2441,31 @@ mod tests {
         assert!(request.tools.is_empty());
         assert_eq!(request.messages[1].role, AiRole::User);
         assert_eq!(request.messages[1].content, "Ajude a planejar o lançamento");
+    }
+
+    #[test]
+    fn conversation_approval_requires_an_approved_conversation_operation() {
+        assert!(validate_conversation_approval_request(true, true, Some(Uuid::new_v4())).is_ok());
+        assert!(validate_conversation_approval_request(false, true, Some(Uuid::new_v4())).is_err());
+        assert!(validate_conversation_approval_request(true, true, None).is_err());
+        assert!(validate_conversation_approval_request(true, false, None).is_ok());
+    }
+
+    #[test]
+    fn conversation_approval_is_scoped_by_user_workspace_and_conversation() {
+        let approval = ConversationApproval {
+            user_id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            conversation_id: Uuid::new_v4(),
+        };
+        let mut approvals = HashSet::new();
+        approvals.insert(approval);
+
+        assert!(approvals.contains(&approval));
+        assert!(!approvals.contains(&ConversationApproval {
+            conversation_id: Uuid::new_v4(),
+            ..approval
+        }));
     }
 
     #[test]
@@ -2178,6 +2622,7 @@ mod tests {
                 "block":{"type":"callout","properties":{"text":"Summary"}}
             }]}),
             workspace,
+            false,
         )
         .unwrap();
 
@@ -2227,6 +2672,7 @@ mod tests {
                 }
             }]}),
             workspace,
+            false,
         )
         .unwrap();
 
@@ -2263,6 +2709,7 @@ mod tests {
                 "block":{"type":"paragraph","properties":{"text":"Outside"}}
             }]}),
             workspace,
+            false,
         )
         .unwrap();
         let mut scope = ActionScope::Continue {
@@ -2287,6 +2734,7 @@ mod tests {
                 "propVersions":{"text":999}
             }]}),
             workspace,
+            false,
         )
         .unwrap();
 
@@ -2556,6 +3004,7 @@ mod tests {
                 "block":{"type":"mermaid","properties":{"text":"graph TD; A-->B"}}
             }]}),
             Uuid::new_v4(),
+            false,
         )
         .unwrap();
 
@@ -2755,13 +3204,140 @@ mod tests {
     }
 
     #[test]
-    fn workspace_scope_rejects_every_mutation() {
-        let mut scope = ActionScope::Workspace;
+    fn workspace_scope_allows_only_authorized_mutation() {
+        let workspace = Uuid::new_v4();
+        let root = Uuid::new_v4();
+        let authorized = Uuid::new_v4();
+        let mut scope = ActionScope::Workspace {
+            root,
+            authorized: HashSet::from([root, authorized]),
+        };
+        let operation = Operation::DeleteBlock {
+            op_id: Uuid::new_v4(),
+            block_id: authorized,
+        };
+        assert!(validate_operations(&mut scope, workspace, &[operation]).is_ok());
+        let outside = Operation::DeleteBlock {
+            op_id: Uuid::new_v4(),
+            block_id: Uuid::new_v4(),
+        };
+        assert!(validate_operations(&mut scope, workspace, &[outside]).is_err());
+    }
+
+    #[test]
+    fn workspace_agent_can_compile_and_scope_a_top_level_page() {
+        let workspace = Uuid::new_v4();
+        let root = Uuid::new_v4();
+        let operations = compile_operations(
+            &json!({"operations":[{
+                "type":"insert_block",
+                "parentId":root,
+                "index":0,
+                "block":{"type":"page","properties":{"title":"Cake recipe"}}
+            }]}),
+            workspace,
+            true,
+        )
+        .unwrap();
+        let mut scope = ActionScope::Workspace {
+            root,
+            authorized: HashSet::from([root]),
+        };
+
+        assert!(validate_operations(&mut scope, workspace, &operations).is_ok());
+        let Operation::InsertBlock { block, .. } = &operations[0] else {
+            panic!("expected insert operation")
+        };
+        assert_eq!(block.block_type, BlockType::Page);
+        let ActionScope::Workspace { authorized, .. } = scope else {
+            panic!("expected workspace scope")
+        };
+        assert!(authorized.contains(&block.id));
+    }
+
+    #[test]
+    fn compiler_normalizes_heading_title_to_editor_text() {
+        let operations = compile_operations(
+            &json!({"operations":[{
+                "type":"insert_block",
+                "parentId":Uuid::new_v4(),
+                "index":0,
+                "block":{"type":"heading2","properties":{"title":"Ingredients"}}
+            }]}),
+            Uuid::new_v4(),
+            false,
+        )
+        .unwrap();
+        let Operation::InsertBlock { block, .. } = &operations[0] else {
+            panic!("expected insert operation")
+        };
+        assert_eq!(block.properties.get("text"), Some(&json!("Ingredients")));
+        assert!(!block.properties.contains_key("title"));
+    }
+
+    #[test]
+    fn compiler_normalizes_notion_rich_text_to_editor_text() {
+        let operations = compile_operations(
+            &json!({"operations":[{
+                "type":"insert_block",
+                "parentId":Uuid::new_v4(),
+                "index":0,
+                "block":{
+                    "type":"bulleted_list_item",
+                    "properties":{"rich_text":[
+                        {"text":{"content":"Filé de "}},
+                        {"plain_text":"frango"}
+                    ]}
+                }
+            }]}),
+            Uuid::new_v4(),
+            false,
+        )
+        .unwrap();
+        let Operation::InsertBlock { block, .. } = &operations[0] else {
+            panic!("expected insert operation")
+        };
+        assert_eq!(block.properties.get("text"), Some(&json!("Filé de frango")));
+        assert!(!block.properties.contains_key("rich_text"));
+    }
+
+    #[test]
+    fn compiler_rejects_generated_text_blocks_without_visible_content() {
+        let result = compile_operations(
+            &json!({"operations":[{
+                "type":"insert_block",
+                "parentId":Uuid::new_v4(),
+                "index":0,
+                "block":{"type":"paragraph","properties":{"rich_text":[]}}
+            }]}),
+            Uuid::new_v4(),
+            false,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn approval_events_expose_only_server_compiled_operations() {
+        let run_id = Uuid::new_v4();
+        let proposal_id = Uuid::new_v4();
         let operation = Operation::DeleteBlock {
             op_id: Uuid::new_v4(),
             block_id: Uuid::new_v4(),
         };
-        assert!(validate_operations(&mut scope, Uuid::new_v4(), &[operation]).is_err());
+        let value = serde_json::to_value(AiEvent::ApprovalRequested {
+            run_id,
+            proposal_id,
+            operation,
+            auto_approved: false,
+        })
+        .unwrap();
+
+        assert_eq!(value["type"], "approval_requested");
+        assert_eq!(value["run_id"], json!(run_id));
+        assert_eq!(value["proposal_id"], json!(proposal_id));
+        assert_eq!(value["operation"]["type"], "delete_block");
+        assert_eq!(value["auto_approved"], false);
     }
 
     #[test]

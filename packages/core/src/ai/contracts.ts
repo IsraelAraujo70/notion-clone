@@ -1,3 +1,5 @@
+import type { Operation } from "../contracts"
+
 export type AiCitation = {
   workspace_id: string
   page_id: string
@@ -43,7 +45,7 @@ export type AiAction =
   | {
       type: "workspace_agent"
       prompt: string
-      page_id: string
+      page_id?: string
       mentioned_page_ids: string[]
       selection: string[]
       anchor_block_id?: string
@@ -54,6 +56,18 @@ export type AiRunEvent =
   | { type: "text_delta"; delta: string }
   | { type: "tool_started"; tool: string; label?: string }
   | { type: "tool_completed"; tool: string; label?: string }
+  | {
+      type: "approval_requested"
+      run_id: string
+      proposal_id: string
+      operation: Operation
+      auto_approved?: boolean
+    }
+  | {
+      type: "approval_resolved"
+      proposal_id: string
+      approved: boolean
+    }
   | { type: "usage"; input_tokens: number; output_tokens: number }
   | {
       type: "run_completed"

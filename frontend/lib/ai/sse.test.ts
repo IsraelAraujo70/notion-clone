@@ -55,6 +55,32 @@ describe("SseParser", () => {
     ])
   })
 
+  it("preserves operation approval events", () => {
+    const parser = new SseParser()
+    expect(
+      parser.push(
+        'event: approval_requested\ndata: {"type":"approval_requested","run_id":"run-1","proposal_id":"proposal-1","operation":{"type":"delete_block","opId":"op-1","blockId":"block-1"}}\n\n' +
+          'event: approval_resolved\ndata: {"type":"approval_resolved","proposal_id":"proposal-1","approved":true}\n\n'
+      )
+    ).toEqual([
+      {
+        type: "approval_requested",
+        run_id: "run-1",
+        proposal_id: "proposal-1",
+        operation: {
+          type: "delete_block",
+          opId: "op-1",
+          blockId: "block-1",
+        },
+      },
+      {
+        type: "approval_resolved",
+        proposal_id: "proposal-1",
+        approved: true,
+      },
+    ])
+  })
+
   it("ignores malformed events without losing the next event", () => {
     const parser = new SseParser()
     expect(

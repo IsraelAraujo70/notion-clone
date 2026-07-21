@@ -81,11 +81,12 @@ Cada item da lixeira contém `id`, `type`, `title`, `trashed_at`, `page_id` e `p
 | GET/POST | `/workspaces/{workspace_id}/ai/conversations` | Lista ou cria conversa privada. |
 | GET | `/workspaces/{workspace_id}/ai/conversations/{conversation_id}/messages` | Lista mensagens da conversa. |
 | GET | `/workspaces/{workspace_id}/ai/runs/{run_id}` | Consulta uma execução do usuário. |
+| POST | `/workspaces/{workspace_id}/ai/runs/{run_id}/proposals/{proposal_id}` | Aprova ou rejeita uma operação proposta. Aceita `{ approved, allowConversation }`; `allowConversation` autoriza propostas futuras somente na conversa ativa. |
 | POST | `/workspaces/{workspace_id}/ai/actions/{action}` | Executa uma ação e retorna SSE. |
 
-`action` aceita `continue_writing`, `summarize_page`, `transform_selection`, `transform_page` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Escritas exigem `editor` ou `owner`; Q&A exige apenas membership e não escreve conteúdo. `transform_page` recebe `pageId` e o servidor deriva a subárvore mutável completa; `transform_selection` continua restrito aos IDs de `selection`.
+`action` aceita `continue_writing`, `summarize_page`, `transform_selection`, `transform_page` ou `workspace_agent`. O body contém `prompt` e pode incluir `conversationId`, `pageId`, `selection` e `mentionedPageIds`. Leituras exigem membership; qualquer operação proposta exige `editor` ou `owner` e só passa pelo apply canônico após aprovação única ou autorização explícita da conversa. `transform_page` recebe `pageId` e o servidor deriva a subárvore mutável completa; `transform_selection` continua restrito aos IDs de `selection`.
 
-O stream SSE envia `run`, `text`, `tool`, `usage`, `completion` ou `run_failed`, além de keep-alive.
+O stream SSE envia `run`, `text`, `tool`, `approval_requested`, `approval_resolved`, `usage`, `completion` ou `run_failed`, além de keep-alive.
 
 ## MCP
 

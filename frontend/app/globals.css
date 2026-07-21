@@ -9,6 +9,7 @@
   --font-sans: var(--font-sans);
   --color-manila: var(--manila);
   --color-manila-foreground: var(--manila-foreground);
+  --color-manila-strong: var(--manila-strong);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -74,6 +75,7 @@
   --ring: #2383e2;
   --manila: #f1c232;
   --manila-foreground: #37352f;
+  --manila-strong: #a16207;
   --success: #2e7d32;
   --success-foreground: #ffffff;
   --chart-1: oklch(0.87 0 0);
@@ -127,6 +129,7 @@
   --sidebar-ring: #2383e2;
   --manila: #d29922;
   --manila-foreground: #191919;
+  --manila-strong: #f1c232;
   --success: #3fb950;
   --success-foreground: #0f2414;
 }

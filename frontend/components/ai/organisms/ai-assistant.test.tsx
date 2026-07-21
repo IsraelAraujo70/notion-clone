@@ -3,10 +3,17 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { aiTransport } from "@/lib/ai/transport"
+import {
+  activeConversationStorageKey,
+  conversationActivityStorageKey,
+} from "@/lib/ai/conversation-state"
 import { AiAssistant } from "./ai-assistant"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
+}))
+vi.mock("@/components/dashboard/dashboard-tabs", () => ({
+  useDashboardTabs: () => ({ openPath: vi.fn() }),
 }))
 vi.mock("@/components/workspace/workspace-provider", () => ({
   useWorkspace: () => ({ selectWorkspace: vi.fn() }),
@@ -17,6 +24,7 @@ vi.mock("@/lib/ai/transport", () => ({
     createConversation: vi.fn(),
     getConversation: vi.fn(),
     streamMessage: vi.fn(),
+    decideOperation: vi.fn(),
     waitForRun: vi.fn(),
   },
 }))
@@ -31,10 +39,12 @@ const conversation = {
 
 describe("AiAssistant", () => {
   beforeEach(() => {
+    window.sessionStorage.clear()
     vi.mocked(aiTransport.listConversations).mockClear()
     vi.mocked(aiTransport.createConversation).mockClear()
     vi.mocked(aiTransport.getConversation).mockClear()
     vi.mocked(aiTransport.streamMessage).mockClear()
+    vi.mocked(aiTransport.decideOperation).mockClear()
     vi.mocked(aiTransport.waitForRun).mockClear()
     vi.mocked(aiTransport.listConversations).mockResolvedValue([])
     vi.mocked(aiTransport.createConversation).mockResolvedValue(conversation)
@@ -43,6 +53,7 @@ describe("AiAssistant", () => {
       messages: [],
     })
     vi.mocked(aiTransport.streamMessage).mockResolvedValue(undefined)
+    vi.mocked(aiTransport.decideOperation).mockResolvedValue({ ok: true })
     vi.mocked(aiTransport.waitForRun).mockResolvedValue({
       id: "run-1",
       workspace_id: "workspace-1",
@@ -142,6 +153,255 @@ describe("AiAssistant", () => {
       }),
       expect.any(Function),
       expect.any(AbortSignal)
+    )
+  })
+
+  it("runs the full-page workspace assistant without page context or edit actions", async () => {
+    render(
+      <AiAssistant
+        variant="page"
+        token="token"
+        workspaceId="workspace-1"
+        pages={[]}
+        pageBlockIds={[]}
+        selectedBlockIds={[]}
+        anchorBlockId={null}
+        canWrite={false}
+        requestedAction={null}
+        onRequestedActionHandled={vi.fn()}
+        onRunCompleted={vi.fn()}
+        onBeforeMutatingAction={() => Promise.resolve()}
+      />
+    )
+
+    expect(screen.queryByRole("button", { name: "Close Reason AI" })).toBeNull()
+    expect(screen.queryByText("Format page")).toBeNull()
+    const input = screen.getByRole("textbox", { name: "Message to Reason AI" })
+    await userEvent.type(input, "What changed this week?")
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+
+    await waitFor(() =>
+      expect(aiTransport.streamMessage).toHaveBeenCalledOnce()
+    )
+    const inputPayload = vi.mocked(aiTransport.streamMessage).mock.calls[0][3]
+    expect(inputPayload.action).toMatchObject({
+      type: "workspace_agent",
+      prompt: "What changed this week?",
+      selection: [],
+    })
+    expect(inputPayload.action).not.toHaveProperty("page_id")
+  })
+
+  it("restores the active conversation after the assistant remounts", async () => {
+    const persistedMessages = [
+      {
+        id: "message-1",
+        role: "user" as const,
+        content: "Keep this conversation",
+        citations: undefined,
+        created_at: "2026-07-14T12:01:00Z",
+      },
+      {
+        id: "message-2",
+        role: "assistant" as const,
+        content: "Conversation restored",
+        citations: undefined,
+        created_at: "2026-07-14T12:02:00Z",
+      },
+    ]
+    vi.mocked(aiTransport.listConversations)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([conversation])
+    vi.mocked(aiTransport.getConversation).mockResolvedValue({
+      conversation,
+      messages: persistedMessages,
+    })
+    const props = {
+      variant: "page" as const,
+      token: "token",
+      workspaceId: "workspace-1",
+      pages: [],
+      pageBlockIds: [],
+      selectedBlockIds: [],
+      anchorBlockId: null,
+      canWrite: true,
+      requestedAction: null,
+      onRequestedActionHandled: vi.fn(),
+      onRunCompleted: vi.fn(),
+      onBeforeMutatingAction: () => Promise.resolve(),
+    }
+    const view = render(<AiAssistant {...props} />)
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Keep this conversation"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(
+          activeConversationStorageKey("workspace-1")
+        )
+      ).toBe("conversation-1")
+    )
+    await screen.findByText("Conversation restored")
+    window.sessionStorage.setItem(
+      conversationActivityStorageKey("workspace-1", "conversation-1"),
+      JSON.stringify({
+        tools: [
+          { id: "run-1:0", name: "search_workspace", status: "completed" },
+        ],
+        approvals: [],
+      })
+    )
+
+    view.unmount()
+    render(<AiAssistant {...props} />)
+
+    expect(await screen.findByText("Conversation restored")).toBeVisible()
+    expect(
+      await screen.findByRole("button", { name: /1 tools/i })
+    ).toHaveAttribute("aria-expanded", "false")
+    expect(aiTransport.getConversation).toHaveBeenLastCalledWith(
+      "token",
+      "workspace-1",
+      "conversation-1",
+      expect.any(AbortSignal)
+    )
+  })
+
+  it("condenses tool events into one completed activity group", async () => {
+    vi.mocked(aiTransport.streamMessage).mockImplementation(
+      async (_token, _workspace, _conversation, _input, onEvent) => {
+        onEvent({ type: "run_started", run_id: "run-1" })
+        onEvent({
+          type: "tool_started",
+          tool: "search_workspace",
+        })
+        onEvent({ type: "tool_started", tool: "read_page" })
+        onEvent({ type: "run_completed", run_id: "run-1" })
+      }
+    )
+    render(
+      <AiAssistant
+        variant="page"
+        token="token"
+        workspaceId="workspace-1"
+        pages={[]}
+        pageBlockIds={[]}
+        selectedBlockIds={[]}
+        anchorBlockId={null}
+        canWrite
+        requestedAction={null}
+        onRequestedActionHandled={vi.fn()}
+        onRunCompleted={vi.fn()}
+        onBeforeMutatingAction={() => Promise.resolve()}
+      />
+    )
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Find the project notes"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+
+    expect(
+      await screen.findByRole("button", { name: /2 tools/i })
+    ).toHaveAttribute("aria-expanded", "false")
+    await waitFor(() =>
+      expect(
+        JSON.parse(
+          window.sessionStorage.getItem(
+            conversationActivityStorageKey("workspace-1", "conversation-1")
+          ) ?? "{}"
+        ).tools
+      ).toHaveLength(2)
+    )
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Check the project notes again"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /2 tools/i })
+      ).toHaveLength(2)
+    )
+    await waitFor(() => {
+      const storedActivity = JSON.parse(
+        window.sessionStorage.getItem(
+          conversationActivityStorageKey("workspace-1", "conversation-1")
+        ) ?? "{}"
+      )
+      expect(storedActivity.activities).toHaveLength(1)
+      expect(storedActivity.tools).toHaveLength(2)
+    })
+  })
+
+  it("asks before applying a workspace operation", async () => {
+    vi.mocked(aiTransport.streamMessage).mockImplementation(
+      async (_token, _workspace, _conversation, _input, onEvent) => {
+        onEvent({ type: "run_started", run_id: "run-1" })
+        onEvent({
+          type: "approval_requested",
+          run_id: "run-1",
+          proposal_id: "proposal-1",
+          operation: {
+            type: "insert_block",
+            opId: "op-1",
+            parentId: "root-1",
+            index: 0,
+            block: {
+              id: "page-1",
+              workspaceId: "workspace-1",
+              type: "page",
+              properties: { title: "Cake recipe" },
+              content: [],
+              parentId: "root-1",
+              trashedAt: null,
+              trashedIndex: null,
+            },
+          },
+        })
+        await new Promise<void>(() => {})
+      }
+    )
+    render(
+      <AiAssistant
+        variant="page"
+        token="token"
+        workspaceId="workspace-1"
+        pages={[]}
+        pageBlockIds={[]}
+        selectedBlockIds={[]}
+        anchorBlockId={null}
+        canWrite
+        requestedAction={null}
+        onRequestedActionHandled={vi.fn()}
+        onRunCompleted={vi.fn()}
+        onBeforeMutatingAction={() => Promise.resolve()}
+      />
+    )
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message to Reason AI" }),
+      "Create a cake recipe"
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(await screen.findByText("Create page")).toBeVisible()
+    await userEvent.click(
+      screen.getByRole("button", { name: "Allow in this conversation" })
+    )
+
+    expect(aiTransport.decideOperation).toHaveBeenCalledWith(
+      "token",
+      "workspace-1",
+      "run-1",
+      "proposal-1",
+      true,
+      true
     )
   })
 

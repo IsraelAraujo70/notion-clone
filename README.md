@@ -11,9 +11,11 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Persistence, trash and restore, revocable public links, and page transfers between workspaces.
 - Optimistic updates, WebSocket collaboration, and cursor-based recovery after disconnection.
 - Workspace-scoped full-text search.
-- AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations.
+- AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations and a full-workspace assistant that can read, search, create, and edit pages.
+- Reviewable AI writes with typed operation previews, `Allow once` or conversation-scoped approval, persistent conversation selection, and grouped tool/change activity in the chat timeline.
 - Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
 - Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
+- Desktop page tabs with local per-user/workspace persistence, deep-link restoration, drag reordering, and a fixed AI tab; mobile keeps single-page navigation.
 
 The current version does not include GitHub Issues synchronization, a released desktop or offline client, or page-level permissions. An experimental Electron shell lives in `desktop/` while the desktop architecture is validated.
 
@@ -21,15 +23,15 @@ The current version does not include GitHub Issues synchronization, a released d
 
 1. **Everything is a block.** A page is a block with children. `content` defines ordering, while `parentId` defines membership.
 2. **Every write is an operation.** The frontend and backend apply the same rules, with idempotency, per-workspace cursors, and per-property LWW semantics.
-3. **AI has no shortcut.** AI writes go through the same authorization, transactions, operation log, synchronization, and undo flow as human writes.
+3. **AI has no shortcut.** AI writes go through the same authorization, transactions, operation log, synchronization, and undo flow as human writes. Operations are proposed before persistence and require either an individual decision or an explicit approval scoped to the current user, workspace, and conversation.
 
 ## Architecture
 
-The Next.js frontend applies changes locally. The Rust API authorizes, validates, and persists operations in PostgreSQL. WebSocket distributes changes, while SSE streams AI executions. A worker processes embeddings and file cleanup. PostgreSQL also provides full-text search and vector storage through pgvector.
+The Next.js frontend applies changes locally. The Rust API authorizes, validates, and persists operations in PostgreSQL. WebSocket distributes changes, while SSE streams AI text, tool activity, operation proposals, decisions, usage, and completion. The frontend restores the active private conversation and its grouped activity during the application session. A worker processes embeddings and file cleanup. PostgreSQL also provides full-text search and vector storage through pgvector.
 
 ```text
-Browser ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgvector
-                                         └────── worker / S3 storage
+Browser / Electron ── HTTP / WebSocket / SSE ── API Rust ── PostgreSQL + pgvector
+                                                    └────── worker / S3 storage
 ```
 
 Architecture decisions and boundaries are documented in [docs/arquitetura.md](docs/arquitetura.md).
@@ -76,7 +78,7 @@ npm --prefix desktop install
 make desktop
 ```
 
-`make desktop` starts the same backend services as `make dev`, starts or reuses Next.js on port `3000`, and opens Electron at `/dashboard`. Existing sessions enter the workspace; unauthenticated sessions are redirected to `/login`, so the desktop app never starts on the marketing landing page. The packaged app and desktop window use the standalone Reason mark from `frontend/app/icon.svg`. Use `cd desktop && REASON_WEB_URL=https://reason.israeldeveloper.com.br npm start` to exercise only the production origin. The decision and manual validation checklist are in [docs/adr/desktop-electron.md](docs/adr/desktop-electron.md).
+`make desktop` starts the same backend services as `make dev`, starts or reuses Next.js on port `3000`, and opens Electron at `/dashboard`. Existing sessions restore their locally persisted page tabs or enter the fixed Reason AI tab; unauthenticated sessions are redirected to `/login`, so the desktop app never starts on the marketing landing page. Only the active page editor is mounted. The packaged app and desktop window use the standalone Reason mark from `frontend/app/icon.svg`. Use `cd desktop && REASON_WEB_URL=https://reason.israeldeveloper.com.br npm start` to exercise only the production origin. The decision and manual validation checklist are in [docs/adr/desktop-electron.md](docs/adr/desktop-electron.md).
 
 ## Verification
 

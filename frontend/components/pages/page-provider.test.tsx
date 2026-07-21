@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { DASHBOARD_AI_PATH } from "@/lib/dashboard-tabs"
 import { PageProvider, pagePath, usePages } from "./page-provider"
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   listTrash: vi.fn(),
   permanentlyDelete: vi.fn(),
   transferPage: vi.fn(),
+  pathname: "/dashboard",
+  mobile: false,
   workspace: {
     activeWorkspace: { id: "ws-1", role: "owner" },
     activeWorkspaceId: "ws-1",
@@ -20,7 +23,12 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("next/navigation", () => ({
+  usePathname: () => mocks.pathname,
   useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
+}))
+
+vi.mock("@/hooks/use-mobile", () => ({
+  useIsMobile: () => mocks.mobile,
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -122,24 +130,54 @@ describe("PageProvider", () => {
     })
     mocks.listPages.mockReset().mockResolvedValue(PAGES)
     mocks.getPage.mockReset().mockRejectedValue(new Error("Page not found"))
+    mocks.pathname = "/dashboard"
+    mocks.mobile = false
     mocks.workspace.activeWorkspace = { id: "ws-1", role: "owner" }
   })
 
-  it("redirects /dashboard to the first top-level page", async () => {
+  it("leaves desktop root navigation to the dashboard tabs provider", async () => {
+    renderProvider()
+    await waitFor(() =>
+      expect(screen.getByTestId("root")).toHaveTextContent("container")
+    )
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(screen.getByTestId("current")).toHaveTextContent("none")
+  })
+
+  it("keeps the existing first-page redirect on mobile", async () => {
+    mocks.mobile = true
     renderProvider()
     await waitFor(() =>
       expect(mocks.replace).toHaveBeenCalledWith(pagePath("page-root"))
     )
-    expect(screen.getByTestId("current")).toHaveTextContent("none")
   })
 
-  it("does not redirect when the workspace has no pages", async () => {
+  it("keeps an empty desktop workspace at the root for tab restoration", async () => {
     mocks.listPages.mockResolvedValue({ root_page_id: "container", pages: [] })
     renderProvider()
     await waitFor(() =>
       expect(screen.getByTestId("root")).toHaveTextContent("container")
     )
     expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it("does not redirect the explicit Reason AI route on desktop", async () => {
+    mocks.pathname = DASHBOARD_AI_PATH
+    renderProvider()
+    await waitFor(() =>
+      expect(screen.getByTestId("root")).toHaveTextContent("container")
+    )
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it("keeps mobile on the existing page flow when opening the AI route", async () => {
+    mocks.pathname = DASHBOARD_AI_PATH
+    mocks.mobile = true
+    renderProvider()
+
+    await waitFor(() =>
+      expect(mocks.replace).toHaveBeenCalledWith(pagePath("page-root"))
+    )
   })
 
   it("creates a top-level page under the workspace container", async () => {
@@ -165,10 +203,10 @@ describe("PageProvider", () => {
     expect(screen.getByTestId("count")).toHaveTextContent("2")
   })
 
-  it("redirects to the root when the page is not in this workspace", async () => {
+  it("redirects an invalid desktop page to Reason AI", async () => {
     renderProvider("page-from-another-workspace")
     await waitFor(() =>
-      expect(mocks.replace).toHaveBeenCalledWith(pagePath("page-root"))
+      expect(mocks.replace).toHaveBeenCalledWith(DASHBOARD_AI_PATH)
     )
     expect(screen.getByTestId("current")).toHaveTextContent("none")
   })
