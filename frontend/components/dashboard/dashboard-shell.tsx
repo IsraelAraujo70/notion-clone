@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams } from "next/navigation"
 import { FileTextIcon, PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -140,12 +140,12 @@ function DashboardContent({ children }: { children: ReactNode }) {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const params = useParams<{ pageId?: string | string[] }>()
-  const searchParams = useSearchParams()
   const pageId = typeof params.pageId === "string" ? params.pageId : undefined
   const githubResultHandledRef = useRef(false)
 
   useEffect(() => {
-    const result = searchParams.get("github_installation")
+    const url = new URL(window.location.href)
+    const result = url.searchParams.get("github_installation")
     if (!result || githubResultHandledRef.current) return
     githubResultHandledRef.current = true
     if (result === "success") {
@@ -153,14 +153,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     } else {
       toast.error("Could not connect the GitHub App")
     }
-    const url = new URL(window.location.href)
     url.searchParams.delete("github_installation")
     window.history.replaceState(
       null,
       "",
       `${url.pathname}${url.search}${url.hash}`
     )
-  }, [searchParams])
+  }, [])
 
   return (
     <RequireAuth>
