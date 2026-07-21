@@ -8,16 +8,17 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowRightLeftIcon,
   ChevronRightIcon,
+  ExternalLinkIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react"
 
+import { useDashboardTabs } from "@/components/dashboard/dashboard-tabs"
 import {
   PAGE_DRAG_MIME,
   pagePath,
@@ -271,7 +272,7 @@ function MoveWorkspaceDialog({
 }
 
 function PageRow({ node, depth }: { node: PageNode; depth: number }) {
-  const router = useRouter()
+  const { openPage } = useDashboardTabs()
   const { t } = useI18n()
   const {
     pages,
@@ -323,7 +324,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
     try {
       const pageId = await createChildPage(node.id)
       setOpen(true)
-      router.push(pagePath(pageId))
+      openPage(pageId)
     } catch (error) {
       rethrowUnlessUnauthorized(error)
     } finally {
@@ -342,6 +343,11 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
       aria-label={title}
       title={title}
       draggable={canWrite}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        openPage(node.id, { title: node.title, icon: node.icon })
+      }}
       onDragStart={(event) => {
         if (!canWrite) {
           event.preventDefault()
@@ -370,7 +376,10 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
           hoverTimerRef.current = null
           hoverOpenedRef.current = true
           setOpen(true)
-          router.push(pagePath(node.id))
+          openPage(node.id, {
+            title: node.title,
+            icon: node.icon,
+          })
         }, 600)
       }}
       onDragLeave={(event) => {
@@ -430,9 +439,9 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
     </SidebarMenuAction>
   ) : null
 
-  // Menu de contexto só faz sentido para quem escreve. A raiz do workspace não
-  // pode ir para a lixeira: o engine rejeita `delete_block` num bloco sem pai.
-  const row = canWrite ? (
+  // A abertura em aba é leitura e também fica disponível para viewers. A raiz do
+  // workspace não pode ir para a lixeira: o engine rejeita delete_block sem pai.
+  const row = (
     <ContextMenu>
       {menuButton(<ContextMenuTrigger asChild>{link}</ContextMenuTrigger>)}
       <ContextMenuContent
@@ -442,48 +451,60 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <ContextMenuItem
-          data-cy="nav-page-rename"
-          onSelect={() => setRenaming(true)}
+          data-cy="nav-page-open-tab"
+          onSelect={() =>
+            openPage(node.id, { title: node.title, icon: node.icon })
+          }
         >
-          <PencilIcon />
-          {t("Rename")}
+          <ExternalLinkIcon />
+          {t("Open in new tab")}
         </ContextMenuItem>
-        <ContextMenuItem data-cy="nav-page-add" onSelect={addChild}>
-          <PlusIcon />
-          {t("Add subpage")}
-        </ContextMenuItem>
-        {activeWorkspace?.role === "owner" && destinations.length > 0 ? (
-          <ContextMenuItem
-            data-cy="nav-page-move-workspace"
-            onSelect={() => setMoving(true)}
-          >
-            <ArrowRightLeftIcon />
-            {t("Move to another workspace")}
-          </ContextMenuItem>
+        {canWrite ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              data-cy="nav-page-rename"
+              onSelect={() => setRenaming(true)}
+            >
+              <PencilIcon />
+              {t("Rename")}
+            </ContextMenuItem>
+            <ContextMenuItem data-cy="nav-page-add" onSelect={addChild}>
+              <PlusIcon />
+              {t("Add subpage")}
+            </ContextMenuItem>
+            {activeWorkspace?.role === "owner" && destinations.length > 0 ? (
+              <ContextMenuItem
+                data-cy="nav-page-move-workspace"
+                onSelect={() => setMoving(true)}
+              >
+                <ArrowRightLeftIcon />
+                {t("Move to another workspace")}
+              </ContextMenuItem>
+            ) : null}
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              data-cy="nav-page-delete"
+              disabled={busy}
+              onSelect={async () => {
+                setBusy(true)
+                try {
+                  await deletePage(node.id)
+                } catch (error) {
+                  rethrowUnlessUnauthorized(error)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <Trash2Icon />
+              {t("Move to trash")}
+            </ContextMenuItem>
+          </>
         ) : null}
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          variant="destructive"
-          data-cy="nav-page-delete"
-          disabled={busy}
-          onSelect={async () => {
-            setBusy(true)
-            try {
-              await deletePage(node.id)
-            } catch (error) {
-              rethrowUnlessUnauthorized(error)
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          <Trash2Icon />
-          {t("Move to trash")}
-        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  ) : (
-    menuButton(link)
   )
 
   const body = (
@@ -551,7 +572,7 @@ function PageRow({ node, depth }: { node: PageNode; depth: number }) {
 }
 
 export function NavPages() {
-  const router = useRouter()
+  const { openPage } = useDashboardTabs()
   const { t } = useI18n()
   const { pages, containerPageId, loading, canWrite, createTopLevelPage } =
     usePages()
@@ -567,7 +588,7 @@ export function NavPages() {
           aria-label={t("New page")}
           onClick={async () => {
             try {
-              router.push(pagePath(await createTopLevelPage()))
+              openPage(await createTopLevelPage())
             } catch (error) {
               rethrowUnlessUnauthorized(error)
             }

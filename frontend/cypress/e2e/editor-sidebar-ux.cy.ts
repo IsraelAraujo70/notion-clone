@@ -27,6 +27,8 @@ describe("editor and sidebar UX eval", () => {
     cy.get('[data-cy="signup-password"]').type("Password123!")
     cy.get('[data-cy="signup-confirm-password"]').type("Password123!")
     cy.get('[data-cy="signup-submit"]').click()
+    cy.location("pathname").should("eq", "/dashboard/ai")
+    cy.get('[data-cy^="nav-page-"]').filter("a").first().click()
     cy.location("pathname").should("match", /^\/dashboard\/pages\//)
   })
 

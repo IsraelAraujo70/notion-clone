@@ -9,6 +9,7 @@ import type { PageSummary } from "@/lib/api"
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
+  openPage: vi.fn(),
   pages: [] as PageSummary[],
   movePageToWorkspace: vi.fn(),
   startPageDrag: vi.fn(),
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push }),
+}))
+
+vi.mock("@/components/dashboard/dashboard-tabs", () => ({
+  useDashboardTabs: () => ({ openPage: mocks.openPage }),
 }))
 
 vi.mock("@/components/pages/page-provider", () => ({
@@ -86,6 +91,7 @@ function getByDataCy(value: string) {
 describe("NavPages", () => {
   beforeEach(() => {
     mocks.push.mockReset()
+    mocks.openPage.mockReset()
     mocks.movePageToWorkspace.mockReset().mockResolvedValue(undefined)
     mocks.startPageDrag.mockReset()
     mocks.endPageDrag.mockReset()
@@ -220,6 +226,20 @@ describe("NavPages", () => {
     expect(mocks.movePageToWorkspace).toHaveBeenCalledWith("root", "ws-2")
   })
 
+  it("opens a page tab from the context menu for viewers", async () => {
+    mocks.pages = [page("root", null, "Notas")]
+    mocks.canWrite = false
+    renderNavPages()
+
+    fireEvent.contextMenu(getByDataCy("nav-page-root"))
+    await userEvent.click(getByDataCy("nav-page-open-tab"))
+
+    expect(mocks.openPage).toHaveBeenCalledWith("root", {
+      title: "Notas",
+      icon: "📄",
+    })
+  })
+
   it("starts a page drag and opens a valid destination after hovering", () => {
     vi.useFakeTimers()
     mocks.pages = [
@@ -251,9 +271,12 @@ describe("NavPages", () => {
 
     fireEvent.dragOver(target, { dataTransfer })
     act(() => vi.advanceTimersByTime(599))
-    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.openPage).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(1))
-    expect(mocks.push).toHaveBeenCalledWith("/dashboard/pages/target")
+    expect(mocks.openPage).toHaveBeenCalledWith("target", {
+      title: "Destino",
+      icon: "📄",
+    })
   })
 
   it("does not open a descendant because moving into it would create a cycle", () => {
@@ -273,6 +296,6 @@ describe("NavPages", () => {
     })
     act(() => vi.advanceTimersByTime(600))
 
-    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.openPage).not.toHaveBeenCalled()
   })
 })

@@ -22,6 +22,14 @@ pub struct CreateConversationRequest {
     pub title: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DecideOperationRequest {
+    pub approved: bool,
+    #[serde(default)]
+    pub allow_conversation: bool,
+}
+
 pub async fn list_conversations(
     State(s): State<AppState>,
     auth: AuthenticatedUser,
@@ -52,6 +60,24 @@ pub async fn run_status(
     Path((w, r)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<AiRun>, HttpError> {
     Ok(Json(s.ai.run_status(auth.user.id, w, r).await?))
+}
+
+pub async fn decide_operation(
+    State(s): State<AppState>,
+    auth: AuthenticatedUser,
+    Path((w, run, proposal)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<DecideOperationRequest>,
+) -> Result<Json<serde_json::Value>, HttpError> {
+    s.ai.decide_operation(
+        auth.user.id,
+        w,
+        run,
+        proposal,
+        request.approved,
+        request.allow_conversation,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({"ok": true})))
 }
 pub async fn action(
     State(s): State<AppState>,
@@ -93,6 +119,8 @@ fn event_name(event: &AiEvent) -> &'static str {
         AiEvent::Run { .. } => "run",
         AiEvent::Text { .. } => "text",
         AiEvent::Tool { .. } => "tool",
+        AiEvent::ApprovalRequested { .. } => "approval_requested",
+        AiEvent::ApprovalResolved { .. } => "approval_resolved",
         AiEvent::Usage { .. } => "usage",
         AiEvent::Completion { .. } => "completion",
         AiEvent::RunFailed { .. } => "run_failed",

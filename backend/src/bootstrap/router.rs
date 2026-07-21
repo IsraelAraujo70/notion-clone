@@ -123,6 +123,10 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
             get(ai_routes::run_status),
         )
         .route(
+            "/workspaces/{workspace_id}/ai/runs/{run_id}/proposals/{proposal_id}",
+            post(ai_routes::decide_operation),
+        )
+        .route(
             "/workspaces/{workspace_id}/ai/actions/{action}",
             post(ai_routes::action).layer(DefaultBodyLimit::max(
                 crate::application::ai::use_case::MAX_AI_ACTION_BODY_BYTES,

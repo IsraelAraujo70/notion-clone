@@ -10,7 +10,10 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+
+import { useIsMobile } from "@/hooks/use-mobile"
+import { DASHBOARD_AI_PATH } from "@/lib/dashboard-tabs"
 
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import {
@@ -78,6 +81,8 @@ export function PageProvider({
   children: ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const isMobile = useIsMobile()
   const { loading: authLoading, token } = useAuth()
   const {
     activeWorkspace,
@@ -137,9 +142,10 @@ export function PageProvider({
   // Database rows são navegáveis, mas não aparecem na lista da sidebar. Valide
   // ids ausentes da lista antes de tratá-los como rota inválida.
   useEffect(() => {
-    if (loading || pages.length === 0) return
+    if (loading) return
     if (!pageId) {
-      router.replace(pagePath(pages[0].id))
+      if (pathname === DASHBOARD_AI_PATH && !isMobile) return
+      if (isMobile && pages[0]) router.replace(pagePath(pages[0].id))
       return
     }
     if (pages.some((page) => page.id === pageId)) {
@@ -154,12 +160,24 @@ export function PageProvider({
         if (!cancelled) setValidatedPageId(pageId)
       })
       .catch(() => {
-        if (!cancelled) router.replace(pagePath(pages[0].id))
+        if (cancelled) return
+        const fallback =
+          isMobile && pages[0] ? pagePath(pages[0].id) : DASHBOARD_AI_PATH
+        router.replace(fallback)
       })
     return () => {
       cancelled = true
     }
-  }, [activeWorkspaceId, loading, pageId, pages, router, token])
+  }, [
+    activeWorkspaceId,
+    isMobile,
+    loading,
+    pageId,
+    pages,
+    pathname,
+    router,
+    token,
+  ])
 
   const refreshTrash = useCallback(async () => {
     if (!token || !activeWorkspaceId) return

@@ -17,6 +17,8 @@ describe("slash block menu", () => {
     cy.get('[data-cy="signup-password"]').type("Password123!")
     cy.get('[data-cy="signup-confirm-password"]').type("Password123!")
     cy.get('[data-cy="signup-submit"]').click()
+    cy.location("pathname").should("eq", "/dashboard/ai")
+    cy.get('[data-cy^="nav-page-"]').filter("a").first().click()
     cy.location("pathname").should("match", /^\/dashboard\/pages\//)
     cy.get('[data-cy="page-title"]').should("be.visible")
   })

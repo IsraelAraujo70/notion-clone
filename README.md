@@ -11,9 +11,10 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Persistence, trash and restore, revocable public links, and page transfers between workspaces.
 - Optimistic updates, WebSocket collaboration, and cursor-based recovery after disconnection.
 - Workspace-scoped full-text search.
-- AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations.
+- AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations and a full-workspace assistant page.
 - Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
 - Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
+- Desktop page tabs with local per-user/workspace persistence, deep-link restoration, drag reordering, and a fixed AI tab; mobile keeps single-page navigation.
 
 The current version does not include GitHub Issues synchronization, a released desktop or offline client, or page-level permissions. An experimental Electron shell lives in `desktop/` while the desktop architecture is validated.
 
@@ -76,7 +77,7 @@ npm --prefix desktop install
 make desktop
 ```
 
-`make desktop` starts the same backend services as `make dev`, starts or reuses Next.js on port `3000`, and opens Electron at `/dashboard`. Existing sessions enter the workspace; unauthenticated sessions are redirected to `/login`, so the desktop app never starts on the marketing landing page. The packaged app and desktop window use the standalone Reason mark from `frontend/app/icon.svg`. Use `cd desktop && REASON_WEB_URL=https://reason.israeldeveloper.com.br npm start` to exercise only the production origin. The decision and manual validation checklist are in [docs/adr/desktop-electron.md](docs/adr/desktop-electron.md).
+`make desktop` starts the same backend services as `make dev`, starts or reuses Next.js on port `3000`, and opens Electron at `/dashboard`. Existing sessions restore their locally persisted page tabs or enter the fixed Reason AI tab; unauthenticated sessions are redirected to `/login`, so the desktop app never starts on the marketing landing page. Only the active page editor is mounted. The packaged app and desktop window use the standalone Reason mark from `frontend/app/icon.svg`. Use `cd desktop && REASON_WEB_URL=https://reason.israeldeveloper.com.br npm start` to exercise only the production origin. The decision and manual validation checklist are in [docs/adr/desktop-electron.md](docs/adr/desktop-electron.md).
 
 ## Verification
 

@@ -1,5 +1,16 @@
 import type { AiConversation, AiMessage } from "@reason/core/ai/contracts"
 
+export function activeConversationStorageKey(workspaceId: string) {
+  return `reason:ai-active-conversation:${workspaceId}`
+}
+
+export function conversationActivityStorageKey(
+  workspaceId: string,
+  conversationId: string
+) {
+  return `reason:ai-conversation-activity:${workspaceId}:${conversationId}`
+}
+
 export function sortConversations(conversations: AiConversation[]) {
   return [...conversations].sort((a, b) =>
     b.updated_at.localeCompare(a.updated_at)

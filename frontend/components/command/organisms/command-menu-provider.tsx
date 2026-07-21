@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation"
 import { FileTextIcon, LogOutIcon } from "lucide-react"
 
+import { useDashboardTabs } from "@/components/dashboard/dashboard-tabs"
 import {
   Command,
   CommandGroup,
@@ -27,7 +28,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { pagePath } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import { api, type PageSummary, type SearchResult } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -58,9 +58,10 @@ export function CommandMenuProvider({
   pages?: PageSummary[]
 }) {
   const router = useRouter()
+  const { openPage, openPath } = useDashboardTabs()
   const { logout, token } = useAuth()
   const { t } = useI18n()
-  const { selectWorkspace } = useWorkspace()
+  const { activeWorkspaceId, selectWorkspace } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -167,7 +168,12 @@ export function CommandMenuProvider({
                       data-cy={`command-go-page-${page.id}`}
                       value={`${page.title || t("Untitled")} ${page.id}`}
                       onSelect={() =>
-                        runCommand(() => router.push(pagePath(page.id)))
+                        runCommand(() =>
+                          openPage(page.id, {
+                            title: page.title,
+                            icon: page.icon,
+                          })
+                        )
                       }
                     >
                       {page.icon ? (
@@ -219,10 +225,16 @@ export function CommandMenuProvider({
                         value={`${result.page_title} ${result.snippet} ${result.block_id}`}
                         onSelect={() =>
                           runCommand(() => {
-                            selectWorkspace(result.workspace_id)
-                            router.push(
-                              `/dashboard/pages/${result.page_id}?block=${result.block_id}`
-                            )
+                            const path = `/dashboard/pages/${result.page_id}?block=${result.block_id}`
+                            if (result.workspace_id !== activeWorkspaceId) {
+                              selectWorkspace(result.workspace_id)
+                              router.push(path)
+                              return
+                            }
+                            openPath(path, {
+                              title: result.page_title,
+                              icon: result.page_icon,
+                            })
                           })
                         }
                       >

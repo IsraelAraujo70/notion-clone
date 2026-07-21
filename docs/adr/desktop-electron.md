@@ -28,9 +28,14 @@ permissões de leitura e escrita sanitizada do clipboard são aceitas para uma
 origem do aplicativo; as demais permissões do Chromium são negadas.
 
 O shell inicia em `/dashboard`, que preserva sessões válidas e redireciona para
-`/login` quando não há autenticação. A landing page não faz parte da entrada do
-aplicativo desktop. O ícone da janela, do Dock e dos pacotes usa somente a marca
-quadrada do Reason, compartilhando o desenho de `frontend/app/icon.svg`.
+`/login` quando não há autenticação. No desktop, `/dashboard` restaura as abas de
+página persistidas localmente por usuário/workspace ou abre `/dashboard/ai`. A aba
+de IA é fixa; páginas podem ser abertas, fechadas e reordenadas sem alterar a
+árvore do workspace. A URL continua sendo a fonte da aba ativa e preserva deep
+links `?block=`. Somente o `EditorPage` ativo permanece montado, evitando snapshots,
+presença e filas de operações para abas inativas. A landing page não faz parte da
+entrada do aplicativo desktop. O ícone da janela, do Dock e dos pacotes usa somente
+a marca quadrada do Reason, compartilhando o desenho de `frontend/app/icon.svg`.
 
 ## Alternativas
 
@@ -46,9 +51,10 @@ menor duplicação. O custo aceito é depender do deploy web e de conectividade.
 ## Critérios do spike
 
 - [ ] Login, logout e persistência de sessão entre reinícios.
-- [ ] Abertura de páginas e links públicos.
+- [x] Abertura de páginas em abas locais, restauração, reordenação e deep links.
+- [ ] Links públicos.
 - [ ] Edição otimista, WebSocket e recuperação após reconexão.
-- [ ] SSE das ações de IA.
+- [x] SSE da IA contextual e da página de workspace sem `pageId`.
 - [ ] Upload, download e clipboard.
 - [ ] Atalhos, CodeMirror e Mermaid.
 - [ ] Convites e links externos.

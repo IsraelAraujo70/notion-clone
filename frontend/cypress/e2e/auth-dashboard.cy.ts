@@ -12,46 +12,78 @@ describe("auth and dashboard shell", () => {
     })
 
     cy.signupByApi(`sidebar-${id}@example.com`).then(({ token }) => {
-      cy.authenticatedVisit("/dashboard", token)
-      cy.location("pathname").should("match", /^\/dashboard\/pages\//)
-      cy.get('[data-cy="page-title"]').should("be.visible")
+      cy.api<Array<{ id: string }>>("GET", "/workspaces", { token }).then(
+        (workspaces) => {
+          const workspaceId = workspaces.body[0].id
+          cy.api<{ pages: Array<{ id: string }> }>(
+            "GET",
+            `/workspaces/${workspaceId}/pages`,
+            { token }
+          ).then((pages) => {
+            const firstPageId = pages.body.pages[0].id
+            const firstPath = `/dashboard/pages/${firstPageId}`
 
-      cy.location("pathname").then((firstPath) => {
-        const firstPageId = firstPath.split("/").pop()!
+            cy.authenticatedVisit("/dashboard", token)
+            cy.location("pathname").should("eq", "/dashboard/ai")
+            cy.get('[data-cy="dashboard-tab-ai"]').should("be.visible")
 
-        cy.get('[data-cy="nav-pages-create"]').click()
-        cy.location("pathname").should("not.eq", firstPath)
-        cy.get('[data-cy="page-title"]').should("be.visible")
-        cy.get(`[data-cy="nav-page-${firstPageId}"]`).should("be.visible")
+            cy.get(`[data-cy="nav-page-${firstPageId}"]`).click()
+            cy.location("pathname").should("eq", firstPath)
+            cy.get(`[data-cy="dashboard-tab-${firstPageId}"]`).should(
+              "be.visible"
+            )
 
-        cy.then(() => {
-          workspaceListRequests = 0
-          pageListRequests = 0
-        })
+            cy.get('[data-cy="nav-pages-create"]').click()
+            cy.location("pathname").should("not.eq", firstPath)
+            cy.get('[data-cy="page-title"]').should("be.visible")
+            cy.location("pathname").then((secondPath) => {
+              const secondPageId = secondPath.split("/").pop()!
+              cy.get(`[data-cy="dashboard-tab-${secondPageId}"]`).should(
+                "be.visible"
+              )
 
-        cy.get('[data-slot="sidebar-container"]').then(($sidebar) => {
-          const sidebar = $sidebar[0]
+              cy.reload()
+              cy.location("pathname").should("eq", secondPath)
+              cy.get(`[data-cy="dashboard-tab-${firstPageId}"]`).should(
+                "be.visible"
+              )
+              cy.get(`[data-cy="dashboard-tab-${secondPageId}"]`).should(
+                "be.visible"
+              )
 
-          cy.get(`[data-cy="nav-page-${firstPageId}"]`).click()
-          cy.location("pathname").should("eq", firstPath)
-          cy.get(`[data-cy="nav-page-${firstPageId}"]`).should(
-            "have.attr",
-            "data-active",
-            "true"
-          )
-          cy.get('[data-slot="sidebar-container"]')
-            .should(($current) => {
-              expect($current[0]).to.equal(sidebar)
+              cy.then(() => {
+                workspaceListRequests = 0
+                pageListRequests = 0
+              })
+
+              cy.get('[data-slot="sidebar-container"]').then(($sidebar) => {
+                const sidebar = $sidebar[0]
+
+                cy.get(
+                  `[data-cy="dashboard-tab-close-${secondPageId}"]`
+                ).click({ force: true })
+                cy.location("pathname").should("eq", firstPath)
+                cy.get(`[data-cy="nav-page-${firstPageId}"]`).should(
+                  "have.attr",
+                  "data-active",
+                  "true"
+                )
+                cy.get('[data-slot="sidebar-container"]')
+                  .should(($current) => {
+                    expect($current[0]).to.equal(sidebar)
+                  })
+                  .find('[data-slot="skeleton"]')
+                  .should("not.exist")
+
+                cy.then(() => {
+                  expect(workspaceListRequests).to.equal(0)
+                  expect(pageListRequests).to.equal(0)
+                })
+              })
             })
-            .find('[data-slot="skeleton"]')
-            .should("not.exist")
-
-          cy.then(() => {
-            expect(workspaceListRequests).to.equal(0)
-            expect(pageListRequests).to.equal(0)
           })
-        })
-      })
+        }
+      )
     })
   })
 
@@ -66,12 +98,8 @@ describe("auth and dashboard shell", () => {
     cy.get('[data-cy="signup-confirm-password"]').type("Password123!")
     cy.get('[data-cy="signup-submit"]').click()
 
-    // `/dashboard` redireciona para a página raiz persistida do workspace.
-    cy.location("pathname").should(
-      "match",
-      /^\/dashboard\/pages\/[0-9a-f-]{36}$/
-    )
-    cy.get('[data-cy="page-title"]').should("be.visible").and("have.text", "")
+    cy.location("pathname").should("eq", "/dashboard/ai")
+    cy.get('[aria-label="Message to Reason AI"]').should("be.visible")
     cy.get('[data-cy^="nav-page-"]').should("be.visible")
     cy.get('[data-cy="command-trigger"]').should("be.visible")
     cy.get('[data-cy="command-trigger"]')
@@ -87,14 +115,13 @@ describe("auth and dashboard shell", () => {
     cy.get('[data-cy="login-email"]').type(email)
     cy.get('[data-cy="login-password"]').type("Password123!")
     cy.get('[data-cy="login-submit"]').click()
-    cy.location("pathname").should("match", /^\/dashboard\/pages\//)
+    cy.location("pathname").should("eq", "/dashboard/ai")
 
-    cy.location("pathname").then((pathname) => {
-      cy.get('[data-cy="command-trigger"]').click()
-      cy.get('[data-cy="command-input"]').should("be.visible")
-      cy.get('[data-cy^="command-go-page-"]').first().click()
-      cy.location("pathname").should("eq", pathname)
-    })
+    cy.get('[data-cy="command-trigger"]').click()
+    cy.get('[data-cy="command-input"]').should("be.visible")
+    cy.get('[data-cy^="command-go-page-"]').first().click()
+    cy.location("pathname").should("match", /^\/dashboard\/pages\//)
+    cy.get('[data-cy="page-title"]').should("be.visible")
   })
 
   it("shows non-enumerating forgot-password success copy", () => {

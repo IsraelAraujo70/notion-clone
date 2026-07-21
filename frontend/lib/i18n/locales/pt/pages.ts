@@ -5,6 +5,7 @@ export const pagesPt = {
   Callout: "Callout",
   "Choose page icon": "Escolher ícone da página",
   "Command palette": "Paleta de comandos",
+  "Close {title}": "Fechar {title}",
   "Copy link": "Copiar link",
   "Could not delete. Try again.":
     "Não foi possível excluir. Tente novamente.",
@@ -34,6 +35,8 @@ export const pagesPt = {
   "Move to trash": "Mover para a lixeira",
   "New page": "Nova página",
   "No results found.": "Nenhum resultado encontrado.",
+  "Open in new tab": "Abrir em nova aba",
+  "Open pages": "Páginas abertas",
   "Nothing has been deleted in this workspace.":
     "Nada foi apagado neste workspace.",
   "Numbered list item": "Item de lista numerada",
