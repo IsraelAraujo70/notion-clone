@@ -160,29 +160,44 @@ export function DashboardTabsProvider({ children }: { children: ReactNode }) {
     if (!pageId) return
     const page = pages.find((candidate) => candidate.id === pageId)
     let cancelled = false
-    queueMicrotask(() => {
+
+    const applyTab = (metadata?: Pick<DashboardPageTab, "title" | "icon">) => {
       if (cancelled) return
       setState((current) => {
         const existing = current.tabs.find((tab) => tab.pageId === pageId)
         if (
           existing?.path === activePath &&
-          existing.title === page?.title &&
-          existing.icon === page?.icon &&
+          existing.title === metadata?.title &&
+          existing.icon === metadata?.icon &&
           current.lastActivePath === activePath
         ) {
           return current
         }
-        return openDashboardPageTab(current, pageId, activePath, {
-          title: page?.title,
-          icon: page?.icon,
-        })
+        return metadata
+          ? openDashboardPageTab(current, pageId, activePath, metadata)
+          : openDashboardPageTab(current, pageId, activePath)
       })
-    })
+    }
+
+    if (page) {
+      queueMicrotask(() => applyTab({ title: page.title, icon: page.icon }))
+    } else if (token && activeWorkspaceId) {
+      void api
+        .getPage(token, activeWorkspaceId, pageId)
+        .then((response) => {
+          const crumb =
+            response.breadcrumbs.find((entry) => entry.id === pageId) ??
+            response.breadcrumbs[0]
+          applyTab(crumb ? { title: crumb.title, icon: crumb.icon } : undefined)
+        })
+        .catch(() => applyTab())
+    }
     return () => {
       cancelled = true
     }
   }, [
     activePath,
+    activeWorkspaceId,
     hydratedKey,
     isMobile,
     pages,
@@ -190,6 +205,7 @@ export function DashboardTabsProvider({ children }: { children: ReactNode }) {
     router,
     state.lastActivePath,
     storageKey,
+    token,
   ])
 
   useEffect(() => {
