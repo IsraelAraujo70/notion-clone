@@ -106,11 +106,7 @@ function UnifiedDiff({
   onSelectLine,
 }: DiffLayoutProps & { rows: UnifiedDiffRow[] }) {
   return (
-    <div
-      role="list"
-      aria-label="Unified code diff"
-      className="min-w-[36rem] text-sm"
-    >
+    <div role="list" aria-label="Unified code diff" className="min-w-0 text-sm">
       {rows.map((row) => {
         if (row.type === "hunk")
           return <HunkRow key={row.id} header={row.header} />
@@ -172,7 +168,7 @@ function SplitDiff({
   onSelectLine,
 }: DiffLayoutProps & { rows: SplitDiffRow[] }) {
   return (
-    <div className="min-w-[64rem] text-sm">
+    <div className="min-w-0 text-sm">
       <div
         aria-hidden="true"
         className="grid grid-cols-2 border-b bg-muted/30 text-xs font-medium text-muted-foreground"
@@ -318,16 +314,18 @@ function CodeText({
   tokens: SyntaxToken[]
 }) {
   return (
-    <pre className="min-w-0 flex-1 overflow-visible px-2 font-mono text-xs leading-6 whitespace-pre">
+    <pre className="flex min-w-0 flex-1 overflow-hidden px-2 font-mono text-xs leading-6">
       <span
         aria-hidden="true"
-        className="mr-2 inline-block w-2 text-muted-foreground select-none"
+        className="mr-2 w-2 shrink-0 text-muted-foreground select-none"
       >
         {kind === "addition" ? "+" : kind === "deletion" ? "-" : " "}
       </span>
-      <HighlightedCode content={content} tokens={tokens} />
+      <code className="min-w-0 flex-1 [overflow-wrap:anywhere] whitespace-pre-wrap">
+        <HighlightedCode content={content} tokens={tokens} />
+      </code>
       {noNewline && (
-        <span className="ml-3 text-muted-foreground">
+        <span className="ml-3 min-w-0 whitespace-normal text-muted-foreground [overflow-wrap:anywhere]">
           No newline at end of file
         </span>
       )}
