@@ -1,12 +1,20 @@
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { parseUnifiedPatch } from "@/lib/code-review/parse-unified-patch"
+import type { ReviewLineAddress } from "@/lib/code-review/contracts"
+import type { SyntaxToken } from "@/lib/code-review/tree-sitter-highlight"
 
 import { DiffViewer } from "./diff-viewer"
 
+const treeSitter = vi.hoisted(() => ({
+  tokens: vi
+    .fn<(address: ReviewLineAddress | null, content: string) => SyntaxToken[]>()
+    .mockReturnValue([]),
+}))
+
 vi.mock("@/lib/code-review/tree-sitter-highlight", () => ({
-  useTreeSitterHighlight: () => () => [],
+  useTreeSitterHighlight: () => treeSitter.tokens,
 }))
 
 const patch = parseUnifiedPatch(
@@ -14,7 +22,34 @@ const patch = parseUnifiedPatch(
 )
 
 describe("DiffViewer", () => {
+  beforeEach(() => treeSitter.tokens.mockReset().mockReturnValue([]))
   afterEach(() => vi.unstubAllGlobals())
+
+  it("renders syntax tokens and wraps code inside the diff cell", () => {
+    treeSitter.tokens.mockImplementation((_address, content) =>
+      content === "after" ? [{ start: 0, end: 5, kind: "keyword" }] : []
+    )
+    render(
+      <DiffViewer
+        path="src/file.ts"
+        patch={patch}
+        viewMode="unified"
+        selection={null}
+        threads={[]}
+        onSelectLine={vi.fn()}
+      />
+    )
+
+    const highlighted = screen.getByText("after")
+    expect(highlighted).toHaveClass("syntax-keyword")
+    expect(highlighted.closest("code")).toHaveClass(
+      "whitespace-pre-wrap",
+      "[overflow-wrap:anywhere]"
+    )
+    expect(screen.getByRole("list", { name: "Unified code diff" })).toHaveClass(
+      "min-w-0"
+    )
+  })
 
   it("renders selectable GitHub line sides and read-only inline threads", () => {
     const onSelectLine = vi.fn()

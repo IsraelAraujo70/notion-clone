@@ -27,7 +27,7 @@ const output = join(root, "public", "tree-sitter")
 await mkdir(output, { recursive: true })
 
 await copyFile(
-  join(root, "node_modules", "web-tree-sitter", "web-tree-sitter.wasm"),
+  join(root, "node_modules", "web-tree-sitter", "tree-sitter.wasm"),
   join(output, "web-tree-sitter.wasm")
 )
 
