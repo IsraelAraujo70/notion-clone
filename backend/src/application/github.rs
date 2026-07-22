@@ -296,12 +296,16 @@ impl GitHubUseCases {
             repository: context.link.repository,
             number: context.link.pull_number,
         };
+        let current = gateway
+            .get_pull_request(context.installation_id, &pull_request, self.clock.now())
+            .await
+            .map_err(map_pull_request_files_error)?;
         let batch = gateway
             .list_pull_request_files(context.installation_id, &pull_request, self.clock.now())
             .await
             .map_err(map_pull_request_files_error)?;
         let minimum_total = batch.files.len() as i64 + i64::from(batch.limit_reached);
-        let total_changed_files = context.link.changed_files.max(minimum_total);
+        let total_changed_files = current.changed_files.max(minimum_total);
         Ok(GitHubPullRequestFiles {
             truncated: batch.limit_reached || total_changed_files > batch.files.len() as i64,
             files: batch.files,
@@ -718,6 +722,7 @@ mod tests {
         has_access: bool,
         installation_calls: AtomicUsize,
         pull_request_calls: AtomicUsize,
+        pull_request_changed_files: i64,
         file_calls: AtomicUsize,
         file_limit_reached: bool,
         file_installation_id: Mutex<Option<i64>>,
@@ -729,6 +734,7 @@ mod tests {
                 has_access: true,
                 installation_calls: AtomicUsize::new(0),
                 pull_request_calls: AtomicUsize::new(0),
+                pull_request_changed_files: 1,
                 file_calls: AtomicUsize::new(0),
                 file_limit_reached: false,
                 file_installation_id: Mutex::new(None),
@@ -793,7 +799,7 @@ mod tests {
                 head_ref: "feature/github".into(),
                 additions: 20,
                 deletions: 4,
-                changed_files: 2,
+                changed_files: self.pull_request_changed_files,
             })
         }
 
@@ -1071,7 +1077,7 @@ mod tests {
         assert_eq!(link.pull_number, 42);
         assert_eq!(link.head_sha, "abc123");
         assert_eq!(link.base_ref, "main");
-        assert_eq!(link.changed_files, 2);
+        assert_eq!(link.changed_files, 1);
     }
 
     #[tokio::test]
@@ -1160,6 +1166,31 @@ mod tests {
 
         assert!(response.truncated);
         assert_eq!(response.total_changed_files, 2);
+    }
+
+    #[tokio::test]
+    async fn current_pull_request_count_replaces_a_stale_larger_snapshot() {
+        let workspace_id = Uuid::new_v4();
+        let block_id = Uuid::new_v4();
+        let repository = Arc::new(FakeGitHubRepository::default());
+        *repository.installation.lock().unwrap() = Some(fake_installation(workspace_id, 123));
+        let mut link = fake_link(workspace_id, block_id);
+        link.changed_files = 20;
+        repository.links.lock().unwrap().push(link);
+        let gateway = Arc::new(FakeGitHubGateway {
+            pull_request_changed_files: 1,
+            ..FakeGitHubGateway::default()
+        });
+        let use_cases =
+            use_cases_with_gateway(WorkspaceRole::Viewer, repository, Arc::clone(&gateway));
+
+        let response = use_cases
+            .list_pull_request_files(Uuid::new_v4(), workspace_id, block_id)
+            .await
+            .unwrap();
+
+        assert!(!response.truncated);
+        assert_eq!(response.total_changed_files, 1);
     }
 
     #[tokio::test]
