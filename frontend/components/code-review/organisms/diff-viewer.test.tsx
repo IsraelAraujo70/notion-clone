@@ -5,6 +5,10 @@ import { parseUnifiedPatch } from "@/lib/code-review/parse-unified-patch"
 
 import { DiffViewer } from "./diff-viewer"
 
+vi.mock("@/lib/code-review/tree-sitter-highlight", () => ({
+  useTreeSitterHighlight: () => () => [],
+}))
+
 const patch = parseUnifiedPatch(
   ["@@ -1,2 +1,2 @@", " keep", "-before", "+after"].join("\n")
 )

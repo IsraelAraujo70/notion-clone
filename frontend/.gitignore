@@ -17,6 +17,7 @@
 # next.js
 /.next/
 /out/
+/public/tree-sitter/
 
 # production
 /build

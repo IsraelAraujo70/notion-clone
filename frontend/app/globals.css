@@ -78,6 +78,16 @@
   --manila-strong: #a16207;
   --success: #2e7d32;
   --success-foreground: #ffffff;
+  --syntax-comment: #6a737d;
+  --syntax-constant: #005cc5;
+  --syntax-function: #6f42c1;
+  --syntax-keyword: #d73a49;
+  --syntax-number: #005cc5;
+  --syntax-operator: #d73a49;
+  --syntax-property: #24292e;
+  --syntax-string: #032f62;
+  --syntax-type: #005cc5;
+  --syntax-variable: #24292e;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -132,6 +142,91 @@
   --manila-strong: #f1c232;
   --success: #3fb950;
   --success-foreground: #0f2414;
+  --syntax-comment: #8b949e;
+  --syntax-constant: #79c0ff;
+  --syntax-function: #d2a8ff;
+  --syntax-keyword: #ff7b72;
+  --syntax-number: #79c0ff;
+  --syntax-operator: #ff7b72;
+  --syntax-property: #79c0ff;
+  --syntax-string: #a5d6ff;
+  --syntax-type: #ffa657;
+  --syntax-variable: #c9d1d9;
+}
+
+@layer utilities {
+  .code-review-scrollbar {
+    scrollbar-color: color-mix(
+        in srgb,
+        var(--muted-foreground) 35%,
+        transparent
+      )
+      transparent;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  .code-review-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .code-review-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .code-review-scrollbar::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted-foreground) 35%, transparent)
+      content-box;
+  }
+
+  .code-review-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--muted-foreground) 55%, transparent)
+      content-box;
+  }
+
+  .syntax-comment {
+    color: var(--syntax-comment);
+    font-style: italic;
+  }
+
+  .syntax-constant {
+    color: var(--syntax-constant);
+  }
+
+  .syntax-function {
+    color: var(--syntax-function);
+  }
+
+  .syntax-keyword {
+    color: var(--syntax-keyword);
+  }
+
+  .syntax-number {
+    color: var(--syntax-number);
+  }
+
+  .syntax-operator {
+    color: var(--syntax-operator);
+  }
+
+  .syntax-property {
+    color: var(--syntax-property);
+  }
+
+  .syntax-string {
+    color: var(--syntax-string);
+  }
+
+  .syntax-type {
+    color: var(--syntax-type);
+  }
+
+  .syntax-variable {
+    color: var(--syntax-variable);
+  }
 }
 
 @layer base {
