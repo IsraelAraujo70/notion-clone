@@ -17,8 +17,11 @@ import { SparklesIcon } from "lucide-react"
 import { useDashboardTabs } from "@/components/dashboard/dashboard-tabs"
 import { BlockEditor } from "@/components/editor/BlockEditor"
 import { usePageLayout } from "@/components/editor/page-layout-provider"
-import { PullRequestPanel } from "@/components/github/organisms/pull-request-panel"
+import { PullRequestSummary } from "@/components/github/molecules/pull-request-summary"
+import { GitHubIntegrationDialog } from "@/components/github/organisms/github-integration-dialog"
+import { usePageGitHubIntegration } from "@/components/github/use-page-github-integration"
 import { EmojiPicker } from "@/components/pages/emoji-picker"
+import { PageOptionsMenu } from "@/components/pages/page-options-menu"
 import { pagePath, usePages } from "@/components/pages/page-provider"
 import { useWorkspace } from "@/components/workspace/workspace-provider"
 import {
@@ -145,6 +148,7 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([])
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null)
   const [pendingAiAction, setPendingAiAction] = useState<AiAction | null>(null)
+  const [githubDialogOpen, setGitHubDialogOpen] = useState(false)
   const [recentEditors, setRecentEditors] = useState<PageEditor[]>([])
   const undoRef = useRef(new UndoManager())
   const queueRef = useRef<OpQueue | null>(null)
@@ -162,6 +166,11 @@ export function EditorPage({ pageId }: { pageId: string }) {
   const socketReadyRef = useRef(false)
   const socketWorkspaceRef = useRef<string | null>(null)
   const aiGroupsRef = useRef(new OperationGroupCoordinator())
+  const github = usePageGitHubIntegration({
+    token,
+    workspaceId: activeWorkspaceId,
+    blockId: pageId,
+  })
 
   useEffect(() => {
     performance.clearMarks("reason:editor-mounted")
@@ -663,6 +672,10 @@ export function EditorPage({ pageId }: { pageId: string }) {
             </Button>
           ) : null}
           <ShareDialog pageId={pageId} canWrite={canWrite} />
+          <PageOptionsMenu
+            showGitHub={canWrite || activeWorkspace?.role === "owner"}
+            onManageGitHub={() => setGitHubDialogOpen(true)}
+          />
           <PresenceAvatarStack live={pagePeers} recent={recentEditors} />
           <span
             data-cy="save-state"
@@ -673,6 +686,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
           </span>
         </div>
       </header>
+
+      {activeWorkspace ? (
+        <GitHubIntegrationDialog
+          open={githubDialogOpen}
+          onOpenChange={setGitHubDialogOpen}
+          integration={github}
+          workspaceRole={activeWorkspace.role}
+          canWrite={canWrite}
+        />
+      ) : null}
 
       {saveState === "error" ? (
         <div
@@ -733,14 +756,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
               }}
               onKeyDown={handleTitleKeyDown}
             />
-            {token && activeWorkspaceId && activeWorkspace ? (
-              <PullRequestPanel
-                key={`github:${activeWorkspaceId}:${tree.rootId}`}
-                token={token}
-                workspaceId={activeWorkspaceId}
-                blockId={tree.rootId}
-                workspaceRole={activeWorkspace.role}
-                canWrite={canWrite}
+            {github.configured && github.link ? (
+              <PullRequestSummary
+                link={github.link}
+                onReview={() =>
+                  openPage(pageId, {
+                    title: pageProperty(tree, "title"),
+                    icon: pageProperty(tree, "icon"),
+                    path: `/dashboard/pages/${pageId}/review`,
+                  })
+                }
               />
             ) : null}
             <BlockEditor

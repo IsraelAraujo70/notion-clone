@@ -20,8 +20,13 @@ import type {
   ParsedPatch,
   PatchLineKind,
 } from "@/lib/code-review/parse-unified-patch"
+import {
+  useTreeSitterHighlight,
+  type SyntaxToken,
+  type SyntaxTokenKind,
+} from "@/lib/code-review/tree-sitter-highlight"
 import { cn } from "@/lib/utils"
-import { memo, useMemo, useSyncExternalStore } from "react"
+import { memo, useMemo, useSyncExternalStore, type ReactNode } from "react"
 
 const DESKTOP_QUERY = "(min-width: 768px)"
 
@@ -50,6 +55,7 @@ export const DiffViewer = memo(function DiffViewer({
     getServerLayout
   )
   const split = viewMode === "split" && desktop
+  const syntaxTokens = useTreeSitterHighlight(path, patch)
   const rows = useMemo(
     () => (split ? toSplitRows(path, patch) : toUnifiedRows(path, patch)),
     [patch, path, split]
@@ -62,6 +68,7 @@ export const DiffViewer = memo(function DiffViewer({
         selection={selection}
         threads={threads}
         selectable={selectable}
+        syntaxTokens={syntaxTokens}
         onSelectLine={onSelectLine}
       />
     )
@@ -73,6 +80,7 @@ export const DiffViewer = memo(function DiffViewer({
       selection={selection}
       threads={threads}
       selectable={selectable}
+      syntaxTokens={syntaxTokens}
       onSelectLine={onSelectLine}
     />
   )
@@ -82,6 +90,10 @@ interface DiffLayoutProps {
   selection: LineSelection | null
   threads: ReviewThread[]
   selectable: boolean
+  syntaxTokens: (
+    address: ReviewLineAddress | null,
+    content: string
+  ) => SyntaxToken[]
   onSelectLine: (address: ReviewLineAddress, extend: boolean) => void
 }
 
@@ -90,6 +102,7 @@ function UnifiedDiff({
   selection,
   threads,
   selectable,
+  syntaxTokens,
   onSelectLine,
 }: DiffLayoutProps & { rows: UnifiedDiffRow[] }) {
   return (
@@ -134,6 +147,10 @@ function UnifiedDiff({
                 kind={row.kind}
                 content={row.content}
                 noNewline={row.noNewline}
+                tokens={syntaxTokens(
+                  row.rightAddress ?? row.leftAddress,
+                  row.content
+                )}
               />
             </div>
             {rowThreads.map((thread) => (
@@ -151,6 +168,7 @@ function SplitDiff({
   selection,
   threads,
   selectable,
+  syntaxTokens,
   onSelectLine,
 }: DiffLayoutProps & { rows: SplitDiffRow[] }) {
   return (
@@ -183,12 +201,14 @@ function SplitDiff({
                   selection={selection}
                   selectable={selectable}
                   border
+                  syntaxTokens={syntaxTokens}
                   onSelectLine={onSelectLine}
                 />
                 <SplitCell
                   cell={row.right}
                   selection={selection}
                   selectable={selectable}
+                  syntaxTokens={syntaxTokens}
                   onSelectLine={onSelectLine}
                 />
               </div>
@@ -219,12 +239,17 @@ function SplitCell({
   selection,
   selectable,
   border = false,
+  syntaxTokens,
   onSelectLine,
 }: {
   cell: DiffCodeCell | null
   selection: LineSelection | null
   selectable: boolean
   border?: boolean
+  syntaxTokens: (
+    address: ReviewLineAddress | null,
+    content: string
+  ) => SyntaxToken[]
   onSelectLine: (address: ReviewLineAddress, extend: boolean) => void
 }) {
   return (
@@ -246,6 +271,7 @@ function SplitCell({
           kind={cell.kind}
           content={cell.content}
           noNewline={cell.noNewline}
+          tokens={syntaxTokens(cell.address, cell.content)}
         />
       ) : (
         <span aria-hidden="true" />
@@ -284,10 +310,12 @@ function CodeText({
   kind,
   content,
   noNewline,
+  tokens,
 }: {
   kind: PatchLineKind
   content: string
   noNewline: boolean
+  tokens: SyntaxToken[]
 }) {
   return (
     <pre className="min-w-0 flex-1 overflow-visible px-2 font-mono text-xs leading-6 whitespace-pre">
@@ -297,7 +325,7 @@ function CodeText({
       >
         {kind === "addition" ? "+" : kind === "deletion" ? "-" : " "}
       </span>
-      {content}
+      <HighlightedCode content={content} tokens={tokens} />
       {noNewline && (
         <span className="ml-3 text-muted-foreground">
           No newline at end of file
@@ -305,6 +333,40 @@ function CodeText({
       )}
     </pre>
   )
+}
+
+function HighlightedCode({
+  content,
+  tokens,
+}: {
+  content: string
+  tokens: SyntaxToken[]
+}) {
+  if (tokens.length === 0) return content
+  const output: ReactNode[] = []
+  let cursor = 0
+
+  tokens.forEach((token, index) => {
+    if (token.start < cursor) return
+    if (token.start > cursor) {
+      output.push(content.slice(cursor, token.start))
+    }
+    output.push(
+      <span
+        key={`${token.start}-${token.end}-${index}`}
+        className={tokenClass(token.kind)}
+      >
+        {content.slice(token.start, token.end)}
+      </span>
+    )
+    cursor = token.end
+  })
+  if (cursor < content.length) output.push(content.slice(cursor))
+  return output
+}
+
+function tokenClass(kind: SyntaxTokenKind) {
+  return `syntax-${kind}`
 }
 
 function lineColor(kind: PatchLineKind): string {

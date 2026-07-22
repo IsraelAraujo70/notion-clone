@@ -5,6 +5,10 @@ import type { PullRequest, ReviewFile } from "@/lib/code-review/contracts"
 
 import { ReviewWorkspace } from "./review-workspace"
 
+vi.mock("@/lib/code-review/tree-sitter-highlight", () => ({
+  useTreeSitterHighlight: () => () => [],
+}))
+
 const pullRequest: PullRequest = {
   id: "pr-1",
   number: 42,
@@ -67,14 +71,14 @@ describe("ReviewWorkspace", () => {
       screen.getByRole("heading", { name: "Improve parser" })
     ).toBeVisible()
     fireEvent.click(
-      screen.getByRole("button", {
+      screen.getByRole("treeitem", {
         name: "src/second.ts, added, 1 additions, 0 deletions",
       })
     )
     expect(onSelectionChange).toHaveBeenCalledWith(null)
     expect(onFileSelect).toHaveBeenCalledWith("src/second.ts")
 
-    fireEvent.click(screen.getByRole("button", { name: "Split" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Split" }))
     expect(onViewModeChange).toHaveBeenCalledWith("split")
 
     fireEvent.click(screen.getByRole("button", { name: "Select right line 1" }))

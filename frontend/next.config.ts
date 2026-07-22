@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
   turbopack: {
     // O core compartilhado fica fora de `frontend/` e precisa estar no grafo.
     root: monorepoRoot,
+    // web-tree-sitter guards these imports behind Node-only runtime checks.
+    resolveAlias: {
+      "fs/promises": {
+        browser: "./lib/code-review/tree-sitter-node-stub.ts",
+      },
+      module: {
+        browser: "./lib/code-review/tree-sitter-node-stub.ts",
+      },
+    },
   },
 }
 

@@ -1,6 +1,7 @@
 import { Columns2Icon, Rows3Icon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 export type DiffViewMode = "unified" | "split"
 
@@ -27,15 +28,22 @@ export function ReviewToolbar({
   hasPreviousFile = false,
   hasNextFile = false,
 }: ReviewToolbarProps) {
+  const name = filePath.split("/").at(-1) ?? filePath
+  const directory = filePath.includes("/")
+    ? filePath.slice(0, filePath.lastIndexOf("/"))
+    : null
+
   return (
-    <header className="flex flex-col gap-3 border-b bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex shrink-0 flex-col gap-3 border-b bg-background px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <h2
-          className="truncate font-mono text-sm font-semibold"
-          title={filePath}
-        >
-          {filePath}
-        </h2>
+        <div className="flex min-w-0 items-baseline gap-2" title={filePath}>
+          <h2 className="shrink-0 font-mono text-sm font-semibold">{name}</h2>
+          {directory ? (
+            <span className="truncate font-mono text-[11px] text-muted-foreground">
+              {directory}
+            </span>
+          ) : null}
+        </div>
         <p
           className="text-xs"
           aria-label={`${additions} additions, ${deletions} deletions`}
@@ -48,33 +56,32 @@ export function ReviewToolbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div
-          className="inline-flex rounded-lg border bg-background p-0.5"
-          role="group"
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          size="sm"
+          variant="outline"
+          spacing={0}
           aria-label="Diff layout"
+          onValueChange={(value) => {
+            if (value === "unified" || value === "split") {
+              onViewModeChange(value)
+            }
+          }}
         >
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "unified" ? "secondary" : "ghost"}
-            aria-pressed={viewMode === "unified"}
-            onClick={() => onViewModeChange("unified")}
-          >
-            <Rows3Icon aria-hidden="true" />
+          <ToggleGroupItem value="unified" aria-label="Unified">
+            <Rows3Icon data-icon="inline-start" />
             Unified
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "split" ? "secondary" : "ghost"}
-            aria-pressed={viewMode === "split"}
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="split"
+            aria-label="Split"
             className="hidden md:inline-flex"
-            onClick={() => onViewModeChange("split")}
           >
-            <Columns2Icon aria-hidden="true" />
+            <Columns2Icon data-icon="inline-start" />
             Split
-          </Button>
-        </div>
+          </ToggleGroupItem>
+        </ToggleGroup>
 
         {(onPreviousFile || onNextFile) && (
           <div className="inline-flex gap-1" aria-label="File navigation">

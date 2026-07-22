@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import { useParams } from "next/navigation"
+import { useParams, usePathname } from "next/navigation"
 import { FileTextIcon, PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -97,9 +97,13 @@ function EmptyWorkspace() {
 }
 
 function DashboardContent({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
   const { currentPageId, pages, loading } = usePages()
   const { activePath, isMobile } = useDashboardTabs()
   const aiActive = !isMobile && activePath.startsWith("/dashboard/ai")
+  const reviewActive = /^\/dashboard\/pages\/[^/]+\/review(?:\/|$)/.test(
+    pathname
+  )
 
   return (
     <CommandMenuProvider pages={pages}>
@@ -112,15 +116,17 @@ function DashboardContent({ children }: { children: ReactNode }) {
       >
         <AppSidebar />
         <SidebarInset className="flex h-svh min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-          {children}
+          {reviewActive ? null : children}
           <DashboardTabsRail />
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
-              aiActive ? "overflow-hidden" : "overflow-auto"
+              aiActive || reviewActive ? "overflow-hidden" : "overflow-auto"
             )}
           >
-            {aiActive ? (
+            {reviewActive ? (
+              children
+            ) : aiActive ? (
               <AiWorkspacePage />
             ) : currentPageId ? (
               <EditorPage pageId={currentPageId} />
