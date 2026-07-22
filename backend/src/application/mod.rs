@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod auth;
 pub mod embeddings;
+pub mod github;
 pub mod integrations;
 pub mod pages;
 pub mod ports;
@@ -22,6 +23,9 @@ pub enum AppError {
     Repository,
     Email,
     StorageNotConfigured,
+    GitHubNotConfigured,
+    GitHubPullRequestNotFound,
+    GitHubUnavailable,
     AiUnavailable,
     Internal,
 }

@@ -3,6 +3,7 @@ pub mod auth;
 pub mod clock;
 pub mod email;
 pub mod embedding;
+pub mod github;
 pub mod integration;
 pub mod page;
 pub mod storage;

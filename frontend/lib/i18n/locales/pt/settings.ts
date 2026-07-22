@@ -105,6 +105,8 @@ export const settingsPt = {
   "Use all available width for page content.":
     "Use toda a largura disponível para o conteúdo da página.",
   "View images": "Ver imagens",
+  "Read pull requests": "Ler pull requests",
+  "Link pull requests": "Vincular pull requests",
   "Workspace deleted.": "Workspace apagado.",
   "Workspace unavailable": "Workspace indisponível",
   "You can revoke the token at any time.":
@@ -119,4 +121,8 @@ export const settingsPt = {
   "Applies operations when your role allows writing.":
     "Aplica operações quando seu papel permitir escrita.",
   "Returns authorized image blocks.": "Retorna blocos de imagem autorizados.",
+  "Lists pull requests linked to plans and pages.":
+    "Lista pull requests vinculadas a planos e páginas.",
+  "Links pull requests when your role allows writing.":
+    "Vincula pull requests quando sua função permite escrita.",
 } as const

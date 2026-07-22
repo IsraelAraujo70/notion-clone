@@ -13,11 +13,12 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Workspace-scoped full-text search.
 - AI actions for continuing, summarizing, and transforming content, plus semantic Q&A with citations and a full-workspace assistant that can read, search, create, and edit pages.
 - Reviewable AI writes with typed operation previews, `Allow once` or conversation-scoped approval, persistent conversation selection, and grouped tool/change activity in the chat timeline.
-- Authenticated MCP access for agents to read, search, and edit blocks, as well as retrieve images.
+- Authenticated MCP access for agents to read, search, and edit blocks, retrieve images, and link pull requests with separate GitHub scopes.
 - Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
 - Desktop page tabs with local per-user/workspace persistence, deep-link restoration, drag reordering, and a fixed AI tab; mobile keeps single-page navigation.
+- GitHub App installation per workspace, pull request links on pages and database rows, and a responsive read-only review workspace with real changed files and unified/split diffs.
 
-The current version does not include GitHub Issues synchronization, a released desktop or offline client, or page-level permissions. An experimental Electron shell lives in `desktop/` while the desktop architecture is validated.
+The current version does not include GitHub Issues synchronization, inline review submission, webhooks, a released desktop or offline client, or page-level permissions. An experimental Electron shell lives in `desktop/` while the desktop architecture is validated.
 
 ## Technical Principles
 

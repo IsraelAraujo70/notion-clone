@@ -5,8 +5,8 @@ use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
 use crate::adapters::http::{
-    ai_routes, app_routes, auth_routes, integration_routes, media_routes, page_routes,
-    workspace_routes, ws_routes,
+    ai_routes, app_routes, auth_routes, github_routes, integration_routes, media_routes,
+    page_routes, workspace_routes, ws_routes,
 };
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
@@ -63,6 +63,32 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/integrations/mcp/tokens/{token_id}",
             delete(integration_routes::revoke_token),
+        )
+        .route(
+            "/workspaces/{workspace_id}/integrations/github/installations",
+            get(github_routes::list_installations).post(github_routes::begin_installation),
+        )
+        .route(
+            "/integrations/github/setup",
+            get(github_routes::setup_installation),
+        )
+        .route(
+            "/integrations/github/callback",
+            get(github_routes::complete_oauth),
+        )
+        .route(
+            "/workspaces/{workspace_id}/integrations/github/pull-requests",
+            get(github_routes::list_pull_request_links),
+        )
+        .route(
+            "/workspaces/{workspace_id}/blocks/{block_id}/integrations/github/pull-request",
+            get(github_routes::get_pull_request_link)
+                .post(github_routes::link_pull_request)
+                .delete(github_routes::unlink_pull_request),
+        )
+        .route(
+            "/workspaces/{workspace_id}/blocks/{block_id}/integrations/github/pull-request/files",
+            get(github_routes::list_pull_request_files),
         )
         .route(
             "/workspaces",

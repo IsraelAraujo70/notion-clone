@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::application::AppError;
+use crate::application::github::LinkGitHubPullRequestInput;
 use crate::application::ports::integration::{IntegrationPrincipal, IntegrationScope};
 use crate::bootstrap::state::AppState;
 use crate::domain::block::Operation;
@@ -100,6 +101,13 @@ struct ImageInput {
 struct ApplyOperationsInput {
     workspace_id: Uuid,
     operations: Vec<Operation>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinkPullRequestInput {
+    workspace_id: Uuid,
+    block_id: Uuid,
+    pull_request_url: String,
 }
 
 pub(crate) async fn handle(
@@ -257,6 +265,33 @@ async fn call_tool(
                 .map_err(app_tool_error)?;
             text_result(&acks)
         }
+        "reason_list_pull_requests" => {
+            let input = parse_arguments::<WorkspaceInput>(call.arguments)?;
+            authorize(principal, IntegrationScope::GitHubRead, input.workspace_id)?;
+            let links = state
+                .github
+                .list_pull_request_links(principal.user_id, input.workspace_id)
+                .await
+                .map_err(app_tool_error)?;
+            text_result(&links)
+        }
+        "reason_link_pull_request" => {
+            let input = parse_arguments::<LinkPullRequestInput>(call.arguments)?;
+            authorize_github_link(principal, input.workspace_id)?;
+            let link = state
+                .github
+                .link_pull_request(
+                    principal.user_id,
+                    input.workspace_id,
+                    input.block_id,
+                    LinkGitHubPullRequestInput {
+                        url: input.pull_request_url,
+                    },
+                )
+                .await
+                .map_err(app_tool_error)?;
+            text_result(&link)
+        }
         _ => Err(tool_error("Unknown Reason tool")),
     }
 }
@@ -307,6 +342,14 @@ fn authorize(
             "The integration is not allowed to perform this action",
         ))
     }
+}
+
+fn authorize_github_link(
+    principal: &IntegrationPrincipal,
+    workspace_id: Uuid,
+) -> Result<(), Value> {
+    authorize(principal, IntegrationScope::GitHubRead, workspace_id)?;
+    authorize(principal, IntegrationScope::GitHubWrite, workspace_id)
 }
 
 fn parse_arguments<T: for<'de> Deserialize<'de>>(arguments: Value) -> Result<T, Value> {
@@ -413,6 +456,28 @@ fn tools() -> Vec<Value> {
                     }
                 },
                 "required": ["workspace_id", "operations"],
+                "additionalProperties": false
+            }),
+        ),
+        tool(
+            "reason_list_pull_requests",
+            "List pull requests linked to blocks in an authorized Reason workspace.",
+            workspace_schema(),
+        ),
+        tool(
+            "reason_link_pull_request",
+            "Link a canonical GitHub pull request URL to a Reason page or database row.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "workspace_id": uuid_schema(),
+                    "block_id": uuid_schema(),
+                    "pull_request_url": {
+                        "type": "string",
+                        "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$"
+                    }
+                },
+                "required": ["workspace_id", "block_id", "pull_request_url"],
                 "additionalProperties": false
             }),
         ),
@@ -568,12 +633,28 @@ mod tests {
     }
 
     #[test]
+    fn linking_a_pull_request_requires_both_github_scopes() {
+        let workspace = Uuid::new_v4();
+        let mut principal = IntegrationPrincipal {
+            token_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            scopes: vec![IntegrationScope::GitHubWrite],
+            workspace_ids: vec![workspace],
+        };
+        assert!(authorize_github_link(&principal, workspace).is_err());
+        principal.scopes.push(IntegrationScope::GitHubRead);
+        assert!(authorize_github_link(&principal, workspace).is_ok());
+    }
+
+    #[test]
     fn tool_catalog_exposes_only_the_canonical_write_path() {
         let names = tools()
             .into_iter()
             .map(|tool| tool["name"].as_str().unwrap().to_string())
             .collect::<Vec<_>>();
         assert!(names.contains(&"reason_apply_operations".to_string()));
+        assert!(names.contains(&"reason_list_pull_requests".to_string()));
+        assert!(names.contains(&"reason_link_pull_request".to_string()));
         assert!(!names.iter().any(|name| name.contains("create_note")));
         assert!(!names.iter().any(|name| name.contains("edit_note")));
     }

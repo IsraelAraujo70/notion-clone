@@ -4,6 +4,7 @@ pub mod auth_extractor;
 pub mod auth_routes;
 pub mod dto;
 pub mod error;
+pub mod github_routes;
 pub mod integration_routes;
 pub mod media_routes;
 pub mod page_routes;

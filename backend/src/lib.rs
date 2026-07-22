@@ -16,6 +16,7 @@ pub fn app(pool: PgPool) -> Router {
         config.resend_api_key,
         config.resend_from_email,
         config.s3,
+        config.github,
     );
     app_with_state(state)
 }

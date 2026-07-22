@@ -18,7 +18,7 @@ Content-Type: application/json
 {
   "name": "OpenCode",
   "workspace_ids": ["uuid-do-workspace"],
-  "scopes": ["content:read", "content:write", "search:read", "media:read"],
+  "scopes": ["content:read", "content:write", "search:read", "media:read", "github:read", "github:write"],
   "expires_in_days": 30
 }
 ```
@@ -31,6 +31,10 @@ Escopos disponíveis:
 | `content:write` | Aplicar operações tipadas. O papel atual ainda precisa ser `editor` ou `owner`. |
 | `search:read` | Fazer busca semântica no workspace. |
 | `media:read` | Receber o conteúdo de um bloco de imagem. |
+| `github:read` | Listar pull requests vinculadas no workspace. |
+| `github:write` | Vincular uma PR a uma página ou linha de database. O papel atual ainda precisa permitir escrita. |
+
+`github:write` depende de `github:read`; a API rejeita tokens que tentem conceder escrita sem leitura.
 
 Use `GET /integrations/mcp/tokens` para listar integrações e `DELETE /integrations/mcp/tokens/{token_id}` para revogar. Remover o usuário de um workspace também bloqueia o acesso imediatamente, mesmo que o grant continue no token.
 
@@ -75,6 +79,8 @@ O arquivo versionado referencia `{env:REASON_MCP_TOKEN}` e nunca contém o segre
 | `reason_search` | `search:read` | Usa os embeddings existentes e retorna página, bloco, texto e score. |
 | `reason_get_image` | `media:read` | Retorna metadados e conteúdo MCP `image` em base64. |
 | `reason_apply_operations` | `content:write` | Aplica de 1 a 50 operações em uma transação. |
+| `reason_list_pull_requests` | `github:read` | Lista snapshots de PR vinculados aos blocos do workspace. |
+| `reason_link_pull_request` | `github:read` + `github:write` | Vincula uma URL canônica `https://github.com/{owner}/{repo}/pull/{n}` a uma página ou `database_row` e retorna seu snapshot. |
 
 `reason_get_image` recebe `workspace_id` e `block_id`, nunca uma chave S3 livre. O servidor comprova membership, tipo do bloco, estado da lixeira e prefixo do objeto antes de baixar até 10 MiB.
 

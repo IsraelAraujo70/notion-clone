@@ -60,6 +60,20 @@ Transferência:
 {"transfer_id":"uuid","source_seq":19,"destination_seq":7}
 ```
 
+## GitHub
+
+| Método | Rota | Uso |
+| --- | --- | --- |
+| POST | `/workspaces/{workspace_id}/integrations/github/installations` | Owner inicia a instalação com `{ "return_page_id": "uuid" }` e recebe a URL da GitHub App. O UUID interno define o retorno seguro ao editor. |
+| GET | `/integrations/github/setup?state=&installation_id=` | Callback público de setup; troca o state inicial pelo fluxo OAuth. |
+| GET | `/integrations/github/callback?code=&state=` | Callback OAuth; verifica o acesso do usuário e conclui a associação. |
+| GET | `/workspaces/{workspace_id}/integrations/github/installations` | Retorna `{ configured, installations }` para qualquer membro, permitindo distinguir credenciais ausentes de uma instalação ainda não criada. |
+| GET | `/workspaces/{workspace_id}/integrations/github/pull-requests` | Lista snapshots de PR vinculados no workspace. |
+| GET/POST/DELETE | `/workspaces/{workspace_id}/blocks/{block_id}/integrations/github/pull-request` | Lê somente o vínculo do bloco, vincula por `{ "url": "https://github.com/owner/repo/pull/42" }` ou remove de forma idempotente. |
+| GET | `/workspaces/{workspace_id}/blocks/{block_id}/integrations/github/pull-request/files` | Retorna `{ files, total_changed_files, truncated }`, com até 500 arquivos e patches e timeout total no adapter GitHub. |
+
+Instalar exige `owner`; vincular e remover exigem `editor` ou `owner`; listar exige membership. Somente `page` e `database_row` vivos aceitam vínculo. Ausência, outro workspace e PR inacessível usam respostas não reveladoras. Tokens OAuth e de instalação nunca são persistidos ou retornados.
+
 ## Busca, compartilhamento, lixeira e mídia
 
 | Método | Rota | Uso |
@@ -90,6 +104,6 @@ O stream SSE envia `run`, `text`, `tool`, `approval_requested`, `approval_resolv
 
 ## MCP
 
-`POST /mcp` implementa o transporte MCP stateless. Diferentemente das outras rotas privadas, usa um bearer token com prefixo `rsn_mcp_`, grants de workspace e escopos próprios. O endpoint oferece leitura de páginas, busca semântica, imagens multimodais e escrita pelo motor de operações.
+`POST /mcp` implementa o transporte MCP stateless. Diferentemente das outras rotas privadas, usa um bearer token com prefixo `rsn_mcp_`, grants de workspace e escopos próprios. O endpoint oferece leitura de páginas, busca semântica, imagens multimodais, escrita pelo motor de operações e vínculo/listagem de PRs com escopos GitHub separados.
 
 O contrato, os escopos e a configuração dos clientes estão em [mcp.md](mcp.md).

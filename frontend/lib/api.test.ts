@@ -149,6 +149,92 @@ describe("api client", () => {
     )
   })
 
+  it("manages GitHub installations and pull request links", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(201, {
+          installation_url: "https://github.com/apps/reason/installations/new",
+          expires_at: "2026-07-21T17:00:00Z",
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, { configured: true, installations: [] })
+      )
+      .mockResolvedValueOnce(jsonResponse(200, []))
+      .mockResolvedValueOnce(jsonResponse(200, null))
+      .mockResolvedValueOnce(jsonResponse(201, { id: "link-1" }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          files: [],
+          total_changed_files: 0,
+          truncated: false,
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await api.beginGitHubInstallation("secret-token", "workspace-1", "block-1")
+    await api.getGitHubIntegrationStatus("secret-token", "workspace-1")
+    await api.listGitHubPullRequests("secret-token", "workspace-1")
+    await api.getGitHubPullRequest("secret-token", "workspace-1", "block-1")
+    await api.linkGitHubPullRequest(
+      "secret-token",
+      "workspace-1",
+      "block-1",
+      "https://github.com/acme/reason/pull/42"
+    )
+    await api.listGitHubPullRequestFiles(
+      "secret-token",
+      "workspace-1",
+      "block-1"
+    )
+    await api.unlinkGitHubPullRequest("secret-token", "workspace-1", "block-1")
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE_URL}/workspaces/workspace-1/integrations/github/installations`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret-token",
+        },
+        body: JSON.stringify({ return_page_id: "block-1" }),
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      `${API_BASE_URL}/workspaces/workspace-1/blocks/block-1/integrations/github/pull-request`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret-token",
+        },
+        body: JSON.stringify({
+          url: "https://github.com/acme/reason/pull/42",
+        }),
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      6,
+      `${API_BASE_URL}/workspaces/workspace-1/blocks/block-1/integrations/github/pull-request/files`,
+      {
+        method: "GET",
+        headers: { Authorization: "Bearer secret-token" },
+        body: undefined,
+      }
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      7,
+      `${API_BASE_URL}/workspaces/workspace-1/blocks/block-1/integrations/github/pull-request`,
+      {
+        method: "DELETE",
+        headers: { Authorization: "Bearer secret-token" },
+        body: undefined,
+      }
+    )
+  })
+
   it("posts password reset requests without bearer auth", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 204 }))

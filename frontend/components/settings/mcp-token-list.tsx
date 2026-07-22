@@ -34,6 +34,8 @@ const scopeLabels: Record<string, Message> = {
   "content:write": "Edit notes",
   "search:read": "Search",
   "media:read": "View images",
+  "github:read": "Read pull requests",
+  "github:write": "Link pull requests",
 }
 
 export function McpTokenList({

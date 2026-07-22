@@ -82,7 +82,12 @@ export type WorkspaceInvitePreview = {
 }
 
 export type McpScope =
-  "content:read" | "content:write" | "search:read" | "media:read"
+  | "content:read"
+  | "content:write"
+  | "search:read"
+  | "media:read"
+  | "github:read"
+  | "github:write"
 
 export type McpIntegrationToken = {
   id: string
@@ -98,6 +103,66 @@ export type McpIntegrationToken = {
 export type CreatedMcpIntegrationToken = {
   token: string
   integration: McpIntegrationToken
+}
+
+export type GitHubInstallation = {
+  id: string
+  workspace_id: string
+  installation_id: number
+  account_login: string
+  account_type: string
+  created_at: string
+  updated_at: string
+}
+
+export type GitHubIntegrationStatus = {
+  configured: boolean
+  installations: GitHubInstallation[]
+}
+
+export type GitHubPullRequestLink = {
+  id: string
+  workspace_id: string
+  block_id: string
+  owner: string
+  repository: string
+  pull_number: number
+  url: string
+  title: string
+  body: string | null
+  state: string
+  draft: boolean
+  author_login: string | null
+  head_sha: string
+  base_ref: string
+  head_ref: string
+  additions: number
+  deletions: number
+  changed_files: number
+  created_at: string
+  updated_at: string
+}
+
+export type GitHubPullRequestFile = {
+  path: string
+  previous_filename: string | null
+  status: string
+  additions: number
+  deletions: number
+  changes: number
+  patch: string | null
+  blob_url: string
+}
+
+export type GitHubPullRequestFiles = {
+  files: GitHubPullRequestFile[]
+  total_changed_files: number
+  truncated: boolean
+}
+
+export type BeginGitHubInstallationResponse = {
+  installation_url: string
+  expires_at: string
 }
 
 export type PageSummary = {
@@ -390,6 +455,59 @@ export const api = {
       method: "DELETE",
       token,
     }),
+  beginGitHubInstallation: (
+    token: string,
+    workspaceId: string,
+    returnPageId: string
+  ) =>
+    request<BeginGitHubInstallationResponse>(
+      `/workspaces/${workspaceId}/integrations/github/installations`,
+      { method: "POST", token, body: { return_page_id: returnPageId } }
+    ),
+  getGitHubIntegrationStatus: (token: string, workspaceId: string) =>
+    request<GitHubIntegrationStatus>(
+      `/workspaces/${workspaceId}/integrations/github/installations`,
+      { token }
+    ),
+  listGitHubPullRequests: (token: string, workspaceId: string) =>
+    request<GitHubPullRequestLink[]>(
+      `/workspaces/${workspaceId}/integrations/github/pull-requests`,
+      { token }
+    ),
+  getGitHubPullRequest: (token: string, workspaceId: string, blockId: string) =>
+    request<GitHubPullRequestLink | null>(
+      `/workspaces/${workspaceId}/blocks/${blockId}/integrations/github/pull-request`,
+      { token }
+    ),
+  linkGitHubPullRequest: (
+    token: string,
+    workspaceId: string,
+    blockId: string,
+    url: string
+  ) =>
+    request<GitHubPullRequestLink>(
+      `/workspaces/${workspaceId}/blocks/${blockId}/integrations/github/pull-request`,
+      { method: "POST", token, body: { url } }
+    ),
+  unlinkGitHubPullRequest: (
+    token: string,
+    workspaceId: string,
+    blockId: string
+  ) =>
+    request<void>(
+      `/workspaces/${workspaceId}/blocks/${blockId}/integrations/github/pull-request`,
+      { method: "DELETE", token }
+    ),
+  listGitHubPullRequestFiles: (
+    token: string,
+    workspaceId: string,
+    blockId: string,
+    signal?: AbortSignal
+  ) =>
+    request<GitHubPullRequestFiles>(
+      `/workspaces/${workspaceId}/blocks/${blockId}/integrations/github/pull-request/files`,
+      { token, signal }
+    ),
   getWorkspaceInvite: (token: string) =>
     request<WorkspaceInvitePreview>(`/workspace-invites/${token}`),
   acceptWorkspaceInvite: (authToken: string, inviteToken: string) =>

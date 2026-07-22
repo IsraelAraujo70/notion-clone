@@ -76,6 +76,23 @@ const scopeOptions: Array<{
     label: "View images",
     description: "Returns authorized image blocks.",
   },
+  {
+    value: "github:read",
+    label: "Read pull requests",
+    description: "Lists pull requests linked to plans and pages.",
+  },
+  {
+    value: "github:write",
+    label: "Link pull requests",
+    description: "Links pull requests when your role allows writing.",
+  },
+]
+
+const defaultScopes: McpScope[] = [
+  "content:read",
+  "content:write",
+  "search:read",
+  "media:read",
 ]
 
 export function McpIntegrationsPanel() {
@@ -87,9 +104,7 @@ export function McpIntegrationsPanel() {
   const [workspaceIds, setWorkspaceIds] = useState<string[]>(
     activeWorkspace ? [activeWorkspace.id] : []
   )
-  const [scopes, setScopes] = useState<McpScope[]>(
-    scopeOptions.map((scope) => scope.value)
-  )
+  const [scopes, setScopes] = useState<McpScope[]>(defaultScopes)
   const [expiresInDays, setExpiresInDays] = useState("30")
   const [created, setCreated] = useState<CreatedMcpIntegrationToken | null>(
     null
@@ -134,11 +149,17 @@ export function McpIntegrationsPanel() {
   }
 
   function toggleScope(scope: McpScope, checked: boolean) {
-    setScopes((current) =>
-      checked
-        ? [...new Set([...current, scope])]
-        : current.filter((item) => item !== scope)
-    )
+    setScopes((current) => {
+      if (checked) {
+        const required = scope === "github:write" ? ["github:read"] : []
+        return [...new Set([...current, ...required, scope])] as McpScope[]
+      }
+      return current.filter(
+        (item) =>
+          item !== scope &&
+          !(scope === "github:read" && item === "github:write")
+      )
+    })
   }
 
   async function handleCreate(event: FormEvent) {

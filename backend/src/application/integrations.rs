@@ -69,6 +69,7 @@ impl IntegrationUseCases {
                 DomainError::Validation("At least one integration scope is required").into(),
             );
         }
+        validate_scope_dependencies(&scopes)?;
         let workspace_ids = input.workspace_ids.into_iter().collect::<HashSet<_>>();
         if workspace_ids.is_empty() || workspace_ids.len() > 50 {
             return Err(DomainError::Validation(
@@ -136,5 +137,34 @@ impl IntegrationUseCases {
             .find_principal_by_hash(&hash_token(token), self.clock.now())
             .await?
             .ok_or(AppError::Unauthorized)
+    }
+}
+
+fn validate_scope_dependencies(scopes: &HashSet<IntegrationScope>) -> Result<(), AppError> {
+    if scopes.contains(&IntegrationScope::GitHubWrite)
+        && !scopes.contains(&IntegrationScope::GitHubRead)
+    {
+        Err(DomainError::Validation("GitHub write scope requires GitHub read scope").into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn github_write_scope_requires_read_scope() {
+        assert!(
+            validate_scope_dependencies(&HashSet::from([IntegrationScope::GitHubWrite])).is_err()
+        );
+        assert!(
+            validate_scope_dependencies(&HashSet::from([
+                IntegrationScope::GitHubRead,
+                IntegrationScope::GitHubWrite,
+            ]))
+            .is_ok()
+        );
     }
 }
