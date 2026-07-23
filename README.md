@@ -99,3 +99,4 @@ See [docs/testes.md](docs/testes.md) for details about what each gate covers.
 - [MCP](docs/mcp.md)
 - [Tests and gates](docs/testes.md)
 - [Desktop Electron ADR](docs/adr/desktop-electron.md)
+- [YouTube video script](docs/youtube-video-script.md)
