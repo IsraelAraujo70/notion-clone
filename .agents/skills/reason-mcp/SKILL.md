@@ -152,6 +152,24 @@ Call `reason_list_pages` to obtain `root_page_id`. Insert the page block under t
 
 Add child paragraphs or headings as separate `insert_block` operations. Their `parentId` must be the new page ID, and each new block starts with an empty `content` array.
 
+### Insert A Visible Database
+
+The workspace root is not a visible block canvas. The sidebar and
+`reason_list_pages` expose page blocks, not database blocks inserted directly
+under `root_page_id`.
+
+To create a database that users can see:
+
+1. Resolve an existing visible page or create a page under `root_page_id`.
+2. Read that page and insert the database as its child.
+3. Insert database rows under the database block.
+4. Re-read the visible parent page and verify the database appears as a direct
+   child.
+5. Re-read the created row and verify its descendants.
+
+Never insert a user-facing database directly under `root_page_id`. It may be
+persisted correctly while remaining absent from the sidebar and page UI.
+
 ### Update Existing Content
 
 1. Read the page immediately before editing.
