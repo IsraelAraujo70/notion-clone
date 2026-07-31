@@ -142,7 +142,7 @@ test-web:
 	cd $(WEB_DIR) && npm test
 
 test-mobile:
-	cd $(MOBILE_DIR) && npm run typecheck
+	cd $(MOBILE_DIR) && npm test && npm run typecheck
 
 test-desktop:
 	cd $(DESKTOP_DIR) && npm test

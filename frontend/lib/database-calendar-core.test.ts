@@ -2,6 +2,7 @@ import {
   calendarDayKey,
   calendarMonthDays,
   databaseCalendarConfig,
+  databaseCalendarViewPatch,
   databaseDateDayKeys,
   databaseDateOverlaps,
   databaseView,
@@ -119,6 +120,21 @@ describe("database calendar contract", () => {
       databaseCalendarConfig({ calendar: { defaultMode: "agenda" } })
     ).toEqual({
       defaultMode: "month",
+    })
+  })
+
+  it("builds the same calendar view patch for every client", () => {
+    expect(
+      databaseCalendarViewPatch(
+        [
+          { id: "title", name: "Name", type: "title" },
+          { id: "meeting_at", name: "Meeting", type: "date" },
+        ],
+        { defaultMode: "month" }
+      )
+    ).toEqual({
+      view: "calendar",
+      calendar: { datePropertyId: "meeting_at", defaultMode: "month" },
     })
   })
 })

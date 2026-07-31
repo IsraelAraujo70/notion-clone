@@ -26,6 +26,26 @@ export type BlockType = (typeof BLOCK_TYPES)[number]
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
+/** Read-only event projection shared by web and mobile calendar clients. */
+export interface CalendarProjectionEvent {
+  id: string
+  origin: "google" | "materialized" | "manual"
+  row_id: string | null
+  source_id: string | null
+  google_event_id: string | null
+  title: string
+  start: string
+  end: string
+  time_zone: string | null
+  all_day: boolean
+  status: "confirmed" | "tentative" | "cancelled"
+  meet_url: string | null
+  location: string | null
+  google_url: string | null
+  color: string | null
+  private: boolean
+}
+
 // Propriedades por tipo (todas opcionais; o tipo do bloco decide o que é lido):
 // text (textuais), checked (to_do), language (code), title/icon (page),
 // url/key/caption (image); text (mermaid source); title/view/statuses/schema

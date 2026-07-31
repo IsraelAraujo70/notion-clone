@@ -10,6 +10,12 @@ Google is read-only. Reason remains the source of truth for notes, decisions,
 tasks, tags, and internal status. A linked row and its minimal meeting snapshot
 survive cancellation, source removal, and account disconnection.
 
+The Android app exposes the same projection as a native monthly agenda. It
+groups events in the device timezone, keeps all-day events untimed, opens linked
+notes inside the app, and delegates Meet or Google Calendar links to Android.
+OAuth connection and calendar-source selection remain in the web settings; the
+selected sources are database-scoped and therefore appear on both clients.
+
 ## Local configuration
 
 Create an OAuth web client in Google Cloud and enable the Calendar API. Add this

@@ -123,7 +123,12 @@ export function EditorBlock({
   }
 
   if (block.type === "database") {
-    const board = block.properties.view === "board"
+    const databaseView =
+      block.properties.view === "calendar"
+        ? "calendar"
+        : block.properties.view === "board"
+          ? "board"
+          : "table"
     return (
       <GestureDetector gesture={longPress}>
         <Pressable
@@ -138,7 +143,13 @@ export function EditorBlock({
           ]}
         >
           <MaterialCommunityIcons
-            name={board ? "view-column-outline" : "table-large"}
+            name={
+              databaseView === "calendar"
+                ? "calendar-month-outline"
+                : databaseView === "board"
+                  ? "view-column-outline"
+                  : "table-large"
+            }
             size={20}
             color={tokens.mutedForeground}
           />
@@ -147,7 +158,12 @@ export function EditorBlock({
               {text || "Database sem titulo"}
             </Text>
             <Text style={[styles.caption, { color: tokens.mutedForeground }]}>
-              {board ? "Kanban" : "Tabela"} · {block.content.length} itens
+              {databaseView === "calendar"
+                ? "Agenda"
+                : databaseView === "board"
+                  ? "Kanban"
+                  : "Tabela"}{" "}
+              · {block.content.length} itens
             </Text>
           </View>
         </Pressable>

@@ -97,6 +97,22 @@ export function databaseCalendarConfig(
   }
 }
 
+export function databaseCalendarViewPatch(
+  properties: DatabaseProperty[],
+  calendar: DatabaseCalendarConfig
+): BlockProperties {
+  const datePropertyId =
+    calendar.datePropertyId ??
+    properties.find((property) => property.type === "date")?.id
+  return {
+    view: "calendar",
+    calendar: {
+      ...(datePropertyId ? { datePropertyId } : {}),
+      defaultMode: calendar.defaultMode,
+    },
+  }
+}
+
 export function normalizeDatabaseDateValue(
   value: JsonValue | undefined
 ): NormalizedDatabaseDateValue | null {

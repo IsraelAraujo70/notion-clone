@@ -4,10 +4,10 @@ Execute os comandos na raiz do repositório.
 
 | Comando | O que verifica |
 | --- | --- |
-| `make test` | Testes Rust, Vitest e Node: motor de blocos, invariantes, autorização, lógica pura do frontend e limites de segurança do shell desktop. |
+| `make test` | Testes Rust, Vitest e Node: motor de blocos, invariantes, autorização, lógica pura dos clientes web/mobile e limites de segurança do shell desktop. |
 | `make test-e2e` | Cypress com frontend, API, banco e WebSocket: persistência, permissões e colaboração. |
 
-No frontend, também estão disponíveis `npm test`, `npm run typecheck`, `npm run lint` e `npm run build`. No backend, use `cargo test`, `cargo fmt --check` e `cargo check`. Em `desktop/`, `npm test` compila o processo principal e valida allowlists de navegação e links externos.
+No frontend, também estão disponíveis `npm test`, `npm run typecheck`, `npm run lint` e `npm run build`. Em `mobile/`, `npm test` cobre transformações determinísticas e contratos HTTP, `npm run typecheck` valida os componentes nativos e `npx expo export --platform android` prova que o bundle Android fecha. No backend, use `cargo test`, `cargo fmt --check` e `cargo check`. Em `desktop/`, `npm test` compila o processo principal e valida allowlists de navegação e links externos.
 
 ## Abas do dashboard e IA
 

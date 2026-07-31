@@ -1,4 +1,10 @@
-import type { Block, Operation } from "@reason/core/contracts"
+import type {
+  Block,
+  CalendarProjectionEvent,
+  Operation,
+} from "@reason/core/contracts"
+
+export type { CalendarProjectionEvent } from "@reason/core/contracts"
 
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
@@ -49,7 +55,12 @@ export class ApiError extends Error {
 
 async function request<T>(
   path: string,
-  options: { method?: string; token?: string; body?: unknown } = {}
+  options: {
+    method?: string
+    token?: string
+    body?: unknown
+    signal?: AbortSignal
+  } = {}
 ): Promise<T> {
   const headers: Record<string, string> = {}
   if (options.token) headers.Authorization = `Bearer ${options.token}`
@@ -59,6 +70,7 @@ async function request<T>(
     method: options.method ?? "GET",
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   })
   if (response.status === 204) return undefined as T
 
@@ -94,4 +106,22 @@ export const api = {
       token,
       body: operation,
     }),
+  listCalendarEvents: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    range: { start: string; end: string; timezone: string },
+    signal?: AbortSignal
+  ) => {
+    const query = Object.entries(range)
+      .map(
+        ([key, value]) =>
+          `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+      )
+      .join("&")
+    return request<CalendarProjectionEvent[]>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/events?${query}`,
+      { token, signal }
+    )
+  },
 }

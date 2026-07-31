@@ -1,9 +1,12 @@
 import type {
   Block,
   BlockType,
+  CalendarProjectionEvent,
   Operation,
   OperationGroupMetadata,
 } from "@reason/core/contracts"
+
+export type { CalendarProjectionEvent } from "@reason/core/contracts"
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080"
@@ -199,25 +202,6 @@ export type GoogleCalendarSources = {
   configured: boolean
   sources: GoogleCalendarSource[]
   available: GoogleCalendarOption[]
-}
-
-export type CalendarProjectionEvent = {
-  id: string
-  origin: "google" | "materialized" | "manual"
-  row_id: string | null
-  source_id: string | null
-  google_event_id: string | null
-  title: string
-  start: string
-  end: string
-  time_zone: string | null
-  all_day: boolean
-  status: string
-  meet_url: string | null
-  location: string | null
-  google_url: string | null
-  color: string | null
-  private: boolean
 }
 
 export type GoogleCalendarEventLink = {

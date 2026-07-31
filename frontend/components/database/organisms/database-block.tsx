@@ -4,6 +4,7 @@ import type { Block, JsonValue } from "@reason/core/contracts"
 import {
   databaseProperties,
   databaseCalendarConfig,
+  databaseCalendarViewPatch,
   databaseStatuses,
   databaseView,
   type DatabaseProperty,
@@ -215,19 +216,9 @@ export function DatabaseBlock({
                 icon={<CalendarDaysIcon className="size-3.5" />}
                 label={t("Calendar")}
                 onClick={() =>
-                  onUpdateDatabase({
-                    view: "calendar",
-                    calendar: (() => {
-                      const datePropertyId =
-                        calendar.datePropertyId ??
-                        properties.find((property) => property.type === "date")
-                          ?.id
-                      return {
-                        ...(datePropertyId ? { datePropertyId } : {}),
-                        defaultMode: calendar.defaultMode,
-                      }
-                    })(),
-                  })
+                  onUpdateDatabase(
+                    databaseCalendarViewPatch(properties, calendar)
+                  )
                 }
               />
             ) : null}
