@@ -1,7 +1,7 @@
 "use client"
 
 import { Loader2Icon, LogOutIcon, Settings2Icon } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
 import { CalendarSourcePicker } from "./calendar-source-picker"
@@ -43,9 +43,10 @@ export function GoogleCalendarSettingsPanel({
     }
   }, [databaseId, token, workspaceId])
 
-  useEffect(() => {
-    if (open) void load()
-  }, [load, open])
+  const toggle = () => {
+    if (!open) void load()
+    setOpen((value) => !value)
+  }
 
   const connect = async () => {
     try {
@@ -67,7 +68,7 @@ export function GoogleCalendarSettingsPanel({
         className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium hover:bg-muted"
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
       >
         <Settings2Icon className="size-3.5" />
         Agendas

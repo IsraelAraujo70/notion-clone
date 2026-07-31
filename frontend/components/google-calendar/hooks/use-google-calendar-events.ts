@@ -10,6 +10,12 @@ export interface CalendarRange {
   timezone: string
 }
 
+interface CalendarRequestState {
+  key: string | null
+  events: CalendarProjectionEvent[]
+  error: Error | null
+}
+
 export function useGoogleCalendarEvents({
   token,
   workspaceId,
@@ -23,51 +29,72 @@ export function useGoogleCalendarEvents({
   range: CalendarRange
   enabled: boolean
 }) {
-  const [events, setEvents] = useState<CalendarProjectionEvent[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const [state, setState] = useState<CalendarRequestState>({
+    key: null,
+    events: [],
+    error: null,
+  })
   const [revision, setRevision] = useState(0)
 
   const refresh = useCallback(() => setRevision((value) => value + 1), [])
+  const requestKey =
+    enabled && token && workspaceId
+      ? JSON.stringify([
+          token,
+          workspaceId,
+          databaseId,
+          range.start,
+          range.end,
+          range.timezone,
+          revision,
+        ])
+      : null
 
   useEffect(() => {
-    if (!enabled || !token || !workspaceId) {
-      setEvents([])
-      setLoading(false)
-      setError(null)
-      return
-    }
+    if (!requestKey || !token || !workspaceId) return
     const controller = new AbortController()
-    setLoading(true)
-    setError(null)
     void api
       .listCalendarEvents(
         token,
         workspaceId,
         databaseId,
-        range,
+        {
+          start: range.start,
+          end: range.end,
+          timezone: range.timezone,
+        },
         controller.signal
       )
-      .then(setEvents)
-      .catch((cause: unknown) => {
+      .then((events) => {
         if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause : new Error("Request failed"))
+          setState({ key: requestKey, events, error: null })
         }
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) {
+          setState({
+            key: requestKey,
+            events: [],
+            error: cause instanceof Error ? cause : new Error("Request failed"),
+          })
+        }
       })
     return () => controller.abort()
   }, [
     databaseId,
-    enabled,
     range.end,
     range.start,
     range.timezone,
-    revision,
+    requestKey,
     token,
     workspaceId,
   ])
 
-  return { events, loading, error, refresh }
+  const current = requestKey !== null && state.key === requestKey
+  return {
+    events: current ? state.events : [],
+    loading: requestKey !== null && !current,
+    error: current ? state.error : null,
+    refresh,
+  }
 }
