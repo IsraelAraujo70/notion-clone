@@ -1,5 +1,5 @@
 COMPOSE ?= docker compose
-BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker
+BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker google-calendar-worker
 WEB_DIR ?= frontend
 MOBILE_DIR ?= mobile
 DESKTOP_DIR ?= desktop

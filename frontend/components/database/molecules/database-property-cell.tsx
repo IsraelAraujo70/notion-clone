@@ -3,6 +3,7 @@
 import type { Block, JsonValue } from "@reason/core/contracts"
 import {
   databaseRowStatus,
+  normalizeDatabaseDateValue,
   type DatabaseProperty,
   type DatabaseStatus,
 } from "@reason/core/database"
@@ -118,15 +119,22 @@ export function PropertyCell({
     )
   }
 
+  if (property.type === "date") {
+    return (
+      <DateCell
+        value={value}
+        readOnly={readOnly}
+        label={property.name}
+        onChange={onChange}
+        onCommit={onCommit}
+        coalesceKey={`database-row-property:${row.id}:${property.id}`}
+      />
+    )
+  }
+
   return (
     <input
-      type={
-        property.type === "number"
-          ? "number"
-          : property.type === "date"
-            ? "date"
-            : "text"
-      }
+      type={property.type === "number" ? "number" : "text"}
       aria-label={property.name}
       className="block w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
       disabled={readOnly}
@@ -136,17 +144,68 @@ export function PropertyCell({
       onChange={(event) => {
         const next = event.currentTarget.value
         onChange(
-          property.type === "date" && next === ""
-            ? null
-            : property.type === "number" && next !== ""
-              ? Number(next)
-              : next,
+          property.type === "number" && next !== "" ? Number(next) : next,
           `database-row-property:${row.id}:${property.id}`
         )
       }}
       onBlur={onCommit}
     />
   )
+}
+
+function DateCell({
+  value,
+  readOnly,
+  label,
+  onChange,
+  onCommit,
+  coalesceKey,
+}: {
+  value: JsonValue | undefined
+  readOnly: boolean
+  label: string
+  onChange: (value: JsonValue | null, coalesceKey?: string) => void
+  onCommit: () => void
+  coalesceKey: string
+}) {
+  const normalized = normalizeDatabaseDateValue(value)
+  const timed = normalized !== null && !normalized.allDay
+  const inputValue = timed
+    ? toLocalDateTime(normalized.startMs)
+    : (normalized?.start ?? "")
+  return (
+    <input
+      type={timed ? "datetime-local" : "date"}
+      aria-label={label}
+      className="block w-full min-w-0 bg-transparent text-sm outline-none"
+      disabled={readOnly}
+      value={inputValue}
+      onChange={(event) => {
+        const next = event.currentTarget.value
+        if (!next) return onChange(null, coalesceKey)
+        if (!timed || !normalized) return onChange(next, coalesceKey)
+        const nextStart = new Date(next).getTime()
+        const duration = normalized.endMs - normalized.startMs
+        onChange(
+          {
+            start: new Date(nextStart).toISOString(),
+            end: new Date(nextStart + duration).toISOString(),
+            timeZone:
+              normalized.timeZone ??
+              Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+          coalesceKey
+        )
+      }}
+      onBlur={onCommit}
+    />
+  )
+}
+
+function toLocalDateTime(timestamp: number) {
+  const date = new Date(timestamp)
+  const local = new Date(timestamp - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
 }
 
 function TagsCell({

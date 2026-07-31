@@ -4,6 +4,7 @@ pub mod clock;
 pub mod email;
 pub mod embedding;
 pub mod github;
+pub mod google_calendar;
 pub mod integration;
 pub mod page;
 pub mod storage;

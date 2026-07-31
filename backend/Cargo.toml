@@ -12,8 +12,13 @@ path = "src/bin/api.rs"
 name = "notion-clone-worker"
 path = "src/bin/worker.rs"
 
+[[bin]]
+name = "google-calendar-worker"
+path = "src/bin/google_calendar_worker.rs"
+
 [dependencies]
 async-trait = "0.1"
+aes-gcm = { version = "0.11", features = ["getrandom"] }
 argon2 = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 futures-util = "0.3"

@@ -3,6 +3,7 @@
 import type { Block, JsonValue } from "@reason/core/contracts"
 import {
   databaseProperties,
+  databaseCalendarConfig,
   databaseStatuses,
   databaseView,
   type DatabaseProperty,
@@ -10,10 +11,12 @@ import {
   type DatabaseStatus,
 } from "@reason/core/database"
 import { createId } from "@reason/core/id"
-import { Columns3Icon, Table2Icon } from "lucide-react"
+import { CalendarDaysIcon, Columns3Icon, Table2Icon } from "lucide-react"
 
 import { DatabaseBoard } from "@/components/database/molecules/database-board"
 import { DatabaseTable } from "@/components/database/molecules/database-table"
+import { DatabaseCalendar } from "@/components/database/organisms/database-calendar"
+import type { CalendarProjectionEvent } from "@/lib/api"
 import {
   NewDatabasePropertyMenu,
   propertyTypeName,
@@ -41,6 +44,11 @@ interface DatabaseBlockProps {
   ) => void
   onOpenRow?: (rowId: string) => void
   onCommit: () => void
+  integration?: {
+    token: string
+    workspaceId: string
+    onAddNotes: (event: CalendarProjectionEvent) => Promise<string>
+  }
 }
 
 const STATUS_COLORS: DatabaseStatus["color"][] = [
@@ -51,6 +59,9 @@ const STATUS_COLORS: DatabaseStatus["color"][] = [
   "red",
   "purple",
 ]
+
+const GOOGLE_CALENDAR_VIEW_ENABLED =
+  process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_ENABLED !== "false"
 
 export function DatabaseBlock({
   block,
@@ -63,12 +74,14 @@ export function DatabaseBlock({
   onDeleteProperty,
   onOpenRow,
   onCommit,
+  integration,
 }: DatabaseBlockProps) {
   const { t } = useI18n()
   const statuses = databaseStatuses(block.properties)
   const properties = databaseProperties(block.properties)
   const hasStatus = properties.some((property) => property.type === "status")
   const view = databaseView(block.properties)
+  const calendar = databaseCalendarConfig(block.properties)
   const title = propertyText(block, "title")
   const databaseRows = rows.filter((row) => row.type === "database_row")
 
@@ -195,6 +208,29 @@ export function DatabaseBlock({
               label={t("Table")}
               onClick={() => onUpdateDatabase({ view: "table" })}
             />
+            {GOOGLE_CALENDAR_VIEW_ENABLED ? (
+              <ViewButton
+                active={view === "calendar"}
+                disabled={readOnly}
+                icon={<CalendarDaysIcon className="size-3.5" />}
+                label={t("Calendar")}
+                onClick={() =>
+                  onUpdateDatabase({
+                    view: "calendar",
+                    calendar: (() => {
+                      const datePropertyId =
+                        calendar.datePropertyId ??
+                        properties.find((property) => property.type === "date")
+                          ?.id
+                      return {
+                        ...(datePropertyId ? { datePropertyId } : {}),
+                        defaultMode: calendar.defaultMode,
+                      }
+                    })(),
+                  })
+                }
+              />
+            ) : null}
             <ViewButton
               active={view === "board"}
               disabled={readOnly}
@@ -206,7 +242,17 @@ export function DatabaseBlock({
         </div>
       </header>
 
-      {view === "table" ? (
+      {view === "calendar" && GOOGLE_CALENDAR_VIEW_ENABLED ? (
+        <DatabaseCalendar
+          databaseId={block.id}
+          token={integration?.token}
+          workspaceId={integration?.workspaceId}
+          defaultMode={calendar.defaultMode}
+          readOnly={readOnly}
+          onOpenRow={onOpenRow}
+          onAddNotes={integration?.onAddNotes}
+        />
+      ) : view === "table" || view === "calendar" ? (
         <DatabaseTable
           rows={databaseRows}
           properties={properties}

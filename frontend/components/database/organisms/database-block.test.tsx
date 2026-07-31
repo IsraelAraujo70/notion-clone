@@ -8,7 +8,7 @@ import {
 } from "@reason/core/database"
 import { newBlock } from "@reason/core/engine/tree"
 
-function props(view: "table" | "board" = "table") {
+function props(view: "table" | "board" | "calendar" = "table") {
   const block = newBlock("database", {
     ...defaultDatabaseProperties(),
     title: "Tasks",
@@ -63,6 +63,21 @@ describe("DatabaseBlock", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Board" }))
     expect(editorProps.onUpdateDatabase).toHaveBeenCalledWith({ view: "board" })
+  })
+
+  it("switches to calendar with a deterministic date property", () => {
+    const editorProps = props()
+    editorProps.block.properties.schema = [
+      { id: "title", name: "Name", type: "title" },
+      { id: "meeting_at", name: "When", type: "date" },
+    ]
+    render(<DatabaseBlock {...editorProps} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }))
+    expect(editorProps.onUpdateDatabase).toHaveBeenCalledWith({
+      view: "calendar",
+      calendar: { datePropertyId: "meeting_at", defaultMode: "month" },
+    })
   })
 
   it("moves a card to another status through the board drop target", () => {
@@ -311,6 +326,31 @@ describe("DatabaseBlock", () => {
       { due: null },
       `database-row-property:${editorProps.rows[0].id}:due`
     )
+  })
+
+  it("renders and updates rich timed dates without losing their duration", () => {
+    const editorProps = props()
+    editorProps.block.properties.schema = [
+      { id: "title", name: "Name", type: "title" },
+      { id: "due", name: "Due", type: "date" },
+    ]
+    editorProps.rows[0]!.properties.due = {
+      start: "2026-07-31T14:00:00.000Z",
+      end: "2026-07-31T15:30:00.000Z",
+      timeZone: "UTC",
+    }
+    render(<DatabaseBlock {...editorProps} />)
+
+    const input = screen.getAllByLabelText("Due")[0] as HTMLInputElement
+    expect(input.type).toBe("datetime-local")
+    fireEvent.change(input, { target: { value: "2026-07-31T16:00" } })
+    const patch = editorProps.onUpdateRow.mock.calls.at(-1)?.[1] as {
+      due: { start: string; end: string; timeZone: string }
+    }
+    expect(Date.parse(patch.due.end) - Date.parse(patch.due.start)).toBe(
+      90 * 60 * 1000
+    )
+    expect(patch.due.timeZone).toBe("UTC")
   })
 
   it("gives board dates a full-width row below their label", () => {

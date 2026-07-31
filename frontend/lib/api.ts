@@ -165,6 +165,72 @@ export type BeginGitHubInstallationResponse = {
   expires_at: string
 }
 
+export type GoogleCalendarConnection = {
+  id: string
+  google_account_id: string
+  account_email: string
+  granted_scopes: string[]
+  connected_at: string
+  revoked_at: string | null
+}
+
+export type GoogleCalendarSource = {
+  id: string
+  workspace_id: string
+  database_block_id: string
+  connection_id: string
+  google_calendar_id: string
+  display_name: string
+  color: string | null
+  enabled: boolean
+  last_synced_at: string | null
+  last_error: string | null
+}
+
+export type GoogleCalendarOption = {
+  connection_id: string
+  google_calendar_id: string
+  display_name: string
+  color: string | null
+  primary: boolean
+}
+
+export type GoogleCalendarSources = {
+  configured: boolean
+  sources: GoogleCalendarSource[]
+  available: GoogleCalendarOption[]
+}
+
+export type CalendarProjectionEvent = {
+  id: string
+  origin: "google" | "materialized" | "manual"
+  row_id: string | null
+  source_id: string | null
+  google_event_id: string | null
+  title: string
+  start: string
+  end: string
+  time_zone: string | null
+  all_day: boolean
+  status: string
+  meet_url: string | null
+  location: string | null
+  google_url: string | null
+  color: string | null
+  private: boolean
+}
+
+export type GoogleCalendarEventLink = {
+  id: string
+  workspace_id: string
+  database_block_id: string
+  database_row_id: string
+  source_id: string
+  google_event_id: string
+  created_at: string
+  updated_at: string
+}
+
 export type PageSummary = {
   id: string
   title: string
@@ -468,6 +534,87 @@ export const api = {
     request<GitHubIntegrationStatus>(
       `/workspaces/${workspaceId}/integrations/github/installations`,
       { token }
+    ),
+  startGoogleCalendarOAuth: (
+    token: string,
+    workspaceId: string,
+    databaseId: string
+  ) =>
+    request<{ authorization_url: string; expires_at: string }>(
+      "/integrations/google-calendar/oauth/start",
+      {
+        method: "POST",
+        token,
+        body: { workspace_id: workspaceId, database_id: databaseId },
+      }
+    ),
+  listGoogleCalendarConnections: (token: string) =>
+    request<GoogleCalendarConnection[]>(
+      "/integrations/google-calendar/connections",
+      { token }
+    ),
+  disconnectGoogleCalendar: (token: string, connectionId: string) =>
+    request<void>(`/integrations/google-calendar/connections/${connectionId}`, {
+      method: "DELETE",
+      token,
+    }),
+  getGoogleCalendarSources: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    signal?: AbortSignal
+  ) =>
+    request<GoogleCalendarSources>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/sources`,
+      { token, signal }
+    ),
+  replaceGoogleCalendarSources: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    sources: { connection_id: string; google_calendar_id: string }[]
+  ) =>
+    request<GoogleCalendarSources>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/sources`,
+      { method: "PUT", token, body: { sources } }
+    ),
+  listCalendarEvents: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    range: { start: string; end: string; timezone: string },
+    signal?: AbortSignal
+  ) => {
+    const query = new URLSearchParams(range)
+    return request<CalendarProjectionEvent[]>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/events?${query}`,
+      { token, signal }
+    )
+  },
+  linkGoogleCalendarNotes: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    input: {
+      op_id: string
+      row_id: string
+      source_id: string
+      google_event_id: string
+    }
+  ) =>
+    request<GoogleCalendarEventLink>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/notes`,
+      { method: "POST", token, body: input }
+    ),
+  unlinkGoogleCalendarNotes: (
+    token: string,
+    workspaceId: string,
+    databaseId: string,
+    rowId: string
+  ) =>
+    request<void>(
+      `/workspaces/${workspaceId}/databases/${databaseId}/calendar/notes/${rowId}`,
+      { method: "DELETE", token }
     ),
   listGitHubPullRequests: (token: string, workspaceId: string) =>
     request<GitHubPullRequestLink[]>(

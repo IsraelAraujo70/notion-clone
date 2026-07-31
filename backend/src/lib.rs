@@ -17,6 +17,7 @@ pub fn app(pool: PgPool) -> Router {
         config.resend_from_email,
         config.s3,
         config.github,
+        config.google_calendar,
     );
     app_with_state(state)
 }

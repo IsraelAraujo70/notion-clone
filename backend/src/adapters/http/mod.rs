@@ -5,6 +5,7 @@ pub mod auth_routes;
 pub mod dto;
 pub mod error;
 pub mod github_routes;
+pub mod google_calendar_routes;
 pub mod integration_routes;
 pub mod media_routes;
 pub mod page_routes;

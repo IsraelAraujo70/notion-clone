@@ -36,7 +36,7 @@ import {
   hasInlineMarkdown,
   parseInlineMarkdown,
 } from "@reason/core/inline-markdown"
-import type { PresencePeer } from "@/lib/api"
+import { api, type CalendarProjectionEvent, type PresencePeer } from "@/lib/api"
 import { CodeBlockEditor, type CodeBlockEditorHandle } from "./CodeBlockEditor"
 import {
   MermaidBlockEditor,
@@ -145,6 +145,11 @@ interface BlockEditorProps {
   blockPresence?: Map<string, PresencePeer[]>
   /** Upload de imagem (presign + PUT). Devolve URL pública e key. */
   onUploadImage?: (file: File) => Promise<{ url: string; key: string }>
+  calendarIntegration?: {
+    token: string
+    workspaceId: string
+    onDrain: () => Promise<void>
+  }
 }
 
 const LIST_TYPES = new Set<BlockType>([
@@ -308,6 +313,7 @@ export function BlockEditor({
   readOnly = false,
   blockPresence,
   onUploadImage,
+  calendarIntegration,
 }: BlockEditorProps) {
   const { t } = useI18n()
   const slashItems = useSlashItems()
@@ -318,6 +324,9 @@ export function BlockEditor({
   const editableRefs = useRef(new Map<string, HTMLElement>())
   const codeEditorRefs = useRef(new Map<string, CodeBlockEditorHandle>())
   const mermaidEditorRefs = useRef(new Map<string, MermaidBlockEditorHandle>())
+  const pendingCalendarNotesRef = useRef(
+    new Map<string, { rowId: string; linkOpId: string }>()
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef(tree)
   useCrossBlockTextSelection(containerRef, Boolean(readOnly))
@@ -2259,6 +2268,91 @@ export function BlockEditor({
                   }
                   onOpenRow={onOpenPage}
                   onCommit={() => dispatchBatch([], { breakCoalescing: true })}
+                  integration={
+                    calendarIntegration
+                      ? {
+                          token: calendarIntegration.token,
+                          workspaceId: calendarIntegration.workspaceId,
+                          onAddNotes: async (
+                            event: CalendarProjectionEvent
+                          ) => {
+                            if (!event.source_id || !event.google_event_id) {
+                              throw new Error(
+                                "Google event identity is missing"
+                              )
+                            }
+                            const key = `${event.source_id}:${event.google_event_id}`
+                            let pending =
+                              pendingCalendarNotesRef.current.get(key)
+                            if (!pending) {
+                              pending = {
+                                rowId: createId(),
+                                linkOpId: createId(),
+                              }
+                              pendingCalendarNotesRef.current.set(key, pending)
+                              const row = newBlock(
+                                "database_row",
+                                { title: event.title, status: "not_started" },
+                                pending.rowId,
+                                workspaceId
+                              )
+                              const paragraph = newBlock(
+                                "paragraph",
+                                { text: "" },
+                                createId(),
+                                workspaceId
+                              )
+                              dispatchBatch(
+                                [
+                                  {
+                                    type: "insert_block",
+                                    opId: opId(),
+                                    block: row,
+                                    parentId: block.id,
+                                    index: block.content.length,
+                                  },
+                                  {
+                                    type: "insert_block",
+                                    opId: opId(),
+                                    block: paragraph,
+                                    parentId: row.id,
+                                    index: 0,
+                                  },
+                                ],
+                                { breakCoalescing: true }
+                              )
+                            }
+                            await calendarIntegration.onDrain()
+                            const link = await api.linkGoogleCalendarNotes(
+                              calendarIntegration.token,
+                              calendarIntegration.workspaceId,
+                              block.id,
+                              {
+                                op_id: pending.linkOpId,
+                                row_id: pending.rowId,
+                                source_id: event.source_id,
+                                google_event_id: event.google_event_id,
+                              }
+                            )
+                            pendingCalendarNotesRef.current.delete(key)
+                            if (link.database_row_id !== pending.rowId) {
+                              dispatchBatch(
+                                [
+                                  {
+                                    type: "delete_block",
+                                    opId: opId(),
+                                    blockId: pending.rowId,
+                                  },
+                                ],
+                                { breakCoalescing: true }
+                              )
+                              await calendarIntegration.onDrain()
+                            }
+                            return link.database_row_id
+                          },
+                        }
+                      : undefined
+                  }
                 />
               ) : block.type === "mermaid" ? (
                 <div onContextMenuCapture={(event) => event.stopPropagation()}>

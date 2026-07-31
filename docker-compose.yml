@@ -24,6 +24,11 @@ services:
       S3_ACCESS_KEY_ID: minioadmin
       S3_SECRET_ACCESS_KEY: minioadmin
       S3_PUBLIC_BASE_URL: http://localhost:9000/media
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GOOGLE_CALENDAR_ENCRYPTION_KEYS: ${GOOGLE_CALENDAR_ENCRYPTION_KEYS:-}
+      GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      GOOGLE_CALENDAR_WEBHOOK_URL: ${GOOGLE_CALENDAR_WEBHOOK_URL:-}
     ports:
       - "18080:8080"
     depends_on:
@@ -76,6 +81,27 @@ services:
     volumes:
       - worker_target:/app/target
 
+  google-calendar-worker:
+    build:
+      context: ./backend
+      target: dev
+    command: cargo run --bin google-calendar-worker
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GOOGLE_CALENDAR_ENCRYPTION_KEYS: ${GOOGLE_CALENDAR_ENCRYPTION_KEYS:-}
+      GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      GOOGLE_CALENDAR_WEBHOOK_URL: ${GOOGLE_CALENDAR_WEBHOOK_URL:-}
+      GOOGLE_CALENDAR_WORKER_INTERVAL_SECONDS: ${GOOGLE_CALENDAR_WORKER_INTERVAL_SECONDS:-10}
+      GOOGLE_CALENDAR_SYNC_BATCH_SIZE: ${GOOGLE_CALENDAR_SYNC_BATCH_SIZE:-20}
+    depends_on:
+      postgres:
+        condition: service_started
+    volumes:
+      - google_calendar_worker_target:/app/target
+
   # Local dev uses `make dev` → `npm run dev` on the host.
   # Keep this service only for optional containerized Next (profile docker-web).
   web:
@@ -86,6 +112,7 @@ services:
       target: dev
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:18080
+      NEXT_PUBLIC_GOOGLE_CALENDAR_ENABLED: ${NEXT_PUBLIC_GOOGLE_CALENDAR_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: 1
     ports:
       - "3000:3000"
@@ -178,6 +205,7 @@ services:
     command: npm run dev -- --hostname 0.0.0.0 --port 3000
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://api-e2e:8080
+      NEXT_PUBLIC_GOOGLE_CALENDAR_ENABLED: ${NEXT_PUBLIC_GOOGLE_CALENDAR_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: 1
     depends_on:
       - api-e2e
@@ -237,6 +265,7 @@ services:
 volumes:
   api_target:
   worker_target:
+  google_calendar_worker_target:
   api_e2e_target:
   worker_e2e_target:
   cypress_node_modules:
