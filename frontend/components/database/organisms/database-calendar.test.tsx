@@ -59,6 +59,19 @@ vi.mock(
 describe("DatabaseCalendar", () => {
   beforeEach(() => refresh.mockClear())
 
+  it("shows timed events with their start time in the month view", () => {
+    render(
+      <DatabaseCalendar
+        databaseId="database"
+        defaultMode="month"
+        readOnly={false}
+      />
+    )
+
+    expect(screen.getAllByText("14:00").length).toBeGreaterThan(0)
+    expect(screen.queryByText("00:00")).not.toBeInTheDocument()
+  })
+
   it("materializes a private Google event and opens the acknowledged row", async () => {
     const onAddNotes = vi.fn().mockResolvedValue("row-created")
     const onOpenRow = vi.fn()

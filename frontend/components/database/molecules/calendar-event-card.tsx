@@ -12,10 +12,13 @@ export function CalendarEventCard({
   onClick: () => void
 }) {
   const isGoogle = event.origin !== "manual"
+  const startTime = event.all_day
+    ? null
+    : formatTime(event.start, event.time_zone)
   return (
     <button
       type="button"
-      title={event.title}
+      title={startTime ? `${startTime} ${event.title}` : event.title}
       aria-label={event.title}
       data-origin={event.origin}
       className={`group flex w-full min-w-0 items-center gap-1.5 rounded text-left ring-primary outline-none focus-visible:ring-2 ${
@@ -32,27 +35,41 @@ export function CalendarEventCard({
       }}
       onClick={onClick}
     >
+      {startTime ? (
+        <time
+          dateTime={event.start}
+          className="shrink-0 text-[0.9em] font-semibold text-current/70 tabular-nums"
+        >
+          {startTime}
+        </time>
+      ) : null}
       {event.origin === "materialized" ? (
         <FileTextIcon className="size-3 shrink-0" aria-label="Com notas" />
       ) : event.meet_url ? (
         <VideoIcon className="size-3 shrink-0" aria-label="Google Meet" />
-      ) : null}
-      {!event.all_day && compact ? (
-        <span className="shrink-0 text-muted-foreground tabular-nums">
-          {formatTime(event.start)}
-        </span>
       ) : null}
       <span className="truncate font-medium">{event.title}</span>
     </button>
   )
 }
 
-function formatTime(value: string) {
+function formatTime(value: string, timeZone: string | null) {
   const date = new Date(value)
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(date)
-    : ""
+  if (!Number.isFinite(date.getTime())) return null
+
+  const options: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    ...(timeZone ? { timeZone } : {}),
+  }
+  try {
+    return new Intl.DateTimeFormat("pt-BR", options).format(date)
+  } catch {
+    return new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(date)
+  }
 }
