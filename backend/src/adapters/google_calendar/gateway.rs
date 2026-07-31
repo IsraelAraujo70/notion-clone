@@ -151,6 +151,12 @@ impl GoogleCalendarGateway for ReqwestGoogleCalendarGateway {
             .send()
             .await
             .map_err(|_| GoogleCalendarGatewayError::Unexpected)?;
+        if !response.status().is_success() {
+            tracing::warn!(
+                event = "google_calendar_oauth_token_exchange_failed",
+                status = %response.status(),
+            );
+        }
         let token = checked(response)
             .await?
             .json::<TokenResponse>()

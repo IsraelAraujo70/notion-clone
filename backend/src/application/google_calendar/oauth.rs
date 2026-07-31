@@ -21,6 +21,7 @@ use crate::application::workspaces::permissions::require_member;
 use crate::domain::google_calendar::{GOOGLE_CALENDAR_SCOPES, GoogleCalendarConnection};
 
 const OAUTH_STATE_TTL_MINUTES: i64 = 10;
+const GOOGLE_USERINFO_EMAIL_SCOPE: &str = "https://www.googleapis.com/auth/userinfo.email";
 
 #[derive(Debug, Clone)]
 pub struct StartGoogleOAuthInput {
@@ -143,12 +144,12 @@ impl GoogleCalendarOAuthUseCases {
             .exchange_code(code, &verifier, &self.redirect_uri)
             .await
             .map_err(map_gateway_error)?;
-        if !GOOGLE_CALENDAR_SCOPES.iter().all(|required| {
-            credentials
-                .granted_scopes
-                .iter()
-                .any(|granted| granted == required)
-        }) {
+        let missing_scopes = missing_required_scopes(&credentials.granted_scopes);
+        if !missing_scopes.is_empty() {
+            tracing::warn!(
+                event = "google_calendar_oauth_scope_validation_failed",
+                ?missing_scopes,
+            );
             return Err(AppError::GoogleCalendarOAuthInvalid);
         }
         let encrypted = cipher
@@ -213,6 +214,19 @@ fn random_url_token(bytes: usize) -> String {
     URL_SAFE_NO_PAD.encode(value)
 }
 
+fn missing_required_scopes(granted_scopes: &[String]) -> Vec<&'static str> {
+    GOOGLE_CALENDAR_SCOPES
+        .iter()
+        .copied()
+        .filter(|required| {
+            !granted_scopes.iter().any(|granted| {
+                granted == required
+                    || (*required == "email" && granted == GOOGLE_USERINFO_EMAIL_SCOPE)
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn sha256_hex(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
@@ -238,5 +252,31 @@ mod tests {
         assert!(first.len() >= 43);
         assert_eq!(sha256_hex("state").len(), 64);
         assert_eq!(sha256_hex("state"), sha256_hex("state"));
+    }
+
+    #[test]
+    fn accepts_google_normalized_email_scope() {
+        let granted_scopes = vec![
+            "openid".to_string(),
+            GOOGLE_USERINFO_EMAIL_SCOPE.to_string(),
+            "https://www.googleapis.com/auth/calendar.calendarlist.readonly".to_string(),
+            "https://www.googleapis.com/auth/calendar.events.readonly".to_string(),
+        ];
+
+        assert!(missing_required_scopes(&granted_scopes).is_empty());
+    }
+
+    #[test]
+    fn reports_a_missing_calendar_scope() {
+        let granted_scopes = vec![
+            "openid".to_string(),
+            "email".to_string(),
+            "https://www.googleapis.com/auth/calendar.calendarlist.readonly".to_string(),
+        ];
+
+        assert_eq!(
+            missing_required_scopes(&granted_scopes),
+            vec!["https://www.googleapis.com/auth/calendar.events.readonly"]
+        );
     }
 }
