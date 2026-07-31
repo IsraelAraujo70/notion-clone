@@ -162,11 +162,15 @@ impl GoogleCalendarGateway for ReqwestGoogleCalendarGateway {
             .json::<TokenResponse>()
             .await
             .map_err(|_| GoogleCalendarGatewayError::Unexpected)?;
-        let refresh_token = token
-            .refresh_token
-            .filter(|value| !value.is_empty())
-            .ok_or(GoogleCalendarGatewayError::Unauthorized)?;
+        let refresh_token = match token.refresh_token.filter(|value| !value.is_empty()) {
+            Some(refresh_token) => refresh_token,
+            None => {
+                tracing::warn!(event = "google_calendar_oauth_refresh_token_missing");
+                return Err(GoogleCalendarGatewayError::Unauthorized);
+            }
+        };
         if token.access_token.is_empty() {
+            tracing::warn!(event = "google_calendar_oauth_access_token_missing");
             return Err(GoogleCalendarGatewayError::Unauthorized);
         }
         let userinfo = checked(
@@ -182,6 +186,7 @@ impl GoogleCalendarGateway for ReqwestGoogleCalendarGateway {
         .await
         .map_err(|_| GoogleCalendarGatewayError::Unexpected)?;
         if userinfo.sub.is_empty() || !userinfo.email.contains('@') {
+            tracing::warn!(event = "google_calendar_oauth_userinfo_invalid");
             return Err(GoogleCalendarGatewayError::Unauthorized);
         }
         let granted_scopes = token

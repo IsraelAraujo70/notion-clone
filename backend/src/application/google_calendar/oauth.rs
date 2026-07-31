@@ -150,6 +150,9 @@ impl GoogleCalendarOAuthUseCases {
                 event = "google_calendar_oauth_scope_validation_failed",
                 ?missing_scopes,
             );
+            if gateway.revoke(&credentials.refresh_token).await.is_err() {
+                tracing::warn!(event = "google_calendar_oauth_invalid_grant_cleanup_failed");
+            }
             return Err(AppError::GoogleCalendarOAuthInvalid);
         }
         let encrypted = cipher
