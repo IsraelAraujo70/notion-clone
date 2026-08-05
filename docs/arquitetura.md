@@ -21,7 +21,7 @@ O editor mantém uma árvore local e aplica cada operação antes da resposta da
 
 ## Mobile
 
-`mobile/` contém o cliente Expo/React Native, inicialmente direcionado ao Android. Sessões ficam no SecureStore e snapshots de workspaces e páginas ficam em SQLite para leitura sem conexão. A primeira versão é online-first: operações de escrita não são aceitas offline até existir uma fila persistente com reconciliação explícita. O editor nativo aplica texto, título, checklist, inserção, duplicação, transformação, movimento hierárquico e exclusão otimisticamente pela mesma fila de operações da web.
+`mobile/` contém o cliente Expo/React Native, inicialmente direcionado ao Android. Sessões ficam no SecureStore e snapshots de workspaces e páginas ficam em SQLite para leitura sem conexão. A primeira versão é online-first: operações de escrita não são aceitas offline até existir uma fila persistente com reconciliação explícita. O editor nativo aplica texto, título, checklist, inserção, duplicação, transformação, movimento hierárquico e exclusão otimisticamente pela mesma fila de operações da web. Databases oferecem Tabela, Kanban e uma Agenda nativa que consulta a mesma projeção autorizada de eventos manuais e Google Calendar usada pelo cliente web.
 
 A navegação principal usa uma stack nativa plana para lista e editor. Fluxos transitórios, como aparência, usam `formSheet` no iOS e uma tela regular no Android. Componentes de domínio ficam em `mobile/features/`; o menu aberto por long press é uma superfície global sobre o editor e não altera a rota ativa da página.
 

@@ -384,6 +384,8 @@ export default function PageScreen() {
                 <DatabaseBlock
                   block={block}
                   rows={databaseRows}
+                  token={token!}
+                  workspaceId={workspaceId}
                   editable={canEdit}
                   selected={menuBlockId === block.id}
                   onLongPress={() => openBlockMenu(block.id)}

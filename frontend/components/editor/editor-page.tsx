@@ -811,6 +811,16 @@ export function EditorPage({ pageId }: { pageId: string }) {
               }
               readOnly={!canWrite}
               blockPresence={blockPresence}
+              calendarIntegration={
+                token && activeWorkspaceId
+                  ? {
+                      token,
+                      workspaceId: activeWorkspaceId,
+                      onDrain: () =>
+                        queueRef.current?.drained() ?? Promise.resolve(),
+                    }
+                  : undefined
+              }
               onUploadImage={
                 token && activeWorkspaceId && canWrite
                   ? async (file) => {

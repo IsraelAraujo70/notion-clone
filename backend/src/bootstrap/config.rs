@@ -10,6 +10,11 @@ pub const DEFAULT_AI_CHAT_MODEL: &str = "openai/gpt-5.6-luna";
 pub const DEFAULT_AI_TITLE_MODEL: &str = "deepseek/deepseek-v4-flash";
 pub const DEFAULT_AI_EMBEDDING_MODEL: &str = "openai/text-embedding-3-large";
 pub const DEFAULT_GITHUB_API_URL: &str = "https://api.github.com";
+pub const DEFAULT_GOOGLE_AUTHORIZATION_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+pub const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+pub const DEFAULT_GOOGLE_REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
+pub const DEFAULT_GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
+pub const DEFAULT_GOOGLE_CALENDAR_API_URL: &str = "https://www.googleapis.com/calendar/v3";
 
 #[derive(Clone)]
 pub struct GitHubConfig {
@@ -35,6 +40,38 @@ impl std::fmt::Debug for GitHubConfig {
     }
 }
 
+#[derive(Clone)]
+pub struct GoogleCalendarConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub encryption_keys: String,
+    pub redirect_uri: String,
+    pub webhook_url: String,
+    pub authorization_url: String,
+    pub token_url: String,
+    pub revoke_url: String,
+    pub userinfo_url: String,
+    pub calendar_api_url: String,
+}
+
+impl std::fmt::Debug for GoogleCalendarConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GoogleCalendarConfig")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"[redacted]")
+            .field("encryption_keys", &"[redacted]")
+            .field("redirect_uri", &self.redirect_uri)
+            .field("webhook_url", &self.webhook_url)
+            .field("authorization_url", &self.authorization_url)
+            .field("token_url", &self.token_url)
+            .field("revoke_url", &self.revoke_url)
+            .field("userinfo_url", &self.userinfo_url)
+            .field("calendar_api_url", &self.calendar_api_url)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub host: String,
@@ -45,6 +82,7 @@ pub struct Config {
     pub resend_from_email: String,
     pub s3: Option<S3Config>,
     pub github: Option<GitHubConfig>,
+    pub google_calendar: Option<GoogleCalendarConfig>,
 }
 
 impl Config {
@@ -60,6 +98,7 @@ impl Config {
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
             s3: s3_from_env(),
             github: github_from_env(),
+            google_calendar: google_calendar_from_env(),
         }
     }
 
@@ -75,12 +114,52 @@ impl Config {
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
             s3: s3_from_env(),
             github: github_from_env(),
+            google_calendar: google_calendar_from_env(),
         }
     }
 
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+}
+
+fn google_calendar_from_env() -> Option<GoogleCalendarConfig> {
+    let client_id = env_string("GOOGLE_CALENDAR_CLIENT_ID");
+    let client_secret = env_string("GOOGLE_CALENDAR_CLIENT_SECRET");
+    let encryption_keys = env_string("GOOGLE_CALENDAR_ENCRYPTION_KEYS");
+    let redirect_uri = env_string("GOOGLE_CALENDAR_REDIRECT_URI");
+    let webhook_url = env_string("GOOGLE_CALENDAR_WEBHOOK_URL");
+    if client_id.is_none()
+        && client_secret.is_none()
+        && encryption_keys.is_none()
+        && redirect_uri.is_none()
+        && webhook_url.is_none()
+    {
+        return None;
+    }
+    Some(GoogleCalendarConfig {
+        client_id: client_id
+            .expect("GOOGLE_CALENDAR_CLIENT_ID must be set when Google Calendar is configured"),
+        client_secret: client_secret
+            .expect("GOOGLE_CALENDAR_CLIENT_SECRET must be set when Google Calendar is configured"),
+        encryption_keys: encryption_keys.expect(
+            "GOOGLE_CALENDAR_ENCRYPTION_KEYS must be set when Google Calendar is configured",
+        ),
+        redirect_uri: redirect_uri
+            .expect("GOOGLE_CALENDAR_REDIRECT_URI must be set when Google Calendar is configured"),
+        webhook_url: webhook_url
+            .expect("GOOGLE_CALENDAR_WEBHOOK_URL must be set when Google Calendar is configured"),
+        authorization_url: env::var("GOOGLE_OAUTH_AUTHORIZATION_URL")
+            .unwrap_or_else(|_| DEFAULT_GOOGLE_AUTHORIZATION_URL.into()),
+        token_url: env::var("GOOGLE_OAUTH_TOKEN_URL")
+            .unwrap_or_else(|_| DEFAULT_GOOGLE_TOKEN_URL.into()),
+        revoke_url: env::var("GOOGLE_OAUTH_REVOKE_URL")
+            .unwrap_or_else(|_| DEFAULT_GOOGLE_REVOKE_URL.into()),
+        userinfo_url: env::var("GOOGLE_OAUTH_USERINFO_URL")
+            .unwrap_or_else(|_| DEFAULT_GOOGLE_USERINFO_URL.into()),
+        calendar_api_url: env::var("GOOGLE_CALENDAR_API_URL")
+            .unwrap_or_else(|_| DEFAULT_GOOGLE_CALENDAR_API_URL.into()),
+    })
 }
 
 fn github_from_env() -> Option<GitHubConfig> {

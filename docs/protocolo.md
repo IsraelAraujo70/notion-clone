@@ -15,9 +15,11 @@ Tudo que o usuário escreve é um bloco. Página também é bloco e pode conter 
 
 Tipos atuais: `page`, `paragraph`, `heading1`, `heading2`, `heading3`, `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`, `quote`, `code`, `callout`, `divider`, `image`, `mermaid`, `database` e `database_row`. As propriedades são JSON e variam por tipo. Blocos `mermaid` armazenam a fonte do diagrama em `properties.text`.
 
-Um bloco `database` armazena `title`, `view` (`table` ou `board`), a lista dinâmica `statuses` e o `schema` de propriedades, incluindo nome, tipo, largura visual e, para `tags`, seu catálogo `options`. Os tipos atuais de propriedade são `title`, `text`, `number`, `checkbox`, `status`, `tags` e `date`. Valores de `tags` são listas de strings e valores de `date` são strings ISO no formato `YYYY-MM-DD`. O schema e os valores das linhas usam o `JSONB` de `properties`; não existe uma tabela paralela por propriedade. Suas linhas são blocos filhos `database_row`, ordenados pelo `content` do database, com `title`, `status` e valores adicionais indexados pelo id da propriedade. Tabela e Kanban são apenas visualizações da mesma lista de linhas; trocar a visualização não duplica conteúdo. Cada linha pode conter blocos e ser aberta como uma subpágina, mas continua pertencendo diretamente ao database.
+Um bloco `database` armazena `title`, `view` (`table`, `board` ou `calendar`), a lista dinâmica `statuses` e o `schema` de propriedades, incluindo nome, tipo, largura visual e, para `tags`, seu catálogo `options`. Os tipos atuais de propriedade são `title`, `text`, `number`, `checkbox`, `status`, `tags` e `date`. Valores de `tags` são listas de strings. Um valor de `date` pode continuar como string ISO `YYYY-MM-DD`, interpretada como dia inteiro, ou usar `{ start, end?, timeZone?, allDay? }`; valores com horário usam RFC3339 com `Z` ou offset explícito. O objeto opcional `calendar` do database contém `datePropertyId` e `defaultMode` (`month` ou `week`). O schema e os valores das linhas usam o `JSONB` de `properties`; não existe uma tabela paralela por propriedade. Suas linhas são blocos filhos `database_row`, ordenados pelo `content` do database, com `title`, `status` e valores adicionais indexados pelo id da propriedade. Tabela, Kanban e calendário são apenas visualizações da mesma lista de linhas; trocar a visualização não duplica conteúdo. Cada linha pode conter blocos e ser aberta como uma subpágina, mas continua pertencendo diretamente ao database.
 
 Vínculos com pull requests são projeções externas associadas a um bloco `page` ou `database_row`; não são propriedades do bloco e não criam outro caminho de escrita de conteúdo. Instalações, snapshots e vínculos ficam em tabelas próprias com `workspace_id`. Arquivos e patches são buscados sob demanda no GitHub. Criar ou remover o vínculo não consome `seq`, enquanto qualquer alteração futura no conteúdo da nota continua obrigada a usar as operações deste protocolo. GitHub Issues e sincronização automática de status ainda não fazem parte do protocolo.
+
+Eventos do Google Calendar seguem a mesma fronteira. A conta e o cache pertencem ao usuário; eventos não materializados não são blocos e só podem ser projetados para o dono da conexão. `google_calendar_sources` seleciona agendas por usuário e database sem gravá-las no JSON compartilhado. Ao adicionar notas, o cliente primeiro cria uma `database_row` com `insert_block` e aguarda seu ACK; depois cria um vínculo idempotente com a ocorrência externa. O vínculo compartilha somente o snapshot mínimo de título, horário e links da reunião. Desconectar a conta apaga credenciais e projeções privadas, mas não apaga a linha, seus blocos ou o snapshot materializado. Sincronização, webhook e cache nunca escrevem blocos nem consomem `seq`.
 
 Blocos textuais, exceto `code` e `mermaid`, podem armazenar Markdown inline em `properties.text`. Os clientes preservam a fonte e renderizam somente o subconjunto `**negrito**`, `*itálico*`, `~riscado~`/`~~riscado~~` e `` `código` ``. Uma barra invertida escapa marcadores; delimitadores incompletos permanecem literais. HTML, links e imagens não são interpretados.
 
@@ -25,16 +27,22 @@ Blocos textuais, exceto `code` e `mermaid`, podem armazenar Markdown inline em `
 
 Toda operação possui um `opId` UUID gerado pelo cliente.
 
-| Tipo | Efeito |
-| --- | --- |
-| `insert_block` | Insere um bloco novo, sem filhos, em `parentId` e `index`. |
-| `update_block` | Aplica um patch nas propriedades e pode alterar `blockType`. `null` remove uma propriedade. |
-| `move_block` | Remove o bloco do pai atual e o insere em `newParentId` e `index`. |
-| `delete_block` | Move uma subárvore viva para a lixeira. |
-| `restore_block` | Restaura uma raiz da lixeira com seus descendentes. |
+| Tipo            | Efeito                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `insert_block`  | Insere um bloco novo, sem filhos, em `parentId` e `index`.                                  |
+| `update_block`  | Aplica um patch nas propriedades e pode alterar `blockType`. `null` remove uma propriedade. |
+| `move_block`    | Remove o bloco do pai atual e o insere em `newParentId` e `index`.                          |
+| `delete_block`  | Move uma subárvore viva para a lixeira.                                                     |
+| `restore_block` | Restaura uma raiz da lixeira com seus descendentes.                                         |
 
 ```json
-{"type":"update_block","opId":"uuid","blockId":"uuid","properties":{"text":"Título"},"propVersions":{"text":3}}
+{
+  "type": "update_block",
+  "opId": "uuid",
+  "blockId": "uuid",
+  "properties": { "text": "Título" },
+  "propVersions": { "text": 3 }
+}
 ```
 
 O corpo de `insert_block` inclui um snapshot do bloco, mas o servidor substitui `workspaceId` e `parentId` pelos valores autorizados. Filhos devem ser criados em operações posteriores.

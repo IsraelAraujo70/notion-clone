@@ -82,6 +82,31 @@ impl IntoResponse for HttpError {
                 "github_unavailable",
                 "GitHub could not satisfy the request",
             ),
+            AppError::GoogleCalendarNotConfigured => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "google_calendar_not_configured",
+                "Google Calendar integration is not configured",
+            ),
+            AppError::GoogleCalendarConnectionNotFound => (
+                StatusCode::NOT_FOUND,
+                "google_calendar_connection_not_found",
+                "Google Calendar connection was not found",
+            ),
+            AppError::GoogleCalendarEventNotFound => (
+                StatusCode::NOT_FOUND,
+                "google_calendar_event_not_found",
+                "Google Calendar event was not found",
+            ),
+            AppError::GoogleCalendarOAuthInvalid => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "google_calendar_oauth_invalid",
+                "Google Calendar authorization could not be completed",
+            ),
+            AppError::GoogleCalendarUnavailable => (
+                StatusCode::BAD_GATEWAY,
+                "google_calendar_unavailable",
+                "Google Calendar could not satisfy the request",
+            ),
             AppError::AiUnavailable => (
                 StatusCode::BAD_GATEWAY,
                 "ai_unavailable",

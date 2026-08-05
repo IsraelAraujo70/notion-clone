@@ -6,10 +6,13 @@ use crate::adapters::ai::{NoopAiProvider, openrouter::OpenRouterAiProvider};
 use crate::adapters::email::noop::NoopEmailSender;
 use crate::adapters::email::resend::ResendEmailSender;
 use crate::adapters::github::ReqwestGitHubGateway;
+use crate::adapters::google_calendar::{
+    AesGcmSecretCipher, GoogleCalendarEndpoints, ReqwestGoogleCalendarGateway,
+};
 use crate::adapters::postgres::{
     PostgresAiRepository, PostgresAuthRepository, PostgresEmbeddingRepository,
-    PostgresGitHubRepository, PostgresIntegrationRepository, PostgresPageRepository,
-    PostgresWorkspaceRepository,
+    PostgresGitHubRepository, PostgresGoogleCalendarRepository, PostgresIntegrationRepository,
+    PostgresPageRepository, PostgresWorkspaceRepository,
 };
 use crate::adapters::storage::{NoopObjectStorage, S3Config, S3ObjectStorage};
 use crate::application::ai::AiUseCases;
@@ -20,6 +23,9 @@ use crate::application::auth::{
 };
 use crate::application::embeddings::{DEFAULT_EMBEDDING_MODEL, SemanticSearchUseCase};
 use crate::application::github::GitHubUseCases;
+use crate::application::google_calendar::{
+    GoogleCalendarOAuthUseCases, GoogleCalendarSyncUseCase, GoogleCalendarUseCases,
+};
 use crate::application::integrations::IntegrationUseCases;
 use crate::application::pages::{
     ApplyOperationUseCase, GetImageUseCase, GetPageUseCase, ListOperationsUseCase,
@@ -32,6 +38,9 @@ use crate::application::ports::clock::{Clock, SystemClock};
 use crate::application::ports::email::EmailSender;
 use crate::application::ports::embedding::SemanticEmbeddingRepository;
 use crate::application::ports::github::{GitHubGateway, GitHubRepository};
+use crate::application::ports::google_calendar::{
+    GoogleCalendarGateway, GoogleCalendarRepository, SecretCipher,
+};
 use crate::application::ports::integration::IntegrationRepository;
 use crate::application::ports::page::PageRepository;
 use crate::application::ports::storage::ObjectStorage;
@@ -42,7 +51,7 @@ use crate::application::workspaces::{
     ListInvitesUseCase, ListMembersUseCase, ListWorkspacesUseCase, RemoveMemberUseCase,
     RevokeInviteUseCase, UpdateMemberRoleUseCase,
 };
-use crate::bootstrap::config::GitHubConfig;
+use crate::bootstrap::config::{GitHubConfig, GoogleCalendarConfig};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -83,6 +92,9 @@ pub struct AppState {
     pub semantic_search: SemanticSearchUseCase,
     pub integrations: IntegrationUseCases,
     pub github: GitHubUseCases,
+    pub google_calendar_oauth: GoogleCalendarOAuthUseCases,
+    pub google_calendar: GoogleCalendarUseCases,
+    pub google_calendar_sync: GoogleCalendarSyncUseCase,
     pub ai: AiUseCases,
 }
 
@@ -94,6 +106,7 @@ impl AppState {
         resend_from_email: String,
         s3: Option<S3Config>,
         github_config: Option<GitHubConfig>,
+        google_calendar_config: Option<GoogleCalendarConfig>,
     ) -> Self {
         let auth_repository: Arc<dyn AuthRepository> =
             Arc::new(PostgresAuthRepository::new(pool.clone()));
@@ -130,6 +143,8 @@ impl AppState {
             Arc::new(PostgresIntegrationRepository::new(pool.clone()));
         let github_repository: Arc<dyn GitHubRepository> =
             Arc::new(PostgresGitHubRepository::new(pool.clone()));
+        let google_calendar_repository: Arc<dyn GoogleCalendarRepository> =
+            Arc::new(PostgresGoogleCalendarRepository::new(pool.clone()));
         let github_gateway: Option<Arc<dyn GitHubGateway>> = github_config.map(|config| {
             Arc::new(
                 ReqwestGitHubGateway::new(
@@ -143,6 +158,41 @@ impl AppState {
                 .expect("GITHUB_PRIVATE_KEY must be a valid RSA PEM key"),
             ) as Arc<dyn GitHubGateway>
         });
+        let (
+            google_calendar_gateway,
+            google_calendar_cipher,
+            google_redirect_uri,
+            google_webhook_url,
+        ): (
+            Option<Arc<dyn GoogleCalendarGateway>>,
+            Option<Arc<dyn SecretCipher>>,
+            String,
+            String,
+        ) = match google_calendar_config {
+            Some(config) => {
+                let cipher = AesGcmSecretCipher::from_encoded_keys(&config.encryption_keys)
+                    .expect("GOOGLE_CALENDAR_ENCRYPTION_KEYS must contain valid 32-byte keys");
+                let gateway = ReqwestGoogleCalendarGateway::new(
+                    config.client_id,
+                    config.client_secret,
+                    GoogleCalendarEndpoints {
+                        authorization_url: config.authorization_url,
+                        token_url: config.token_url,
+                        revoke_url: config.revoke_url,
+                        userinfo_url: config.userinfo_url,
+                        calendar_api_url: config.calendar_api_url,
+                    },
+                )
+                .expect("Google Calendar endpoint URLs must be valid");
+                (
+                    Some(Arc::new(gateway)),
+                    Some(Arc::new(cipher)),
+                    config.redirect_uri,
+                    config.webhook_url,
+                )
+            }
+            None => (None, None, String::new(), String::new()),
+        };
         let embedding_model =
             std::env::var("AI_EMBEDDING_MODEL").unwrap_or_else(|_| DEFAULT_EMBEDDING_MODEL.into());
         let semantic_search =
@@ -252,8 +302,31 @@ impl AppState {
             github: GitHubUseCases::new(
                 github_repository,
                 github_gateway,
+                workspace_repository.clone(),
+                clock.clone(),
+            ),
+            google_calendar_oauth: GoogleCalendarOAuthUseCases::new(
+                google_calendar_repository.clone(),
+                google_calendar_gateway.clone(),
+                google_calendar_cipher.clone(),
+                workspace_repository.clone(),
+                clock.clone(),
+                google_redirect_uri,
+                public_web_url,
+            ),
+            google_calendar: GoogleCalendarUseCases::new(
+                google_calendar_repository.clone(),
+                google_calendar_gateway.clone(),
+                google_calendar_cipher.clone(),
                 workspace_repository,
+                clock.clone(),
+            ),
+            google_calendar_sync: GoogleCalendarSyncUseCase::new(
+                google_calendar_repository,
+                google_calendar_gateway,
+                google_calendar_cipher,
                 clock,
+                google_webhook_url,
             ),
             ai,
         }

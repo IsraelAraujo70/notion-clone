@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -36,10 +37,10 @@
     "react-native-webview": "13.15.0"
   },
   "devDependencies": {
-    "@expo/metro-config": "^54.0.17",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.9",
     "react-refresh": "0.14.2",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^4.1.9"
   }
 }

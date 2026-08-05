@@ -1,5 +1,6 @@
 import { aiPt } from "@/lib/i18n/locales/pt/ai"
 import { authPt } from "@/lib/i18n/locales/pt/auth"
+import { calendarPt } from "@/lib/i18n/locales/pt/calendar"
 import { commonPt } from "@/lib/i18n/locales/pt/common"
 import { editorPt } from "@/lib/i18n/locales/pt/editor"
 import { landingPt } from "@/lib/i18n/locales/pt/landing"
@@ -10,6 +11,7 @@ import { workspacePt } from "@/lib/i18n/locales/pt/workspace"
 export const ptMessages = {
   ...commonPt,
   ...authPt,
+  ...calendarPt,
   ...landingPt,
   ...workspacePt,
   ...pagesPt,

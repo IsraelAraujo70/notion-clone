@@ -5,8 +5,8 @@ use axum::routing::{delete, get, patch, post};
 use tower_http::trace::TraceLayer;
 
 use crate::adapters::http::{
-    ai_routes, app_routes, auth_routes, github_routes, integration_routes, media_routes,
-    page_routes, workspace_routes, ws_routes,
+    ai_routes, app_routes, auth_routes, github_routes, google_calendar_routes, integration_routes,
+    media_routes, page_routes, workspace_routes, ws_routes,
 };
 use crate::bootstrap::config::CorsConfig;
 use crate::bootstrap::health::{health, root};
@@ -63,6 +63,42 @@ pub fn build_router(state: AppState, cors: CorsConfig) -> Router {
         .route(
             "/integrations/mcp/tokens/{token_id}",
             delete(integration_routes::revoke_token),
+        )
+        .route(
+            "/integrations/google-calendar/oauth/start",
+            post(google_calendar_routes::start_oauth),
+        )
+        .route(
+            "/integrations/google-calendar/oauth/callback",
+            get(google_calendar_routes::oauth_callback),
+        )
+        .route(
+            "/integrations/google-calendar/connections",
+            get(google_calendar_routes::list_connections),
+        )
+        .route(
+            "/integrations/google-calendar/connections/{connection_id}",
+            delete(google_calendar_routes::disconnect),
+        )
+        .route(
+            "/integrations/google-calendar/webhook",
+            post(google_calendar_routes::webhook),
+        )
+        .route(
+            "/workspaces/{workspace_id}/databases/{database_id}/calendar/sources",
+            get(google_calendar_routes::list_sources).put(google_calendar_routes::replace_sources),
+        )
+        .route(
+            "/workspaces/{workspace_id}/databases/{database_id}/calendar/events",
+            get(google_calendar_routes::list_events),
+        )
+        .route(
+            "/workspaces/{workspace_id}/databases/{database_id}/calendar/notes",
+            post(google_calendar_routes::link_notes),
+        )
+        .route(
+            "/workspaces/{workspace_id}/databases/{database_id}/calendar/notes/{row_id}",
+            delete(google_calendar_routes::unlink_notes),
         )
         .route(
             "/workspaces/{workspace_id}/integrations/github/installations",

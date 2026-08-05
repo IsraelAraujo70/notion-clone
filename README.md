@@ -15,6 +15,7 @@ Reason is a collaborative workspace for writing and organizing block-based docum
 - Reviewable AI writes with typed operation previews, `Allow once` or conversation-scoped approval, persistent conversation selection, and grouped tool/change activity in the chat timeline.
 - Authenticated MCP access for agents to read, search, and edit blocks, retrieve images, and link pull requests with separate GitHub scopes.
 - Inline databases with JSONB-backed dynamic properties, resizable columns, shared table/Kanban views, and rows that open as subpages.
+- Web and Android database calendar views with manual date rows and private read-only Google Calendar projections that can be materialized as shared meeting notes.
 - Desktop page tabs with local per-user/workspace persistence, deep-link restoration, drag reordering, and a fixed AI tab; mobile keeps single-page navigation.
 - GitHub App installation per workspace, pull request links on pages and database rows, and a responsive read-only review workspace with real changed files and unified/split diffs.
 
@@ -98,4 +99,5 @@ See [docs/testes.md](docs/testes.md) for details about what each gate covers.
 - [API](docs/api.md)
 - [MCP](docs/mcp.md)
 - [Tests and gates](docs/testes.md)
+- [Google Calendar setup](docs/google-calendar.md)
 - [Desktop Electron ADR](docs/adr/desktop-electron.md)

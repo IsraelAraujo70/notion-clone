@@ -1,5 +1,5 @@
 COMPOSE ?= docker compose
-BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker
+BACKEND_SERVICES ?= postgres minio minio-create-bucket api worker google-calendar-worker
 WEB_DIR ?= frontend
 MOBILE_DIR ?= mobile
 DESKTOP_DIR ?= desktop
@@ -142,7 +142,7 @@ test-web:
 	cd $(WEB_DIR) && npm test
 
 test-mobile:
-	cd $(MOBILE_DIR) && npm run typecheck
+	cd $(MOBILE_DIR) && npm test && npm run typecheck
 
 test-desktop:
 	cd $(DESKTOP_DIR) && npm test

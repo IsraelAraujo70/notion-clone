@@ -1,6 +1,8 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons"
 import type { Block, JsonValue } from "@reason/core/contracts"
 import {
+  databaseCalendarConfig,
+  databaseCalendarViewPatch,
   databaseProperties,
   databaseRowStatus,
   databaseStatuses,
@@ -22,12 +24,15 @@ import {
   DatabaseRowCard,
   type DatabaseRowCardHandle,
 } from "@/features/database/DatabaseRowCard"
+import { CalendarAgenda } from "@/features/database/CalendarAgenda"
 import { DatabaseSettingsSheet } from "@/features/database/DatabaseSettingsSheet"
 import { fonts, useAppTheme } from "@/lib/theme"
 
 type Props = {
   block: Block
   rows: Block[]
+  token: string
+  workspaceId: string
   editable: boolean
   selected: boolean
   onLongPress: () => void
@@ -56,6 +61,7 @@ export function DatabaseBlock(props: Props) {
   const properties = databaseProperties(props.block.properties)
   const statuses = databaseStatuses(props.block.properties)
   const view = databaseView(props.block.properties)
+  const calendar = databaseCalendarConfig(props.block.properties)
   const title =
     typeof props.block.properties.title === "string"
       ? props.block.properties.title
@@ -99,11 +105,15 @@ export function DatabaseBlock(props: Props) {
     )
   }
 
-  function changeView(view: "table" | "board") {
+  function changeView(view: "table" | "board" | "calendar") {
     for (const row of rowRefs.current.values()) {
       if (!row.commit()) return
     }
-    props.onUpdateDatabase({ view })
+    props.onUpdateDatabase(
+      view === "calendar"
+        ? databaseCalendarViewPatch(properties, calendar)
+        : { view }
+    )
   }
 
   function registerRow(rowId: string, row: DatabaseRowCardHandle | null) {
@@ -171,13 +181,29 @@ export function DatabaseBlock(props: Props) {
             disabled={!props.editable}
             onPress={() => changeView("board")}
           />
+          <ViewButton
+            icon="calendar-month-outline"
+            label="Agenda"
+            active={view === "calendar"}
+            disabled={!props.editable}
+            onPress={() => changeView("calendar")}
+          />
         </View>
-        <Text style={[styles.count, { color: tokens.mutedForeground }]}>
-          {props.rows.length} {props.rows.length === 1 ? "item" : "itens"}
-        </Text>
+        {view === "calendar" ? null : (
+          <Text style={[styles.count, { color: tokens.mutedForeground }]}>
+            {props.rows.length} {props.rows.length === 1 ? "item" : "itens"}
+          </Text>
+        )}
       </View>
 
-      {view === "board" ? (
+      {view === "calendar" ? (
+        <CalendarAgenda
+          token={props.token}
+          workspaceId={props.workspaceId}
+          databaseId={props.block.id}
+          onOpenRow={props.onOpenRow}
+        />
+      ) : view === "board" ? (
         <BoardView
           {...props}
           properties={properties}
@@ -526,12 +552,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   segmented: {
+    flex: 1,
     flexDirection: "row",
     padding: 3,
     borderWidth: 1,
     borderRadius: 10,
   },
   viewButton: {
+    flex: 1,
     minHeight: 34,
     flexDirection: "row",
     alignItems: "center",

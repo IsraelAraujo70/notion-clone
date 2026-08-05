@@ -2,6 +2,7 @@ pub mod ai;
 pub mod auth;
 pub mod embeddings;
 pub mod github;
+pub mod google_calendar;
 pub mod integrations;
 pub mod pages;
 pub mod ports;
@@ -26,6 +27,11 @@ pub enum AppError {
     GitHubNotConfigured,
     GitHubPullRequestNotFound,
     GitHubUnavailable,
+    GoogleCalendarNotConfigured,
+    GoogleCalendarConnectionNotFound,
+    GoogleCalendarEventNotFound,
+    GoogleCalendarOAuthInvalid,
+    GoogleCalendarUnavailable,
     AiUnavailable,
     Internal,
 }
