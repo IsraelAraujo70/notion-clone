@@ -225,7 +225,14 @@ impl GoogleCalendarUseCases {
         let (start, end) = validate_projection_range(&input.start, &input.end)?;
         let external = self
             .repository
-            .list_external_events(workspace_id, database_id, user_id, start, end)
+            .list_external_events(
+                workspace_id,
+                database_id,
+                user_id,
+                start,
+                end,
+                &input.time_zone,
+            )
             .await?;
         let manual = self
             .repository

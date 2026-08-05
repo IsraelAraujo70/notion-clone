@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DatabaseCalendar } from "./database-calendar"
 import type { CalendarProjectionEvent } from "@/lib/api"
@@ -59,6 +59,8 @@ vi.mock(
 describe("DatabaseCalendar", () => {
   beforeEach(() => refresh.mockClear())
 
+  afterEach(() => vi.useRealTimers())
+
   it("shows timed events with their start time in the month view", () => {
     render(
       <DatabaseCalendar
@@ -114,5 +116,21 @@ describe("DatabaseCalendar", () => {
     expect(screen.getByText(/evento foi cancelado/i)).toBeVisible()
     fireEvent.click(screen.getByRole("button", { name: "Abrir notas" }))
     expect(onOpenRow).toHaveBeenCalledWith("row-1")
+  })
+
+  it("does not skip a short month when navigating from day 31", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 0, 31, 12))
+    render(
+      <DatabaseCalendar
+        databaseId="database"
+        defaultMode="month"
+        readOnly={false}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Próximo período" }))
+
+    expect(screen.getByText(/february|fevereiro/i)).toBeVisible()
   })
 })

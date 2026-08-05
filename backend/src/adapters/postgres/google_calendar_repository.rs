@@ -629,9 +629,13 @@ impl GoogleCalendarRepository for PostgresGoogleCalendarRepository {
         user_id: Uuid,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        time_zone: &str,
     ) -> Result<Vec<ProjectedExternalCalendarEvent>, RepositoryError> {
         sqlx::query_as::<_, ProjectionRow>(
-            "WITH linked AS (
+            "WITH bounds AS (
+                 SELECT ($4::TIMESTAMPTZ AT TIME ZONE $6)::DATE AS start_date,
+                        ($5::TIMESTAMPTZ AT TIME ZONE $6)::DATE AS end_date
+             ), linked AS (
                  SELECT link.database_row_id AS row_id, link.source_id,
                         link.google_event_id,
                         COALESCE(event.title, link.snapshot_title) AS title,
@@ -653,9 +657,14 @@ impl GoogleCalendarRepository for PostgresGoogleCalendarRepository {
                    ON event.workspace_id = link.workspace_id
                   AND event.source_id = link.source_id
                   AND event.google_event_id = link.google_event_id
+                 CROSS JOIN bounds
                  WHERE link.workspace_id = $1 AND link.database_block_id = $2
-                   AND COALESCE(event.starts_at, link.snapshot_starts_at) < $5
-                   AND COALESCE(event.ends_at, link.snapshot_ends_at) > $4
+                   AND CASE WHEN COALESCE(event.all_day, link.snapshot_all_day)
+                     THEN COALESCE(event.start_date, link.snapshot_start_date) < bounds.end_date
+                      AND COALESCE(event.end_date, link.snapshot_end_date) > bounds.start_date
+                     ELSE COALESCE(event.starts_at, link.snapshot_starts_at) < $5
+                      AND COALESCE(event.ends_at, link.snapshot_ends_at) > $4
+                   END
              ), private_events AS (
                  SELECT NULL::UUID AS row_id, event.source_id, event.google_event_id,
                         event.title, event.starts_at, event.ends_at, event.start_date,
@@ -670,9 +679,15 @@ impl GoogleCalendarRepository for PostgresGoogleCalendarRepository {
                   AND link.database_block_id = source.database_block_id
                   AND link.source_id = event.source_id
                   AND link.google_event_id = event.google_event_id
+                 CROSS JOIN bounds
                  WHERE event.workspace_id = $1 AND source.database_block_id = $2
                    AND source.user_id = $3 AND source.enabled
-                   AND link.id IS NULL AND event.starts_at < $5 AND event.ends_at > $4
+                   AND link.id IS NULL
+                   AND CASE WHEN event.all_day
+                     THEN event.start_date < bounds.end_date
+                      AND event.end_date > bounds.start_date
+                     ELSE event.starts_at < $5 AND event.ends_at > $4
+                   END
              )
              SELECT * FROM linked
              UNION ALL
@@ -684,6 +699,7 @@ impl GoogleCalendarRepository for PostgresGoogleCalendarRepository {
         .bind(user_id)
         .bind(start)
         .bind(end)
+        .bind(time_zone)
         .fetch_all(&self.pool)
         .await
         .map(|rows| rows.into_iter().map(Into::into).collect())

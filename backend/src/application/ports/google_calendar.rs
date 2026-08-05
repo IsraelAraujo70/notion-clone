@@ -373,6 +373,7 @@ pub trait GoogleCalendarRepository: Send + Sync {
         user_id: Uuid,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        time_zone: &str,
     ) -> Result<Vec<ProjectedExternalCalendarEvent>, RepositoryError>;
 
     async fn list_manual_rows(

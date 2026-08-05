@@ -11,6 +11,9 @@ import {
   type GoogleCalendarSources,
 } from "@/lib/api"
 
+const INITIAL_SYNC_POLL_INTERVAL_MS = 1_000
+const INITIAL_SYNC_POLL_ATTEMPTS = 15
+
 export function GoogleCalendarSettingsPanel({
   token,
   workspaceId,
@@ -125,15 +128,24 @@ export function GoogleCalendarSettingsPanel({
               onChange={async (selection) => {
                 setLoading(true)
                 try {
-                  setSources(
-                    await api.replaceGoogleCalendarSources(
-                      token,
-                      workspaceId,
-                      databaseId,
-                      selection
-                    )
+                  const nextSources = await api.replaceGoogleCalendarSources(
+                    token,
+                    workspaceId,
+                    databaseId,
+                    selection
                   )
+                  setSources(nextSources)
                   onSourcesChanged()
+                  const syncedSources = await waitForInitialSourceSync({
+                    token,
+                    workspaceId,
+                    databaseId,
+                    sources: nextSources,
+                  })
+                  if (syncedSources) {
+                    setSources(syncedSources)
+                    onSourcesChanged()
+                  }
                 } catch {
                   toast.error("Não foi possível salvar as agendas")
                 } finally {
@@ -155,4 +167,46 @@ export function GoogleCalendarSettingsPanel({
       ) : null}
     </div>
   )
+}
+
+async function waitForInitialSourceSync({
+  token,
+  workspaceId,
+  databaseId,
+  sources,
+}: {
+  token: string
+  workspaceId: string
+  databaseId: string
+  sources: GoogleCalendarSources
+}) {
+  const pendingIds = new Set(
+    sources.sources
+      .filter(
+        (source) =>
+          source.enabled && !source.last_synced_at && !source.last_error
+      )
+      .map((source) => source.id)
+  )
+  if (pendingIds.size === 0) return null
+
+  for (let attempt = 0; attempt < INITIAL_SYNC_POLL_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) =>
+      window.setTimeout(resolve, INITIAL_SYNC_POLL_INTERVAL_MS)
+    )
+    const current = await api
+      .getGoogleCalendarSources(token, workspaceId, databaseId)
+      .catch(() => null)
+    if (!current) return null
+    const pending = current.sources.some(
+      (source) =>
+        pendingIds.has(source.id) &&
+        source.enabled &&
+        !source.last_synced_at &&
+        !source.last_error
+    )
+    if (!pending) return current
+  }
+
+  return null
 }

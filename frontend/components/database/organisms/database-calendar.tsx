@@ -56,8 +56,10 @@ export function DatabaseCalendar({
   const move = (direction: -1 | 1) => {
     setAnchor((current) => {
       const next = new Date(current)
-      if (mode === "month") next.setMonth(current.getMonth() + direction)
-      else next.setDate(current.getDate() + direction * 7)
+      if (mode === "month") {
+        next.setDate(1)
+        next.setMonth(current.getMonth() + direction)
+      } else next.setDate(current.getDate() + direction * 7)
       return next
     })
   }
