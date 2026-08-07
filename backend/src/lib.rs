@@ -13,6 +13,7 @@ pub fn app(pool: PgPool) -> Router {
     let state = bootstrap::state::AppState::from_parts(
         pool,
         config.public_web_url,
+        config.mcp_cursor_signing_key,
         config.resend_api_key,
         config.resend_from_email,
         config.s3,

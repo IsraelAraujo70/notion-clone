@@ -76,15 +76,23 @@ O arquivo versionado referencia `{env:REASON_MCP_TOKEN}` e nunca contém o segre
 | `reason_list_workspaces` | qualquer | Lista apenas grants que ainda têm membership. |
 | `reason_list_pages` | `content:read` | Lista páginas e a raiz interna. |
 | `reason_read_page` | `content:read` | Retorna a árvore ordenada de blocos. |
+| `reason_query_blocks` | `content:read` | Lista filhos diretos em `content` order, com filtro exato de propriedades escalares. |
 | `reason_search` | `search:read` | Usa os embeddings existentes e retorna página, bloco, texto e score. |
 | `reason_get_image` | `media:read` | Retorna metadados e conteúdo MCP `image` em base64. |
 | `reason_apply_operations` | `content:write` | Aplica de 1 a 50 operações em uma transação. |
+| `reason_apply_operations_compact` | `content:write` | Compila referências locais em operações canônicas e aplica o lote atomicamente. |
 | `reason_list_pull_requests` | `github:read` | Lista snapshots de PR vinculados aos blocos do workspace. |
 | `reason_link_pull_request` | `github:read` + `github:write` | Vincula uma URL canônica `https://github.com/{owner}/{repo}/pull/{n}` a uma página ou `database_row` e retorna seu snapshot. |
 
 `reason_get_image` recebe `workspace_id` e `block_id`, nunca uma chave S3 livre. O servidor comprova membership, tipo do bloco, estado da lixeira e prefixo do objeto antes de baixar até 10 MiB.
 
 `reason_apply_operations` aceita somente `insert_block`, `update_block`, `move_block`, `delete_block` e `restore_block`. O lote usa o motor canônico, mantém idempotência por `op_id`, incrementa `seq` e publica as alterações no WebSocket. Repetir ou reagrupar operações já aceitas devolve seus ACKs originais sem reaplicá-las.
+
+As ferramentas legadas mantêm o formato atual por padrão. Para respostas JSON, `response_mode: "compact"` deixa o resultado completo somente em `structuredContent.result`; `content` fica limitado a um resumo seguro. `reason_read_page` também aceita projeção, `max_depth`, `max_chars` e cursor assinado nesse modo. Cursors são invalidados quando o `operation_seq` do workspace muda.
+
+`reason_query_blocks` recebe `parent_id`, filtros escalares em `property_equals`, projeção e paginação. A ordem é sempre a do array `content` do pai, sem depender de busca semântica ou de ordem de criação.
+
+`reason_apply_operations_compact` recebe um `request_id` UUID. Cada `insert_block` declara um `client_ref`, e operações posteriores podem usar `parent_ref` ou `block_ref`. O servidor deriva IDs de bloco e `op_id` UUID v5 de forma determinística e encaminha o lote ao mesmo motor canônico. Atualizações continuam exigindo `prop_versions` explícito.
 
 ## Segurança
 
@@ -94,5 +102,6 @@ O arquivo versionado referencia `{env:REASON_MCP_TOKEN}` e nunca contém o segre
 - Requisições com header `Origin` são recusadas para reduzir risco de DNS rebinding.
 - O body MCP é limitado a 1 MiB, lotes a 50 operações, busca a 50 resultados e imagens a 10 MiB.
 - Logs HTTP usam o template da rota e não registram o header de autorização nem argumentos MCP.
+- `MCP_CURSOR_SIGNING_KEY` é obrigatório no processo da API e assina os cursores compactos. Gere um segredo longo, não o registre em logs e faça rotação por uma implantação coordenada, pois cursores emitidos antes da rotação deixam de ser válidos.
 
 O servidor é stateless: clientes devem enviar o bearer token em toda requisição. `GET /mcp` e sessões SSE não são necessários nesta versão porque não há notificações iniciadas pelo servidor.

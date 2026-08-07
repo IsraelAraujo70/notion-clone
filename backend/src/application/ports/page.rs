@@ -120,6 +120,25 @@ pub struct PageList {
     pub pages: Vec<PageSummary>,
 }
 
+/// Consulta determinística dos filhos diretos de um bloco. A posição é o índice
+/// bruto no array `content` do pai, não o índice da lista filtrada.
+#[derive(Debug, Clone)]
+pub struct DirectChildrenQuery {
+    pub parent_id: Uuid,
+    pub block_type: Option<BlockType>,
+    pub property_equals: serde_json::Map<String, serde_json::Value>,
+    pub include_trashed: bool,
+    pub limit: usize,
+    pub start_position: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct DirectChildrenPage {
+    pub items: Vec<Block>,
+    pub next_position: Option<usize>,
+    pub workspace_seq: i64,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SearchResult {
     pub workspace_id: Uuid,
@@ -160,6 +179,14 @@ pub trait PageRepository: Send + Sync {
         _workspace_id: Uuid,
         _block_id: Uuid,
     ) -> Result<PageView, RepositoryError> {
+        Err(RepositoryError::Unexpected)
+    }
+
+    async fn query_direct_children(
+        &self,
+        _workspace_id: Uuid,
+        _query: DirectChildrenQuery,
+    ) -> Result<DirectChildrenPage, RepositoryError> {
         Err(RepositoryError::Unexpected)
     }
 

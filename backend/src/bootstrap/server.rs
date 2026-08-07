@@ -35,6 +35,7 @@ pub async fn run() {
     let state = AppState::from_parts(
         pool,
         config.public_web_url.clone(),
+        config.mcp_cursor_signing_key.clone(),
         config.resend_api_key.clone(),
         config.resend_from_email.clone(),
         config.s3.clone(),

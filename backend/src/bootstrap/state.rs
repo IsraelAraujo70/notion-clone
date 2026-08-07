@@ -30,7 +30,7 @@ use crate::application::integrations::IntegrationUseCases;
 use crate::application::pages::{
     ApplyOperationUseCase, GetImageUseCase, GetPageUseCase, ListOperationsUseCase,
     ListPagesUseCase, ListTrashUseCase, PermanentlyDeleteUseCase, PresignPageImageUseCase,
-    PublicLinksUseCase, SearchPagesUseCase, TransferSubtreeUseCase,
+    PublicLinksUseCase, QueryBlocksUseCase, SearchPagesUseCase, TransferSubtreeUseCase,
 };
 use crate::application::ports::ai::{AiProvider, AiRepository, SemanticSearch};
 use crate::application::ports::auth::AuthRepository;
@@ -57,6 +57,7 @@ use crate::bootstrap::config::{GitHubConfig, GoogleCalendarConfig};
 pub struct AppState {
     pub pool: PgPool,
     pub public_web_url: String,
+    pub mcp_cursor_signing_key: String,
     pub hub: RealtimeHub,
     pub storage: Arc<dyn ObjectStorage>,
     pub signup: SignupUseCase,
@@ -80,6 +81,7 @@ pub struct AppState {
     pub accept_invite: AcceptInviteUseCase,
     pub list_pages: ListPagesUseCase,
     pub get_page: GetPageUseCase,
+    pub query_blocks: QueryBlocksUseCase,
     pub get_image: GetImageUseCase,
     pub apply_operation: ApplyOperationUseCase,
     pub list_operations: ListOperationsUseCase,
@@ -102,6 +104,7 @@ impl AppState {
     pub fn from_parts(
         pool: PgPool,
         public_web_url: String,
+        mcp_cursor_signing_key: String,
         resend_api_key: Option<String>,
         resend_from_email: String,
         s3: Option<S3Config>,
@@ -229,6 +232,7 @@ impl AppState {
         Self {
             pool,
             public_web_url: public_web_url.clone(),
+            mcp_cursor_signing_key,
             hub: hub.clone(),
             storage: storage.clone(),
             signup: SignupUseCase::new(auth_repository.clone(), clock.clone()),
@@ -265,6 +269,10 @@ impl AppState {
                 workspace_repository.clone(),
             ),
             get_page: GetPageUseCase::new(page_repository.clone(), workspace_repository.clone()),
+            query_blocks: QueryBlocksUseCase::new(
+                page_repository.clone(),
+                workspace_repository.clone(),
+            ),
             get_image: GetImageUseCase::new(
                 page_repository.clone(),
                 workspace_repository.clone(),

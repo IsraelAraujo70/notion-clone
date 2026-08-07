@@ -12,10 +12,10 @@ use crate::application::embeddings::{
 };
 use crate::application::ports::RepositoryError;
 use crate::application::ports::page::{
-    AppliedOperation, Breadcrumb, LoggedOperation, OperationAck, OperationGroup,
-    OperationGroupMetadata, OperationsPage, PageEditor, PageList, PageRepository, PageSummary,
-    PageTree, PageView, PermanentDeleteResult, PublicLink, SearchResult, TransferSubtreeResult,
-    TrashEntry,
+    AppliedOperation, Breadcrumb, DirectChildrenPage, DirectChildrenQuery, LoggedOperation,
+    OperationAck, OperationGroup, OperationGroupMetadata, OperationsPage, PageEditor, PageList,
+    PageRepository, PageSummary, PageTree, PageView, PermanentDeleteResult, PublicLink,
+    SearchResult, TransferSubtreeResult, TrashEntry,
 };
 use crate::domain::block::{
     Block, BlockTree, BlockType, Operation, apply_operation, parse_block_type,
@@ -120,6 +120,21 @@ struct BlockRow {
     prop_versions: Value,
 }
 
+#[derive(sqlx::FromRow)]
+struct DirectChildRow {
+    position: i64,
+    id: Uuid,
+    workspace_id: Uuid,
+    #[sqlx(rename = "type")]
+    block_type: String,
+    properties: Value,
+    content: Vec<Uuid>,
+    parent_id: Option<Uuid>,
+    trashed_at: Option<DateTime<Utc>>,
+    trashed_index: Option<i32>,
+    prop_versions: Value,
+}
+
 fn parse_prop_versions(value: Value) -> HashMap<String, i64> {
     match value {
         Value::Object(map) => map
@@ -148,6 +163,25 @@ impl TryFrom<BlockRow> for Block {
             trashed_at: row.trashed_at,
             trashed_index: row.trashed_index,
         })
+    }
+}
+
+impl TryFrom<DirectChildRow> for Block {
+    type Error = RepositoryError;
+
+    fn try_from(row: DirectChildRow) -> Result<Self, Self::Error> {
+        BlockRow {
+            id: row.id,
+            workspace_id: row.workspace_id,
+            block_type: row.block_type,
+            properties: row.properties,
+            content: row.content,
+            parent_id: row.parent_id,
+            trashed_at: row.trashed_at,
+            trashed_index: row.trashed_index,
+            prop_versions: row.prop_versions,
+        }
+        .try_into()
     }
 }
 
@@ -772,6 +806,105 @@ impl PageRepository for PostgresPageRepository {
         .ok_or_else(page_not_found)?
         .0;
         self.get_page(workspace_id, page_id).await
+    }
+
+    async fn query_direct_children(
+        &self,
+        workspace_id: Uuid,
+        query: DirectChildrenQuery,
+    ) -> Result<DirectChildrenPage, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        let parent = sqlx::query_as::<_, BlockRow>(&format!(
+            "SELECT {BLOCK_COLUMNS} FROM blocks WHERE workspace_id = $1 AND id = $2"
+        ))
+        .bind(workspace_id)
+        .bind(query.parent_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(page_not_found)?;
+        let workspace_seq =
+            sqlx::query_as::<_, (i64,)>("SELECT operation_seq FROM workspaces WHERE id = $1")
+                .bind(workspace_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx_error)?
+                .ok_or(RepositoryError::NotFound)?
+                .0;
+
+        if query.start_position >= parent.content.len() {
+            tx.commit().await.map_err(map_sqlx_error)?;
+            return Ok(DirectChildrenPage {
+                items: Vec::new(),
+                next_position: None,
+                workspace_seq,
+            });
+        }
+        if !query.include_trashed {
+            let ancestry_has_trash = sqlx::query_as::<_, (bool,)>(
+                "WITH RECURSIVE ancestors AS (
+                    SELECT id, parent_id, trashed_at, ARRAY[id] AS path
+                    FROM blocks WHERE workspace_id = $1 AND id = $2
+                    UNION ALL
+                    SELECT b.id, b.parent_id, b.trashed_at, a.path || b.id
+                    FROM ancestors a
+                    JOIN blocks b ON b.workspace_id = $1 AND b.id = a.parent_id
+                    WHERE NOT b.id = ANY(a.path)
+                 ) SELECT EXISTS (SELECT 1 FROM ancestors WHERE trashed_at IS NOT NULL)",
+            )
+            .bind(workspace_id)
+            .bind(query.parent_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?
+            .0;
+            if ancestry_has_trash {
+                tx.commit().await.map_err(map_sqlx_error)?;
+                return Ok(DirectChildrenPage {
+                    items: Vec::new(),
+                    next_position: None,
+                    workspace_seq,
+                });
+            }
+        }
+
+        let sql = direct_children_sql(&query);
+        let mut statement = sqlx::query_as::<_, DirectChildRow>(&sql)
+            .bind(parent.content[query.start_position..].to_vec())
+            .bind(workspace_id)
+            .bind(query.parent_id);
+        if let Some(block_type) = query.block_type {
+            statement = statement.bind(block_type.as_str());
+        }
+        for (key, value) in &query.property_equals {
+            statement = statement.bind(key).bind(value.to_string());
+        }
+        let rows = statement
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        let has_more = rows.len() > query.limit;
+        let rows = rows.into_iter().take(query.limit).collect::<Vec<_>>();
+        let next_position = if has_more {
+            rows.last()
+                .map(|row| query.start_position + row.position as usize + 1)
+        } else {
+            None
+        };
+        let items = rows
+            .into_iter()
+            .map(Block::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(DirectChildrenPage {
+            items,
+            next_position,
+            workspace_seq,
+        })
     }
 
     async fn list_trash(&self, workspace_id: Uuid) -> Result<Vec<TrashEntry>, RepositoryError> {
@@ -1833,9 +1966,64 @@ impl PageRepository for PostgresPageRepository {
     }
 }
 
+fn direct_children_sql(query: &DirectChildrenQuery) -> String {
+    // $1 = parent.content slice, $2 = workspace_id, $3 = parent_id.
+    let mut filters = vec!["b.parent_id = $3".to_string()];
+    let mut placeholder = 4;
+    if query.block_type.is_some() {
+        filters.push(format!("b.type = ${placeholder}"));
+        placeholder += 1;
+    }
+    for _ in &query.property_equals {
+        filters.push(format!(
+            "b.properties -> ${placeholder} = ${}::jsonb",
+            placeholder + 1
+        ));
+        placeholder += 2;
+    }
+    if !query.include_trashed {
+        filters.push("b.trashed_at IS NULL".to_string());
+    }
+    format!(
+        "WITH candidates AS (
+            SELECT child_id, ordinality::bigint - 1 AS position
+            FROM unnest($1::uuid[]) WITH ORDINALITY AS ordered(child_id, ordinality)
+         )
+         SELECT candidates.position, {BLOCK_COLUMNS}
+         FROM candidates
+         JOIN blocks b ON b.id = candidates.child_id AND b.workspace_id = $2
+         WHERE {}
+         ORDER BY candidates.position
+         LIMIT {}",
+        filters.join(" AND "),
+        query.limit.saturating_add(1),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_children_query_binds_workspace_and_parent_separately() {
+        let query = DirectChildrenQuery {
+            parent_id: Uuid::new_v4(),
+            block_type: Some(BlockType::DatabaseRow),
+            property_equals: serde_json::Map::from_iter([(
+                "status".to_string(),
+                serde_json::json!("todo"),
+            )]),
+            include_trashed: false,
+            limit: 50,
+            start_position: 0,
+        };
+
+        let sql = direct_children_sql(&query);
+        assert!(sql.contains("b.workspace_id = $2"));
+        assert!(sql.contains("b.parent_id = $3"));
+        assert!(sql.contains("b.type = $4"));
+        assert!(sql.contains("b.properties -> $5 = $6::jsonb"));
+    }
 
     #[test]
     fn trash_roots_exclude_every_trashed_ancestor_and_are_cycle_safe() {

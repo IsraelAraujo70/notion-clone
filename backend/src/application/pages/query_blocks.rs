@@ -3,17 +3,17 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::application::AppError;
-use crate::application::ports::page::{PageRepository, PageView};
+use crate::application::ports::page::{DirectChildrenPage, DirectChildrenQuery, PageRepository};
 use crate::application::ports::workspace::WorkspaceRepository;
 use crate::application::workspaces::permissions::require_member;
 
 #[derive(Clone)]
-pub struct GetPageUseCase {
+pub struct QueryBlocksUseCase {
     page_repository: Arc<dyn PageRepository>,
     workspace_repository: Arc<dyn WorkspaceRepository>,
 }
 
-impl GetPageUseCase {
+impl QueryBlocksUseCase {
     pub fn new(
         page_repository: Arc<dyn PageRepository>,
         workspace_repository: Arc<dyn WorkspaceRepository>,
@@ -28,24 +28,11 @@ impl GetPageUseCase {
         &self,
         user_id: Uuid,
         workspace_id: Uuid,
-        page_id: Uuid,
-    ) -> Result<PageView, AppError> {
+        query: DirectChildrenQuery,
+    ) -> Result<DirectChildrenPage, AppError> {
         require_member(&self.workspace_repository, workspace_id, user_id).await?;
         self.page_repository
-            .get_page(workspace_id, page_id)
-            .await
-            .map_err(Into::into)
-    }
-
-    pub async fn execute_for_block(
-        &self,
-        user_id: Uuid,
-        workspace_id: Uuid,
-        block_id: Uuid,
-    ) -> Result<PageView, AppError> {
-        require_member(&self.workspace_repository, workspace_id, user_id).await?;
-        self.page_repository
-            .get_page_for_block(workspace_id, block_id)
+            .query_direct_children(workspace_id, query)
             .await
             .map_err(Into::into)
     }

@@ -78,6 +78,7 @@ pub struct Config {
     pub port: String,
     pub database_url: String,
     pub public_web_url: String,
+    pub mcp_cursor_signing_key: String,
     pub resend_api_key: Option<String>,
     pub resend_from_email: String,
     pub s3: Option<S3Config>,
@@ -93,6 +94,10 @@ impl Config {
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             public_web_url: env::var("PUBLIC_WEB_URL")
                 .unwrap_or_else(|_| DEFAULT_PUBLIC_WEB_URL.to_string()),
+            mcp_cursor_signing_key: env::var("MCP_CURSOR_SIGNING_KEY")
+                .ok()
+                .filter(|key| !key.trim().is_empty())
+                .expect("MCP_CURSOR_SIGNING_KEY must be set"),
             resend_api_key: env_string("RESEND_API_KEY"),
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
@@ -109,6 +114,10 @@ impl Config {
             database_url: env::var("DATABASE_URL").unwrap_or_default(),
             public_web_url: env::var("PUBLIC_WEB_URL")
                 .unwrap_or_else(|_| DEFAULT_PUBLIC_WEB_URL.to_string()),
+            mcp_cursor_signing_key: env::var("MCP_CURSOR_SIGNING_KEY")
+                .ok()
+                .filter(|key| !key.trim().is_empty())
+                .unwrap_or_else(|| "local-test-mcp-cursor-signing-key".to_string()),
             resend_api_key: env_string("RESEND_API_KEY"),
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
