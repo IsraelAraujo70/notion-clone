@@ -94,10 +94,7 @@ impl Config {
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             public_web_url: env::var("PUBLIC_WEB_URL")
                 .unwrap_or_else(|_| DEFAULT_PUBLIC_WEB_URL.to_string()),
-            mcp_cursor_signing_key: env::var("MCP_CURSOR_SIGNING_KEY")
-                .ok()
-                .filter(|key| !key.trim().is_empty())
-                .expect("MCP_CURSOR_SIGNING_KEY must be set"),
+            mcp_cursor_signing_key: env_string("MCP_CURSOR_SIGNING_KEY").unwrap_or_default(),
             resend_api_key: env_string("RESEND_API_KEY"),
             resend_from_email: env::var("RESEND_FROM_EMAIL")
                 .unwrap_or_else(|_| DEFAULT_RESEND_FROM_EMAIL.to_string()),
@@ -105,6 +102,15 @@ impl Config {
             github: github_from_env(),
             google_calendar: google_calendar_from_env(),
         }
+    }
+
+    pub fn from_env_for_server() -> Self {
+        let config = Self::from_env();
+        assert!(
+            !config.mcp_cursor_signing_key.trim().is_empty(),
+            "MCP_CURSOR_SIGNING_KEY must be set"
+        );
+        config
     }
 
     pub fn from_env_defaults() -> Self {

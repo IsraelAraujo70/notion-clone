@@ -61,7 +61,6 @@ services:
     command: cargo run --bin notion-clone-worker
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
-      MCP_CURSOR_SIGNING_KEY: ${MCP_CURSOR_SIGNING_KEY:-local-development-mcp-cursor-signing-key}
       WORKER_INTERVAL_SECONDS: 1
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-openai/gpt-5.6-luna}
@@ -90,7 +89,6 @@ services:
     command: cargo run --bin google-calendar-worker
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
-      MCP_CURSOR_SIGNING_KEY: ${MCP_CURSOR_SIGNING_KEY:-local-development-mcp-cursor-signing-key}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
       GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
@@ -180,7 +178,6 @@ services:
     command: cargo run --bin notion-clone-worker
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/notion_clone
-      MCP_CURSOR_SIGNING_KEY: ${MCP_CURSOR_SIGNING_KEY:-local-e2e-mcp-cursor-signing-key}
       WORKER_INTERVAL_SECONDS: 1
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-openai/gpt-5.6-luna}

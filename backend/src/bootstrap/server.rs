@@ -12,7 +12,7 @@ pub async fn run() {
         )
         .init();
 
-    let config = Config::from_env();
+    let config = Config::from_env_for_server();
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&config.database_url)
